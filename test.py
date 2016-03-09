@@ -7,7 +7,7 @@ definitions = [
          'name': 'varchar',
          'country': 'm2o country.id',
      },
-     'index': ['name'],
+     'index': ['name', 'country'],
     },
     {'table': 'country',
      'columns': {
@@ -27,7 +27,7 @@ definitions = [
 
 
 cfg = {
-    'db-uri': 'sqlite://test.db',
+    'db_uri': 'sqlite:///test.db',
     'definitions': definitions,
 }
 
@@ -35,14 +35,13 @@ countries = [['Belgium'], ['France']]
 teams = [
     ['Blue', 'Belgium'],
     ['Red', 'Belgium'],
-    ['Green', 'France'],
+    ['Blue', 'France'],
 ]
 members = [
     ['Bob', 'Blue', '001', 'Belgium'],
     ['Alice', 'Blue', '002', 'Belgium'],
-    ['Trudy', 'Green', '003', 'France'],
+    ['Trudy', 'Blue', '003', 'France'],
 ]
-
 
 with connect(cfg):
     create_tables()
@@ -51,18 +50,21 @@ with connect(cfg):
     view = View('country')
     view.write(countries)
     res = view.read()
-    print list(res)
+    logger.info(list(res))
+
 
     # Add teams
     view = View('team', ['name', 'country.name'])
+    logger.setLevel('DEBUG')
+
     view.write(teams)
     res = view.read()
-    print list(res)
+    logger.info(list(res))
 
     # Show team and country ids
     view = View('team', ['id', 'name', 'country.id'])
     res = view.read()
-    print list(res)
+    logger.info(list(res))
 
 
     # Add members
@@ -70,8 +72,9 @@ with connect(cfg):
         ('Name', 'name'),
         ('Team', 'team.name'),
         ('Code', 'registration_code'),
+        ('Country', 'team.country.name'),
     ])
     view.write(members)
     res = view.read_df()
-    print res
+    logger.info(res)
 

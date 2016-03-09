@@ -1,5 +1,6 @@
-from collections import OrderedDict
+from collections import OrderedDict, defaultdict
 from contextlib import contextmanager
+from itertools import chain
 from urlparse import urlparse
 import csv
 import datetime
@@ -86,17 +87,24 @@ class Context(threading.local):
     def reset_cache(self):
         self._fk_cache = {}
 
-    def resolve_fk(self, ref, value):
-        remote_table = ref.remote_table.name
+    def resolve_fk(self, fields, values):
+        print 'VAL', values
+        remote_table = fields[0].ref.remote_table.name
         if remote_table not in self._fk_cache:
-            qr = 'SELECT %s, id FROM %s' % (
-                ref.remote_field, ref.remote_table.name)
-            self._fk_cache[remote_table] = dict(execute(qr))
+            read_fields = []
+            for field in fields:
+                _, desc = field.desc.split('.', 1)
+                read_fields.append(desc)
+            view = View(remote_table, read_fields + ['id'])
+            res = dict((val[:-1], val[-1]) for val in view.read())
+            self._fk_cache[remote_table] = res
 
-        res = self._fk_cache[remote_table].get(value)
+        # FIXME put (table, field1, field2) as key in fk_caceh
+        res = self._fk_cache[remote_table].get(values)
         if res is None:
             raise ValueError('Value "%s" not known in table "%s"' % (
-                value, remote_table))
+                ','.join(map(str, values)), remote_table))
+        print 'RES', res
         return res
 
     def create_tables(self):
@@ -116,7 +124,8 @@ class Context(threading.local):
                 col_type = 'INTEGER'
             elif self.flavor == 'postgresql':
                 col_type = 'SERIAL'
-            qr = 'CREATE TABLE "%s" (id %s PRIMARY KEY)' % (table.name, col_type)
+            qr = 'CREATE TABLE "%s" (id %s PRIMARY KEY)' % (
+                table.name, col_type)
             execute(qr)
             logger.info('Table "%s" created', table.name)
 
@@ -260,35 +269,6 @@ class ViewField:
         self.ctype = ctype.upper()
         self.ftype = ftype.upper()
 
-    def format(self, value, encoding=None):
-        '''
-        Sanitize value wrt the column type of the current field.
-        '''
-
-        if value is None:
-            return None
-        elif pandas and pandas.isnull(value):
-            return None
-
-        if self.ctype == 'INTEGER' and not isinstance(value, int):
-            value = int(value)
-        elif self.ctype == 'VARCHAR':
-            if not isinstance(value, basestring):
-                value = str(value)
-            value = value.strip()
-            if encoding is not None:
-                value = value.encode('utf-8')
-        elif self.ctype == 'TIMESTAMP' and hasattr(value, 'timetuple'):
-            value = datetime.datetime(*value.timetuple()[:6])
-        elif self.ctype == 'DATE' and hasattr(value, 'timetuple'):
-            value = datetime.date(*value.timetuple()[:3])
-
-        # Resolve foreign keys
-        if self.ref is not None:
-            value = ctx.resolve_fk(self.ref, value)
-
-        return value
-
 
 class View:
 
@@ -313,10 +293,6 @@ class View:
         # Index fields identify each line in the data
         self.index_fields = [f for f in self.all_fields \
                              if f.col and f.col.name in self.table.index]
-
-        # Update fields are value that will be updated (based on index)
-        self.update_fields = [f for f in self.all_fields \
-                              if f.col and f.col.name not in self.table.index]
 
     def get_field(self, name):
         return self.field_dict.get(name)
@@ -459,18 +435,47 @@ class View:
         table_alias = '%s_%s' % (self.table.name, year)
         return '(%s) AS %s' % (everthing, table_alias), table_alias
 
+    def format_line(self, row, field_map, field_idx, encoding=None):
+        for col in field_map:
+            idx = field_idx[col]
+            if col.ctype == 'M2O':
+                fields = [f for f in field_map[col]]
+                values = tuple(row[i] for i in idx)
+                yield ctx.resolve_fk(fields, values)
+            else:
+                yield col.format(row[idx[0]], encoding=encoding)
+
     def write(self, data):
+        # field_map hold relation between fields given by the user and
+        # the one from the db, field_idx keep their corresponding
+        # positions
+        field_map = defaultdict(list) #TODO should be self.field_map!
+        field_idx = defaultdict(list)
+        idx = 0
+        for view_field in self.all_fields:
+            if field_map[view_field.col] and view_field.col.ctype != 'M2O':
+                raise ValueError(
+                    'Column %s is specified several time in view' \
+                    % view_field.col.name)
+            field_map[view_field.col].append(view_field)
+            field_idx[view_field.col].append(idx)
+            idx += 1
+        user_fields = list(chain(field_map.itervalues()))
+
         # Create tmp
-        not_null = lambda f: 'NOT NULL' if f in self.index_fields else ''
+        not_null = lambda n: 'NOT NULL' if n in self.index_fields else ''
         qr = 'CREATE TEMPORARY TABLE tmp (%s)'
-        qr = qr % ', '.join('"%s" %s %s' % (f.name, f.ftype, not_null(f)) \
-                            for f in self.all_fields)
+        qr = qr % ', '.join('"%s" %s %s' % (
+            col.name,
+            fields[0].ftype,
+            not_null(col.name)) \
+        for col, fields in field_map.iteritems())
         execute(qr)
 
         # Handle list of dict and dataframes
         if isinstance(data, list) and isinstance(data[0], dict):
-            data = [[record.get(f.name) for f in self.all_fields]\
-                    for record in data]
+            data = ((record.get(f.name) for f in user_fields) \
+                    for record in data)
         elif pandas and isinstance(data, pandas.DataFrame):
             data = data.values
 
@@ -479,28 +484,29 @@ class View:
             buff = io.BytesIO()
             writer = csv.writer(buff, delimiter='\t')
             for row in data:
-                line = [f.format(x, encoding='utf-8')\
-                        for f, x in zip(self.all_fields, row)]
+                line = self.format_line(row, field_map, field_idx)
                 writer.writerow(line)
             buff.seek(0)
             copy_from(buff, 'tmp', null='')
         else:
             qr = 'INSERT INTO tmp (%(fields)s) VALUES (%(values)s)'
             qr = qr % {
-                'fields': ', '.join('"%s"' % f.name for f in self.all_fields),
-                'values': ', '.join('%s' for _ in self.all_fields),
+                'fields': ', '.join('"%s"' % c.name for c in field_map),
+                'values': ', '.join('%s' for _ in field_map),
             }
-            data = [[f.format(x) for f, x in zip(self.all_fields, row)] \
+            data = [list(self.format_line(row, field_map, field_idx)) \
                     for row in data]
+            print 'DATA', data
             executemany(qr, data)
 
         # Insertion step
         qr = 'INSERT INTO %(main)s (%(fields)s) %(select)s'
         db_fields = []
         data_fields = []
-        for viewfield in self.index_fields:
-            col = viewfield.col
-            data_fields.append(viewfield.name)
+        for col in field_map:
+            if col.name not in self.table.index:
+                continue # FIXME should be here
+            data_fields.append(col.name)
             db_fields.append(col.name)
 
         select = 'SELECT %(data_fields)s FROM tmp '\
@@ -529,9 +535,10 @@ class View:
         execute(qr)
 
         # Update step
-        for up_field in self.update_fields:
-            col = up_field.col
+        self.update_cols = [c.name for c in field_map \
+                              if c.name not in self.table.index]
 
+        for name in self.update_cols:
             if ctx.flavor == 'sqlite':
                 qr = 'UPDATE "%(main)s" SET "%(db_field)s" = COALESCE((' \
                       'SELECT "%(up_field)s" FROM tmp WHERE %(where)s' \
@@ -543,8 +550,8 @@ class View:
 
             qr = qr % {
                 'main': self.table.name,
-                'db_field': col.name,
-                'up_field': up_field.name,
+                'db_field': name,
+                'up_field': name, # FIXME ugly
                 'where': ' AND '.join(join_cond),
             }
             execute(qr)
@@ -660,6 +667,32 @@ class Column:
     def get_foreign_table(self):
         name, _ = self.fk.split('.')
         return Table.get(name)
+
+
+    def format(self, value, encoding=None):
+        '''
+        Sanitize value wrt the column type of the current field.
+        '''
+
+        if value is None:
+            return None
+        elif pandas and pandas.isnull(value):
+            return None
+
+        if self.ctype == 'INTEGER' and not isinstance(value, int):
+            value = int(value)
+        elif self.ctype == 'VARCHAR':
+            if not isinstance(value, basestring):
+                value = str(value)
+            value = value.strip()
+            if encoding is not None:
+                value = value.encode('utf-8')
+        elif self.ctype == 'TIMESTAMP' and hasattr(value, 'timetuple'):
+            value = datetime.datetime(*value.timetuple()[:6])
+        elif self.ctype == 'DATE' and hasattr(value, 'timetuple'):
+            value = datetime.date(*value.timetuple()[:3])
+
+        return value
 
 
 class Reference:
