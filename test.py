@@ -66,8 +66,12 @@ with connect(cfg):
 
 
     # Add members
-    view = View('member', ['name', 'team.name', 'registration_code'])
+    view = View('member', [
+        ('Name', 'name'),
+        ('Team', 'team.name'),
+        ('Code', 'registration_code'),
+    ])
     view.write(members)
-    res = view.read()
-    print list(res)
+    res = view.read_df()
+    print res
 
