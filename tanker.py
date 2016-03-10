@@ -374,7 +374,7 @@ class View:
             else:
                 yield col.format(row[idx[0]], encoding=encoding)
 
-    def write(self, data):
+    def write(self, data, delete=False):
         # Create tmp
         not_null = lambda n: 'NOT NULL' if n in self.index_fields else ''
         qr = 'CREATE TEMPORARY TABLE tmp (%s)'
@@ -408,7 +408,6 @@ class View:
                 'values': ', '.join('%s' for _ in self.field_map),
             }
             data = [list(self.format_line(row)) for row in data]
-            print 'DATA', data
             executemany(qr, data)
 
         # Insertion step
@@ -456,6 +455,17 @@ class View:
                 'main': self.table.name,
                 'name': name,
                 'where': ' AND '.join(join_cond),
+            }
+            execute(qr)
+
+        if delete:
+            qr = 'DELETE FROM %(main)s WHERE id IN (' \
+                 'SELECT %(main)s.id FROM %(main)s LEFT JOIN tmp on %(join_cond)s ' \
+                 'WHERE tmp.%(field)s IS NULL)'
+            qr = qr % {
+                'main': self.table.name,
+                'join_cond': ' AND '.join(join_cond),
+                'field': self.index_cols[0]
             }
             execute(qr)
 

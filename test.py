@@ -55,8 +55,6 @@ with connect(cfg):
 
     # Add teams
     view = View('team', ['name', 'country.name'])
-    logger.setLevel('DEBUG')
-
     view.write(teams)
     res = view.read()
     logger.info(list(res))
@@ -91,3 +89,13 @@ with connect(cfg):
         res = list(view.read())
     logger.info(res)
 
+
+    # Delete France
+    view = View('country')
+    view.write([['Belgium']], delete=True)
+    res = view.read()
+    logger.info(list(res))
+
+    view = View('member')
+    res = view.read()
+    logger.info(list(res))
