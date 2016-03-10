@@ -75,6 +75,19 @@ with connect(cfg):
         ('Country', 'team.country.name'),
     ])
     view.write(members)
-    res = view.read_df()
+
+    # Read them and check team id
+    view = View('member', [
+        ('Name', 'name'),
+        ('Team ID', 'team.id'),
+        ('Team Name', 'team.name'),
+        ('Code', 'registration_code'),
+        ('Country', 'team.country.name'),
+    ])
+    try:
+        import pandas
+        res = view.read_df()
+    except ImportError:
+        res = list(view.read())
     logger.info(res)
 

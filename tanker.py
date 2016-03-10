@@ -88,23 +88,21 @@ class Context(threading.local):
         self._fk_cache = {}
 
     def resolve_fk(self, fields, values):
-        print 'VAL', values
         remote_table = fields[0].ref.remote_table.name
-        if remote_table not in self._fk_cache:
+        key = (remote_table,) + fields
+        if key not in self._fk_cache:
             read_fields = []
             for field in fields:
                 _, desc = field.desc.split('.', 1)
                 read_fields.append(desc)
             view = View(remote_table, read_fields + ['id'])
             res = dict((val[:-1], val[-1]) for val in view.read())
-            self._fk_cache[remote_table] = res
+            self._fk_cache[key] = res
 
-        # FIXME put (table, field1, field2) as key in fk_caceh
-        res = self._fk_cache[remote_table].get(values)
+        res = self._fk_cache[key].get(values)
         if res is None:
-            raise ValueError('Value "%s" not known in table "%s"' % (
+            raise ValueError('Values (%s) are not known in table "%s"' % (
                 ','.join(map(str, values)), remote_table))
-        print 'RES', res
         return res
 
     def create_tables(self):
@@ -290,9 +288,27 @@ class View:
         self.all_fields = self.fields[:]
         self.field_dict = dict((f.name, f) for f in self.fields)
 
+        # field_map hold relation between fields given by the user and
+        # the one from the db, field_idx keep their corresponding
+        # positions
+        self.field_map = defaultdict(list) #TODO should be self.field_map!
+        self.field_idx = defaultdict(list)
+        idx = 0
+        for view_field in self.all_fields:
+            if self.field_map[view_field.col] and view_field.col.ctype != 'M2O':
+                raise ValueError(
+                    'Column %s is specified several time in view' \
+                    % view_field.col.name)
+            self.field_map[view_field.col].append(view_field)
+            self.field_idx[view_field.col].append(idx)
+            idx += 1
+
         # Index fields identify each line in the data
         self.index_fields = [f for f in self.all_fields \
                              if f.col and f.col.name in self.table.index]
+        # Index fields identify each row in the table
+        self.index_cols = [c.name for c in self.field_map \
+                           if c.name in self.table.index]
 
     def get_field(self, name):
         return self.field_dict.get(name)
@@ -348,120 +364,17 @@ class View:
         res = execute(qr, qr_args)
         return res
 
-    def mk_year_cte(self, year):
-        year_table = Table.get('year')
-        alt_table = Table.get('alternative')
-
-        req_year = year_table.first('id', name=year)
-        default_alt = alt_table.first('id', name='BaseCase')
-        default_year = year_table.first('id', name='*')
-
-        other_idx = [f for f in self.table.index \
-                     if f not in ('year', 'alternative')]
-        value_fields = [f.name for f in self.table.columns \
-                        if f.name not in self.table.index]
-
-
-        # This query is very slow
-        # all_combination = (
-        #    'SELECT A1.alternative AS alternative, %(req_year)s AS year,'
-        #     ' %(other)s '
-        #    'FROM %(table)s AS A1 , %(table)s AS A2 , %(table)s AS A3 '
-        #    'GROUP BY A1.alternative,  %(other)s ') % {
-        #        'table': self.table.name,
-        #        'req_year': req_year,
-        #        'other': ', '.join('A3.%s' % n for n in other_idx),
-        #    }
-
-        all_combination = (
-            'SELECT A1.alternative AS alternative, %(req_year)s AS year,'
-            ' %(other)s '
-            'FROM (select distinct alternative from %(table)s) AS A1, %(table)s AS A2 '
-            'GROUP BY '
-            'A1.alternative, %(other)s') % {
-                'table': self.table.name,
-                'req_year': req_year,
-                'other': ', '.join('A2.%s' % n for n in other_idx),
-            }
-
-        joins = ('B', 'C', 'D', 'E')
-        coalesce = lambda x : 'COALESCE(' + \
-            ', '.join('%s.%s' % (j, x) for j in joins) + ')'
-        values = ', '.join('%s AS %s' % (coalesce(v), v) \
-                           for v in value_fields)
-        idx_fields = ', '.join('A.%s as %s' % (f, f) for f in self.table.index)
-        main_select = (
-            'SELECT %(idx)s, %(values)s '
-            'FROM (%(all_combination)s) AS A ') % {
-                'idx': idx_fields,
-                'values': values,
-                'all_combination': all_combination,
-            }
-
-        idx_cond = lambda alias: ' AND '.join(
-            'A.%s = %s.%s' % (f, alias , f) for f in other_idx)
-        mk_join = lambda alias, cond: (
-            'LEFT JOIN %(table)s %(alias)s ON ( %(cond)s AND %(idx_cond)s)'
-        ) % {
-            'table': self.table.name,
-            'alias': alias,
-            'cond': cond,
-            'idx_cond': idx_cond(alias),
-            }
-
-        current_value_cond = 'A.alternative = B.alternative AND A.year = B.year'
-        current_value_join = mk_join('B', current_value_cond)
-
-        default_year_alt_value_cond = (
-            'A.alternative = C.alternative '
-            'AND C.year = %s' % default_year)
-        default_year_alt_value_join = mk_join('C', default_year_alt_value_cond)
-
-        default_alt_year_value_cond = 'A.year = D.year AND D.alternative = %s'\
-                                      % default_alt
-        default_alt_year_value_join = mk_join('D', default_alt_year_value_cond)
-
-        default_value_cond = ' E.year = %s AND E.alternative = %s' % (
-            default_year, default_alt)
-        default_value_join = mk_join('E', default_value_cond)
-
-        everthing = main_select + ' '.join((
-            current_value_join,
-            default_year_alt_value_join,
-            default_alt_year_value_join,
-            default_value_join,
-        ))
-
-        table_alias = '%s_%s' % (self.table.name, year)
-        return '(%s) AS %s' % (everthing, table_alias), table_alias
-
-    def format_line(self, row, field_map, field_idx, encoding=None):
-        for col in field_map:
-            idx = field_idx[col]
+    def format_line(self, row, encoding=None):
+        for col in self.field_map:
+            idx = self.field_idx[col]
             if col.ctype == 'M2O':
-                fields = [f for f in field_map[col]]
+                fields = tuple(f for f in self.field_map[col])
                 values = tuple(row[i] for i in idx)
                 yield ctx.resolve_fk(fields, values)
             else:
                 yield col.format(row[idx[0]], encoding=encoding)
 
     def write(self, data):
-        # field_map hold relation between fields given by the user and
-        # the one from the db, field_idx keep their corresponding
-        # positions
-        field_map = defaultdict(list) #TODO should be self.field_map!
-        field_idx = defaultdict(list)
-        idx = 0
-        for view_field in self.all_fields:
-            if field_map[view_field.col] and view_field.col.ctype != 'M2O':
-                raise ValueError(
-                    'Column %s is specified several time in view' \
-                    % view_field.col.name)
-            field_map[view_field.col].append(view_field)
-            field_idx[view_field.col].append(idx)
-            idx += 1
-        user_fields = list(chain(field_map.itervalues()))
-
         # Create tmp
         not_null = lambda n: 'NOT NULL' if n in self.index_fields else ''
         qr = 'CREATE TEMPORARY TABLE tmp (%s)'
@@ -469,12 +382,12 @@ class View:
             col.name,
             fields[0].ftype,
             not_null(col.name)) \
-        for col, fields in field_map.iteritems())
+        for col, fields in self.field_map.iteritems())
         execute(qr)
 
         # Handle list of dict and dataframes
         if isinstance(data, list) and isinstance(data[0], dict):
-            data = ((record.get(f.name) for f in user_fields) \
+            data = ((record.get(f.name) for f in self.all_fields) \
                     for record in data)
         elif pandas and isinstance(data, pandas.DataFrame):
             data = data.values
@@ -484,44 +397,35 @@ class View:
             buff = io.BytesIO()
             writer = csv.writer(buff, delimiter='\t')
             for row in data:
-                line = self.format_line(row, field_map, field_idx)
+                line = self.format_line(row)
                 writer.writerow(line)
             buff.seek(0)
             copy_from(buff, 'tmp', null='')
         else:
             qr = 'INSERT INTO tmp (%(fields)s) VALUES (%(values)s)'
             qr = qr % {
-                'fields': ', '.join('"%s"' % c.name for c in field_map),
-                'values': ', '.join('%s' for _ in field_map),
+                'fields': ', '.join('"%s"' % c.name for c in self.field_map),
+                'values': ', '.join('%s' for _ in self.field_map),
             }
-            data = [list(self.format_line(row, field_map, field_idx)) \
-                    for row in data]
+            data = [list(self.format_line(row)) for row in data]
             print 'DATA', data
             executemany(qr, data)
 
         # Insertion step
         qr = 'INSERT INTO %(main)s (%(fields)s) %(select)s'
-        db_fields = []
-        data_fields = []
-        for col in field_map:
-            if col.name not in self.table.index:
-                continue # FIXME should be here
-            data_fields.append(col.name)
-            db_fields.append(col.name)
-
         select = 'SELECT %(data_fields)s FROM tmp '\
                  'LEFT JOIN %(main_table)s ON ( %(join_cond)s) ' \
                  'WHERE %(where_cond)s'
         join_cond = []
         where_cond = []
 
-        for db_field, data_field in zip(db_fields, data_fields):
+        for name in self.index_cols:
             join_cond.append('tmp."%s" = "%s"."%s"' % (
-                data_field, self.table.name, db_field))
-            where_cond.append('%s."%s" IS NULL' % (self.table.name, db_field))
+                name, self.table.name, name))
+            where_cond.append('%s."%s" IS NULL' % (self.table.name, name))
 
         select = select % {
-            'data_fields': ', '.join('tmp."%s"' % f for f in data_fields),
+            'data_fields': ', '.join('tmp."%s"' % f for f in self.index_cols),
             'main_table': self.table.name,
             'join_cond': ' AND '.join(join_cond),
             'where_cond': ' AND '.join(where_cond),
@@ -529,29 +433,28 @@ class View:
 
         qr = qr % {
             'main': self.table.name,
-            'fields': ', '.join('"%s"' % f for f in db_fields),
+            'fields': ', '.join('"%s"' % f for f in self.index_cols),
             'select': select,
         }
         execute(qr)
 
         # Update step
-        self.update_cols = [c.name for c in field_map \
-                              if c.name not in self.table.index]
+        self.update_cols = [c.name for c in self.field_map \
+                            if c.name not in self.table.index]
 
         for name in self.update_cols:
             if ctx.flavor == 'sqlite':
-                qr = 'UPDATE "%(main)s" SET "%(db_field)s" = COALESCE((' \
-                      'SELECT "%(up_field)s" FROM tmp WHERE %(where)s' \
-                     '), %(db_field)s)'
+                qr = 'UPDATE "%(main)s" SET "%(name)s" = COALESCE((' \
+                      'SELECT "%(name)s" FROM tmp WHERE %(where)s' \
+                     '), %(name)s)'
             elif ctx.flavor == 'postgresql':
                 qr = 'UPDATE "%(main)s" '\
-                     'SET "%(db_field)s" = tmp."%(up_field)s"' \
+                     'SET "%(name)s" = tmp."%(name)s"' \
                      'FROM tmp WHERE %(where)s'
 
             qr = qr % {
                 'main': self.table.name,
-                'db_field': name,
-                'up_field': name, # FIXME ugly
+                'name': name,
                 'where': ' AND '.join(join_cond),
             }
             execute(qr)
