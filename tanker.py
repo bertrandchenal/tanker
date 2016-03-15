@@ -932,3 +932,16 @@ def connect(cfg):
     finally:
         ctx.reset_cache()
 
+
+def yaml_load(stream):
+    import yaml
+
+    class OrderedLoader(yaml.Loader):
+        pass
+    def construct_mapping(loader, node):
+        loader.flatten_mapping(node)
+        return OrderedDict(loader.construct_pairs(node))
+    OrderedLoader.add_constructor(
+        yaml.resolver.BaseResolver.DEFAULT_MAPPING_TAG,
+        construct_mapping)
+    return yaml.load(stream, OrderedLoader)

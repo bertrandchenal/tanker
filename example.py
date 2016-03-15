@@ -1,30 +1,61 @@
-from tanker import connect, create_tables, View
-from tanker import logger
+from tanker import connect, create_tables, View, logger, yaml_load
 
-definitions = [
-    {'table': 'team',
-     'columns': {
-         'name': 'varchar',
-         'country': 'm2o country.id',
-     },
-     'index': ['name', 'country'],
-    },
-    {'table': 'country',
-     'columns': {
-         'name': 'varchar',
-     },
-     'index': ['name'],
-    },
-    {'table': 'member',
-     'columns': {
-         'name': 'varchar',
-         'registration_code': 'varchar',
-         'team': 'm2o team.id',
-     },
-     'index': ['registration_code'],
-    },
-]
+try:
+    import yaml
+except ImportError:
+    yaml = None
 
+
+yaml_def = '''
+- table: team
+  columns:
+    name: varchar
+    country: m2o country.id
+  index:
+    - name
+    - country
+- table: country
+  columns:
+    name: varchar
+  index:
+    - name
+- table: member
+  columns:
+    name: varchar
+    registration_code: varchar
+    team: m2o team.id
+  index:
+    - registration_code
+'''
+
+
+if yaml is None:
+    definitions = [
+        {'table': 'team',
+         'columns': {
+             'name': 'varchar',
+             'country': 'm2o country.id',
+         },
+         'index': ['name', 'country'],
+        },
+        {'table': 'country',
+         'columns': {
+             'name': 'varchar',
+         },
+         'index': ['name'],
+        },
+        {'table': 'member',
+         'columns': {
+             'name': 'varchar',
+             'registration_code': 'varchar',
+             'team': 'm2o team.id',
+         },
+         'index': ['registration_code'],
+        },
+    ]
+
+else:
+    definitions = yaml_load(yaml_def)
 
 cfg = {
     'db_uri': 'sqlite:///test.db',
