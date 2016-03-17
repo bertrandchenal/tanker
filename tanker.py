@@ -24,9 +24,6 @@ try:
 except ImportError:
     psycopg2 = None
 
-
-# from utils import ordered_load, logger, ALIASES, Option
-
 REGISTRY = OrderedDict()
 COLUMN_TYPE = ('TIMESTAMP', 'DATE', 'FLOAT', 'INTEGER', 'M2O', 'O2M', 'VARCHAR',
                'BOOL')
@@ -387,8 +384,8 @@ class View:
 
         # Handle list of dict and dataframes
         if isinstance(data, list) and isinstance(data[0], dict):
-            data = ((record.get(f.name) for f in self.all_fields) \
-                    for record in data)
+            data = [[record.get(f.name) for f in self.all_fields] \
+                    for record in data]
         elif pandas and isinstance(data, pandas.DataFrame):
             data = data.values
 
