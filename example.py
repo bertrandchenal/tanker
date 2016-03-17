@@ -5,7 +5,7 @@ try:
 except ImportError:
     yaml = None
 
-
+# Tables definitions can be written in yaml
 yaml_def = '''
 - table: team
   columns:
@@ -19,6 +19,9 @@ yaml_def = '''
     name: varchar
   index:
     - name
+  values:
+    - name: Belgium
+    - name: France
 - table: member
   columns:
     name: varchar
@@ -29,6 +32,7 @@ yaml_def = '''
 '''
 
 
+# Or we can use python litteral if the module is missing
 if yaml is None:
     definitions = [
         {'table': 'team',
@@ -43,6 +47,10 @@ if yaml is None:
              'name': 'varchar',
          },
          'index': ['name'],
+         'values': [
+             {'name': 'Belgium'},
+             {'name': 'France'}
+         ],
         },
         {'table': 'member',
          'columns': {
@@ -62,7 +70,8 @@ cfg = {
     'definitions': definitions,
 }
 
-countries = [['Belgium'], ['France']]
+# Some example data, in practive this data can come from web scrapers,
+# excel sheets, panda DataFram, etc.
 teams = [
     ['Blue', 'Belgium'],
     ['Red', 'Belgium'],
@@ -75,13 +84,11 @@ members = [
 ]
 
 with connect(cfg):
+    # Only needed the first time the db is accessed, or when tables,
+    # column or values are added.  Note that countries will be
+    # automatically loaded from the definitions
     create_tables()
 
-    # Add countries
-    view = View('country')
-    view.write(countries)
-    res = view.read()
-    logger.info(list(res))
 
 
     # Add teams
