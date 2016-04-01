@@ -71,7 +71,7 @@ cfg = {
 }
 
 # Some example data, in practive this data can come from web scrapers,
-# excel sheets, panda DataFram, etc.
+# excel sheets, panda DataFrame, etc.
 teams = [
     ['Blue', 'Belgium'],
     ['Red', 'Belgium'],
