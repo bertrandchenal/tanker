@@ -1,10 +1,13 @@
 # Tanker
 
-Tanker goal is to allow easy mass update of database tables. Currently
-Postgresql and Sqlite are supported. There is also optinal support for
-pandas DataFrames.
+Tanker goal is to allow easy batch operations without compromising
+database modeling. For pandas users, it's like DataFrame.to_sql on
+steroids.
 
-The `example.py` file give a good idea of the main features
+Currently Postgresql and Sqlite are supported. There is also optional
+support for pandas DataFrames.
+
+See the `examples` folder for a quick overview of the main features.
 
 
 ## Licence

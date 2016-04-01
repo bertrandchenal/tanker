@@ -395,7 +395,7 @@ class View:
             writer = csv.writer(buff, delimiter='\t')
             for row in data:
                 line = self.format_line(row)
-                writer.writerow(line)
+                writer.writerow(list(line))
             buff.seek(0)
             copy_from(buff, 'tmp', null='')
         else:
