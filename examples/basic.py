@@ -70,7 +70,7 @@ cfg = {
     'definitions': definitions,
 }
 
-# Some example data, in practive this data can come from web scrapers,
+# Some example data, in practice this data can come from web scrapers,
 # excel sheets, panda DataFrame, etc.
 teams = [
     ['Blue', 'Belgium'],
