@@ -275,6 +275,8 @@ class View:
         if fields is None:
             fields = [(f.name, f.name) for f in self.table.columns \
                       if f.ctype != 'O2M' and f.name != 'id']
+        elif isinstance(fields, basestring):
+            fields = [[fields, fields]]
         elif isinstance(fields, dict):
             fields = fields.items()
         elif isinstance(fields, list) and isinstance(fields[0], basestring):
