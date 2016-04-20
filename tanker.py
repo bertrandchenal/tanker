@@ -315,7 +315,7 @@ class View:
     def get_field(self, name):
         return self.field_dict.get(name)
 
-    def read(self, year=None, filters=None, disable_acl=False):
+    def read(self, year=None, filters=None, disable_acl=False, limit=None):
         if isinstance(filters, basestring):
             filters = [filters]
         elif filters is None:
@@ -362,6 +362,10 @@ class View:
 
         if where:
             qr += ' WHERE ' + ' AND '.join(where)
+
+        if limit is not None:
+            qr += ' LIMIT %s'
+            qr_args = qr_args + (limit,)
 
         res = execute(qr, qr_args)
         return res
