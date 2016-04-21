@@ -490,7 +490,8 @@ class View:
 
         if delete:
             qr = 'DELETE FROM %(main)s WHERE id IN (' \
-                 'SELECT %(main)s.id FROM %(main)s LEFT JOIN tmp on %(join_cond)s ' \
+                 'SELECT %(main)s.id FROM %(main)s ' \
+                 'LEFT JOIN tmp on %(join_cond)s ' \
                  'WHERE tmp.%(field)s IS NULL)'
             qr = qr % {
                 'main': self.table.name,
