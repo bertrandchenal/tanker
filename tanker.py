@@ -290,7 +290,7 @@ class View:
         # field_map hold relation between fields given by the user and
         # the one from the db, field_idx keep their corresponding
         # positions
-        self.field_map = defaultdict(list) #TODO should be self.field_map!
+        self.field_map = defaultdict(list)
         self.field_idx = defaultdict(list)
         idx = 0
         for view_field in self.all_fields:
@@ -312,7 +312,8 @@ class View:
     def get_field(self, name):
         return self.field_dict.get(name)
 
-    def read(self, year=None, filters=None, disable_acl=False, limit=None):
+    def read(self, year=None, filters=None, disable_acl=False, order=None,
+             limit=None):
         if isinstance(filters, basestring):
             filters = [filters]
         elif filters is None:
@@ -359,6 +360,32 @@ class View:
 
         if where:
             qr += ' WHERE ' + ' AND '.join(where)
+
+        if order:
+            order_by = []
+            if isinstance(order, (basestring, tuple)):
+                order = [order]
+            for item in order:
+                if isinstance(item, (list, tuple)):
+                    item, how = item
+                else:
+                    how = None
+                if how:
+                    if how.upper() not in ('ASC', 'DESC'):
+                        msg = 'Unexpected value "%s" for sort direction' % how
+                        raise ValueError(msg)
+                    ptrn = '%%s.%%s %s' % how
+                else:
+                    ptrn = '%s.%s'
+
+                field = self.get_field(item)
+                if field is None:
+                    ref = ref_set.add(item)
+                else:
+                    ref = ref_set.add(field.desc)
+                order_by.append(ptrn % (ref.join_alias, ref.remote_field))
+
+            qr += ' ORDER BY ' + ', '.join(order_by)
 
         if limit is not None:
             qr += ' LIMIT %s'
@@ -477,12 +504,13 @@ class View:
 
 
     def read_df(self, columns=None, pivot=False, filters=None, year=None,
-                disable_acl=False):
+                disable_acl=False, order=None, limit=None):
         if not pandas:
             raise ImportError('The pandas module is required by read_df')
 
         # Create df from read data
-        data = self.read(year=year, filters=filters, disable_acl=disable_acl)
+        data = self.read(year=year, filters=filters, disable_acl=disable_acl,
+                         order=order, limit=limit)
         read_columns = [f.name for f in self.all_fields]
         df = pandas.DataFrame.from_records(data, columns=read_columns)
 
@@ -610,6 +638,8 @@ class Column:
 
         return value
 
+    def __str__(self):
+        return '<Column %s %s>' % (self.name, self.ctype)
 
 class Reference:
 
