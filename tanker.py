@@ -24,6 +24,8 @@ try:
 except ImportError:
     psycopg2 = None
 
+__version__ = '0.1'
+
 REGISTRY = OrderedDict()
 COLUMN_TYPE = ('TIMESTAMP', 'DATE', 'FLOAT', 'INTEGER', 'M2O', 'O2M', 'VARCHAR',
                'BOOL')
