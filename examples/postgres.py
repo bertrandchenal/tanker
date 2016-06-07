@@ -4,7 +4,7 @@ from basic import yaml_def, populate, delete
 
 cfg = {
     'db_uri': 'postgresql://login:passwd@hostname/dbname',
-    'definitions': yaml_load(yaml_def)
+    'schema': yaml_load(yaml_def)
 }
 
 

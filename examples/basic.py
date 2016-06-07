@@ -34,7 +34,7 @@ yaml_def = '''
 
 # Or we can use python litteral if the yaml module is missing
 if yaml is None:
-    definitions = [
+    schema = [
         {'table': 'team',
          'columns': {
              'name': 'varchar',
@@ -63,11 +63,11 @@ if yaml is None:
     ]
 
 else:
-    definitions = yaml_load(yaml_def)
+    schema = yaml_load(yaml_def)
 
 cfg = {
     'db_uri': 'sqlite:///test.db',
-    'definitions': definitions,
+    'schema': schema,
 }
 
 # Some example data, in practice this data can come from web scrapers,

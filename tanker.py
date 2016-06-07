@@ -947,9 +947,9 @@ def connect(cfg):
     ctx.cursor = cursor
     ctx.connection = connection
 
-    definitions = cfg.get('definitions')
-    if not REGISTRY and definitions:
-        for table_def in definitions:
+    schema = cfg.get('schema')
+    if not REGISTRY and schema:
+        for table_def in schema:
             ctx.register(table_def)
 
     try:
