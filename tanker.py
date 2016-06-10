@@ -46,6 +46,8 @@ class Context(threading.local):
         self.connection = None
         self.aliases = {'null': None}
         self._fk_cache = {}
+        self.db_tables = set()
+        self.db_fields = set()
 
     def _prepare_query(self, query):
         if self.flavor == 'postgresql':
@@ -111,11 +113,11 @@ class Context(threading.local):
         elif self.flavor == 'postgresql':
             qr = "SELECT table_name FROM information_schema.tables " \
             "WHERE table_schema = 'public'"
-        db_tables = set(name for name, in execute(qr))
+        self.db_tables.update(name for name, in execute(qr))
 
         # Create tables and id columns
         for table in REGISTRY.itervalues():
-            if table.name in db_tables:
+            if table.name in self.db_tables:
                 continue
             if self.flavor == 'sqlite':
                 col_type = 'INTEGER'
@@ -127,17 +129,23 @@ class Context(threading.local):
             logger.info('Table "%s" created', table.name)
 
         # Create other columns
-        for table in REGISTRY.itervalues():
+        for table_name in self.db_tables:
             if self.flavor == 'sqlite':
-                qr = 'PRAGMA table_info("%s")' % table.name
+                qr = 'PRAGMA table_info("%s")' % table_name
                 execute(qr)
                 current_cols = [x[1] for x in self.cursor]
             elif self.flavor == 'postgresql':
                 qr = "SELECT column_name FROM information_schema.columns "\
-                     "WHERE table_name = '%s' " % table.name
+                     "WHERE table_name = '%s' " % table_name
                 execute(qr)
                 current_cols = [x[0] for x in self.cursor]
 
+            self.db_fields.update('%s.%s' % (table_name, c) for c in current_cols)
+
+            if table_name not in REGISTRY:
+                continue
+
+            table = REGISTRY[table_name]
             for col in table.columns:
                 if col.name in current_cols:
                     continue
