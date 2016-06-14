@@ -516,6 +516,7 @@ class View:
 
     def read_df(self, columns=None, pivot=False, filters=None, year=None,
                 disable_acl=False, order=None, limit=None):
+        # TODO remove columns, pivot and year
         if not pandas:
             raise ImportError('The pandas module is required by read_df')
 
@@ -525,6 +526,7 @@ class View:
         read_columns = [f.name for f in self.all_fields]
         df = pandas.DataFrame.from_records(data, columns=read_columns)
 
+        # XXX the code here-under is not needed
         # Re-order columns as per requested
         if columns:
             df = df[columns]
