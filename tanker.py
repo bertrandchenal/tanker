@@ -878,17 +878,18 @@ class Expression(object):
             res = proc(*params)
             return res
 
-
     @classmethod
-    def read(cls, tokens):
+    def read(cls, tokens, top_level=True):
         if len(tokens) == 0:
             raise SyntaxError('unexpected EOF while reading')
         token = tokens.pop(0)
         if token == '(':
             L = []
             while tokens[0] != ')':
-                L.append(cls.read(tokens))
+                L.append(cls.read(tokens, top_level=False))
             tokens.pop(0) # pop off ')'
+            if tokens and top_level:
+                raise ValueError('Unexpected tokens after ending ")"')
             return L
         elif token == ')':
             raise SyntaxError('unexpected )')
