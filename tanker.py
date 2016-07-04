@@ -269,7 +269,11 @@ class ViewField:
 
         else:
             self.col = table.get_column(desc)
-            ctype = ftype = self.col.ctype
+            ctype = self.col.ctype
+            if ctype == 'M2O':
+                ftype = 'INTEGER'
+            else:
+                ftype = ctype
 
         self.ctype = ctype.upper()
         self.ftype = ftype.upper()
