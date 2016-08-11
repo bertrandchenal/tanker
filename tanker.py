@@ -326,8 +326,7 @@ class View:
     def get_field(self, name):
         return self.field_dict.get(name)
 
-    def read(self, year=None, filters=None, disable_acl=False, order=None,
-             limit=None):
+    def read(self, filters=None, disable_acl=False, order=None, limit=None):
         if isinstance(filters, basestring):
             filters = [filters]
         elif filters is None:
@@ -346,9 +345,6 @@ class View:
 
         table_def = self.table.name
         alias = None
-        if year is not None:
-            table_def, alias = self.mk_year_cte(year)
-
         ref_set = ReferenceSet(self.table, table_alias=alias)
 
         for f in self.all_fields:
@@ -518,32 +514,16 @@ class View:
         execute('DROP TABLE tmp')
 
 
-    def read_df(self, columns=None, pivot=False, filters=None, year=None,
-                disable_acl=False, order=None, limit=None):
-        # TODO remove columns, pivot and year
+    def read_df(self, filters=None, disable_acl=False, order=None, limit=None):
         if not pandas:
             raise ImportError('The pandas module is required by read_df')
 
         # Create df from read data
-        data = self.read(year=year, filters=filters, disable_acl=disable_acl,
+        data = self.read(filters=filters, disable_acl=disable_acl,
                          order=order, limit=limit)
         read_columns = [f.name for f in self.all_fields]
         df = pandas.DataFrame.from_records(data, columns=read_columns)
 
-        # XXX the code here-under is not needed
-        # Re-order columns as per requested
-        if columns:
-            df = df[columns]
-        if len(df) == 0 or not pivot:
-            return df
-
-        idx = [f.name for f in self.fields if f.name not in ('param', 'value')]
-        df = pandas.pivot_table(
-            df,
-            columns=['param'],
-            index=idx,
-            values='value')
-        df = df.reset_index()
         return df
 
 
