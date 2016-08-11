@@ -925,7 +925,7 @@ def connect(cfg):
         if psycopg2 is None:
             raise ImportError(
                 'Cannot connect to "%s" without psycopg2 package '\
-                'installed' % cfg.db_uri)
+                'installed' % uri)
         con_info = "dbname='%s' " % uri.dbname
         if uri.hostname:
             con_info += "host='%s' " % uri.hostname
@@ -938,7 +938,7 @@ def connect(cfg):
 
     else:
         raise ValueError('Unsupported scheme "%s" in uri "%s"' % (
-            uri.scheme, cfg.db_uri))
+            uri.scheme, uri))
 
     cursor = connection.cursor()
     ctx.cursor = cursor
