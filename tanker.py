@@ -126,6 +126,7 @@ class Context(threading.local):
             qr = 'CREATE TABLE "%s" (id %s PRIMARY KEY)' % (
                 table.name, col_type)
             execute(qr)
+            self.db_tables.add(table.name)
             logger.info('Table "%s" created', table.name)
 
         # Create other columns
