@@ -415,7 +415,7 @@ class View:
             else:
                 yield col.format(row[idx[0]], encoding=encoding)
 
-    def write(self, data, delete=False):
+    def write(self, data, delete=False, insert=True, update=True):
         # Create tmp
         not_null = lambda n: 'NOT NULL' if n in self.index_fields else ''
         qr = 'CREATE TEMPORARY TABLE tmp (%s)'
@@ -452,52 +452,53 @@ class View:
             executemany(qr, data)
 
         # Insertion step
-        qr = 'INSERT INTO %(main)s (%(fields)s) %(select)s'
-        select = 'SELECT %(data_fields)s FROM tmp '\
-                 'LEFT JOIN %(main_table)s ON ( %(join_cond)s) ' \
-                 'WHERE %(where_cond)s'
-        join_cond = []
-        where_cond = []
+        if insert:
+            qr = 'INSERT INTO %(main)s (%(fields)s) %(select)s'
+            select = 'SELECT %(data_fields)s FROM tmp '\
+                     'LEFT JOIN %(main_table)s ON ( %(join_cond)s) ' \
+                     'WHERE %(where_cond)s'
+            join_cond = []
+            where_cond = []
 
-        for name in self.index_cols:
-            join_cond.append('tmp."%s" = "%s"."%s"' % (
-                name, self.table.name, name))
-            where_cond.append('%s."%s" IS NULL' % (self.table.name, name))
+            for name in self.index_cols:
+                join_cond.append('tmp."%s" = "%s"."%s"' % (
+                    name, self.table.name, name))
+                where_cond.append('%s."%s" IS NULL' % (self.table.name, name))
 
-        select = select % {
-            'data_fields': ', '.join('tmp."%s"' % f for f in self.index_cols),
-            'main_table': self.table.name,
-            'join_cond': ' AND '.join(join_cond),
-            'where_cond': ' AND '.join(where_cond),
-        }
-
-        qr = qr % {
-            'main': self.table.name,
-            'fields': ', '.join('"%s"' % f for f in self.index_cols),
-            'select': select,
-        }
-        execute(qr)
-
-        # Update step
-        self.update_cols = [c.name for c in self.field_map \
-                            if c.name not in self.table.index]
-
-        for name in self.update_cols:
-            if ctx.flavor == 'sqlite':
-                qr = 'UPDATE "%(main)s" SET "%(name)s" = COALESCE((' \
-                      'SELECT "%(name)s" FROM tmp WHERE %(where)s' \
-                     '), %(name)s)'
-            elif ctx.flavor == 'postgresql':
-                qr = 'UPDATE "%(main)s" '\
-                     'SET "%(name)s" = tmp."%(name)s"' \
-                     'FROM tmp WHERE %(where)s'
-
+            data_fields = ', '.join('tmp."%s"' % f for f in self.index_cols)
+            select = select % {
+                'data_fields': data_fields,
+                'main_table': self.table.name,
+                'join_cond': ' AND '.join(join_cond),
+                'where_cond': ' AND '.join(where_cond),
+            }
             qr = qr % {
                 'main': self.table.name,
-                'name': name,
-                'where': ' AND '.join(join_cond),
+                'fields': ', '.join('"%s"' % f for f in self.index_cols),
+                'select': select,
             }
             execute(qr)
+
+        # Update step
+        if update:
+            self.update_cols = [c.name for c in self.field_map \
+                                if c.name not in self.table.index]
+            for name in self.update_cols:
+                if ctx.flavor == 'sqlite':
+                    qr = 'UPDATE "%(main)s" SET "%(name)s" = COALESCE((' \
+                          'SELECT "%(name)s" FROM tmp WHERE %(where)s' \
+                         '), %(name)s)'
+                elif ctx.flavor == 'postgresql':
+                    qr = 'UPDATE "%(main)s" '\
+                         'SET "%(name)s" = tmp."%(name)s"' \
+                         'FROM tmp WHERE %(where)s'
+
+                qr = qr % {
+                    'main': self.table.name,
+                    'name': name,
+                    'where': ' AND '.join(join_cond),
+                }
+                execute(qr)
 
         if delete:
             qr = 'DELETE FROM %(main)s WHERE id IN (' \
