@@ -18,4 +18,5 @@ root of the repository.
 
 ## Roadmap
 
-Add support for parameter substitution, to prevent code injection
+  - Add support for parameter substitution, to prevent code injection
+  - Add a View.delete method
