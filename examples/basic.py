@@ -1,4 +1,4 @@
-from tanker import connect, create_tables, View, logger, yaml_load
+from tanker import connect, create_tables, View, logger, yaml_load, fetch
 
 try:
     import yaml
@@ -78,9 +78,9 @@ teams = [
     ['Blue', 'France'],
 ]
 members = [
-    ['Bob', 'Blue', '001', 'Belgium'],
-    ['Alice', 'Red', '002', 'Belgium'],
-    ['Trudy', 'Blue', '003', 'France'],
+    ['Bob', 'Belgium', 'Blue', '001'],
+    ['Alice', 'Belgium', 'Red', '002'],
+    ['Trudy', 'France', 'Blue', '003'],
 ]
 
 
@@ -96,20 +96,20 @@ def populate():
     # Show team and country ids
     view = View('team', ['id', 'name', 'country.id'])
     res = view.read()
-    logger.info('Teams and county ids')
+    logger.info('Teams and country ids')
     for row in res:
         logger.info('\t' + str(row))
-
 
     # Add members
     view = View('member', [
         ('Name', 'name'),
+        ('Country', 'team.country.name'),
         ('Team', 'team.name'),
         ('Code', 'registration_code'),
-        ('Country', 'team.country.name'),
     ])
     view.write(members)
 
+def query():
     # Read them and check team id
     view = View('member', [
         ('Name', 'name'),
@@ -127,10 +127,19 @@ def populate():
     for row in res:
         logger.info('\t' + str(row))
 
+    # Read with filter
+    view = View('member', ['team.country.name'])
+    res = list(view.read(filters='(= team.country.name "Belgium")'))
+
+    # Read with fetch
+    res = fetch('member', {
+        'team.country.name': 'Belgium',
+    })
+
 def delete():
     # Delete France
     view = View('country')
-    view.write([['Belgium']], delete=True)
+    view.write([['Belgium']], purge=True)
     res = view.read()
     logger.info('Remaining Countries')
     for row in res:
@@ -151,4 +160,5 @@ if __name__ == '__main__':
         create_tables()
 
         populate()
+        query()
         delete()

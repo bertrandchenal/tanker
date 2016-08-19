@@ -1,13 +1,10 @@
 from collections import OrderedDict, defaultdict
 from contextlib import contextmanager
-from itertools import chain
 from urlparse import urlparse
 import csv
 import datetime
 import io
 import logging
-import logging
-import os
 import re
 import shlex
 import sqlite3
@@ -39,9 +36,12 @@ logger.setLevel(logging.INFO)
 
 class Context(threading.local):
 
-    def __init__(self, flavor=None):
+    def __init__(self):
         super(Context, self).__init__()
-        self.flavor = flavor
+        self.reset()
+
+    def reset(self):
+        self.flavor = None
         self.cursor = None
         self.connection = None
         self.aliases = {'null': None}
@@ -89,7 +89,7 @@ class Context(threading.local):
         self._fk_cache = {}
 
     def resolve_fk(self, fields, values):
-        remote_table = fields[0].ref.remote_table.name
+        remote_table = fields[0].col.get_foreign_table().name
         key = (remote_table,) + fields
         if key not in self._fk_cache:
             read_fields = []
@@ -113,7 +113,6 @@ class Context(threading.local):
         elif self.flavor == 'postgresql':
             qr = "SELECT table_name FROM information_schema.tables " \
             "WHERE table_schema = 'public'"
-        self.db_tables.update(name for name, in execute(qr))
 
         # Create tables and id columns
         for table in REGISTRY.itervalues():
@@ -141,7 +140,8 @@ class Context(threading.local):
                 execute(qr)
                 current_cols = [x[0] for x in self.cursor]
 
-            self.db_fields.update('%s.%s' % (table_name, c) for c in current_cols)
+            self.db_fields.update(
+                '%s.%s' % (table_name, c) for c in current_cols)
 
             if table_name not in REGISTRY:
                 continue
@@ -240,13 +240,30 @@ def executemany(query, params):
     ctx.cursor.executemany(query, params)
     return ctx.cursor
 
+
 def copy_from(buff, table, **kwargs):
     log_sql('"COPY FROM" called on table %s' % table)
     ctx.cursor.copy_from(buff, table, **kwargs)
     return ctx.cursor
 
+
 def create_tables():
     ctx.create_tables()
+
+def fetch(tablename, filter_by):
+    view = View(tablename)
+    values = next(view.read(filter_by=filter_by), None)
+    if values is None:
+        return
+    keys = (f.name for f in view.fields)
+    return dict(zip(keys, values))
+
+
+def save(tablename, data):
+    fields = data.keys()
+    view = View(tablename, fields)
+    view.write([data])
+
 
 class ViewField:
 
@@ -259,7 +276,6 @@ class ViewField:
             ftype = 'INTEGER'
             self.ref = ReferenceSet(table).get_ref(desc)
             remote_col = self.ref.remote_table.get_column(self.ref.remote_field)
-             #TODO assert that remote_col is unique
             ctype = remote_col.ctype
             self.col = table.get_column(desc.split('.')[0])
 
@@ -272,12 +288,17 @@ class ViewField:
             self.col = table.get_column(desc)
             ctype = self.col.ctype
             if ctype == 'M2O':
-                ftype = 'INTEGER'
+                ctype = ftype = 'INTEGER'
             else:
                 ftype = ctype
 
         self.ctype = ctype.upper()
         self.ftype = ftype.upper()
+
+    def __repr__(self):
+        if self.name != self.desc:
+            return '<ViewField %s (%s)>' % (self.desc, self.name)
+        return '<ViewField %s>' % self.desc
 
 
 class View:
@@ -327,11 +348,15 @@ class View:
     def get_field(self, name):
         return self.field_dict.get(name)
 
-    def read(self, filters=None, disable_acl=False, order=None, limit=None):
+    def read(self, filters=None, filter_by=None, disable_acl=False, order=None,
+             limit=None):
+        # filters can be a query string or a list of query string
         if isinstance(filters, basestring):
             filters = [filters]
         elif filters is None:
             filters = []
+        # filter_by is a dict containing strict equality conditions
+        filter_by = filter_by or {}
 
         acl_rules = ctx.cfg.get('acl_rules')
         if acl_rules and not disable_acl:
@@ -348,6 +373,7 @@ class View:
         alias = None
         ref_set = ReferenceSet(self.table, table_alias=alias)
 
+        # Add select fields
         for f in self.all_fields:
             if f.ftype == 'LITERAL':
                 selects.append("'%s' as %s" % (f.value, f.desc))
@@ -355,18 +381,25 @@ class View:
                 ref = ref_set.add(f.desc)
                 selects.append('%s.%s' % (ref.join_alias, ref.remote_field))
 
+        # Parse expression filters
         for line in filters:
             fltr = Expression(self, ref_set)
             sql_cond = fltr.eval(line)
             where.append(sql_cond)
             qr_args = qr_args + tuple(fltr.args)
 
+        # Add simple filter_by conditions
+        for key, val in filter_by.items():
+            ref = ref_set.add(key)
+            field = '%s.%s' % (ref.join_alias, ref.remote_field)
+            where.append('%s = %%s' % field)
+            qr_args = qr_args + (val,)
+
         qr = 'SELECT %(selects)s FROM %(main_table)s'
         qr = qr % {
             'selects': ', '.join(selects),
             'main_table': table_def,
         }
-
         qr += ' ' + ' '.join(ref_set.get_sql_joins())
 
         if where:
@@ -411,11 +444,17 @@ class View:
             if col.ctype == 'M2O':
                 fields = tuple(f for f in self.field_map[col])
                 values = tuple(row[i] for i in idx)
-                yield ctx.resolve_fk(fields, values)
+                if len(fields) == 1 and fields[0].ctype == 'INTEGER':
+                    # Handle update of fk by id
+                    yield int(row[idx[0]])
+                else:
+                    # Resole foreign key reference
+                    yield ctx.resolve_fk(fields, values)
             else:
                 yield col.format(row[idx[0]], encoding=encoding)
 
-    def write(self, data, delete=False, insert=True, update=True):
+    @contextmanager
+    def _prepare_write(self, data):
         # Create tmp
         not_null = lambda n: 'NOT NULL' if n in self.index_fields else ''
         qr = 'CREATE TEMPORARY TABLE tmp (%s)'
@@ -451,70 +490,94 @@ class View:
             data = [list(self.format_line(row)) for row in data]
             executemany(qr, data)
 
-        # Insertion step
-        if insert:
-            qr = 'INSERT INTO %(main)s (%(fields)s) %(select)s'
-            select = 'SELECT %(data_fields)s FROM tmp '\
-                     'LEFT JOIN %(main_table)s ON ( %(join_cond)s) ' \
-                     'WHERE %(where_cond)s'
-            join_cond = []
-            where_cond = []
+        # Create join conditions
+        join_cond = []
+        for name in self.index_cols:
+            join_cond.append('tmp."%s" = "%s"."%s"' % (
+                name, self.table.name, name))
 
-            for name in self.index_cols:
-                join_cond.append('tmp."%s" = "%s"."%s"' % (
-                    name, self.table.name, name))
-                where_cond.append('%s."%s" IS NULL' % (self.table.name, name))
-
-            data_fields = ', '.join('tmp."%s"' % f for f in self.index_cols)
-            select = select % {
-                'data_fields': data_fields,
-                'main_table': self.table.name,
-                'join_cond': ' AND '.join(join_cond),
-                'where_cond': ' AND '.join(where_cond),
-            }
-            qr = qr % {
-                'main': self.table.name,
-                'fields': ', '.join('"%s"' % f for f in self.index_cols),
-                'select': select,
-            }
-            execute(qr)
-
-        # Update step
-        if update:
-            self.update_cols = [c.name for c in self.field_map \
-                                if c.name not in self.table.index]
-            for name in self.update_cols:
-                if ctx.flavor == 'sqlite':
-                    qr = 'UPDATE "%(main)s" SET "%(name)s" = COALESCE((' \
-                          'SELECT "%(name)s" FROM tmp WHERE %(where)s' \
-                         '), %(name)s)'
-                elif ctx.flavor == 'postgresql':
-                    qr = 'UPDATE "%(main)s" '\
-                         'SET "%(name)s" = tmp."%(name)s"' \
-                         'FROM tmp WHERE %(where)s'
-
-                qr = qr % {
-                    'main': self.table.name,
-                    'name': name,
-                    'where': ' AND '.join(join_cond),
-                }
-                execute(qr)
-
-        if delete:
-            qr = 'DELETE FROM %(main)s WHERE id IN (' \
-                 'SELECT %(main)s.id FROM %(main)s ' \
-                 'LEFT JOIN tmp on %(join_cond)s ' \
-                 'WHERE tmp.%(field)s IS NULL)'
-            qr = qr % {
-                'main': self.table.name,
-                'join_cond': ' AND '.join(join_cond),
-                'field': self.index_cols[0]
-            }
-            execute(qr)
+        yield join_cond
 
         # Clean tmp table
         execute('DROP TABLE tmp')
 
+    def delete(self, data):
+        with self._prepare_write(data) as join_cond:
+            qr = 'DELETE FROM %(main)s WHERE id IN (' \
+                 'SELECT %(main)s.id FROM %(main)s ' \
+                 'INNER JOIN tmp on %(join_cond)s)'
+            qr = qr % {
+                'main': self.table.name,
+                'join_cond': ' AND '.join(join_cond),
+            }
+            execute(qr)
+
+    def write(self, data, purge=False, insert=True, update=True):
+        with self._prepare_write(data) as join_cond:
+            # Insertion step
+            if insert:
+                self._insert(join_cond)
+            if update:
+                self._update(join_cond)
+            if purge:
+                self._purge(join_cond)
+
+    def _insert(self, join_cond):
+        qr = 'INSERT INTO %(main)s (%(fields)s) %(select)s'
+        select = 'SELECT %(tmp_fields)s FROM tmp '\
+                 'LEFT JOIN %(main_table)s ON ( %(join_cond)s) ' \
+                 'WHERE %(where_cond)s'
+
+        # Concider only new rows
+        where_cond = []
+        for name in self.index_cols:
+            where_cond.append('%s."%s" IS NULL' % (self.table.name, name))
+
+        tmp_fields = ', '.join('tmp."%s"' % f.name for f in self.field_map)
+        select = select % {
+            'tmp_fields': tmp_fields,
+            'main_table': self.table.name,
+            'join_cond': ' AND '.join(join_cond),
+            'where_cond': ' AND '.join(where_cond),
+        }
+        qr = qr % {
+            'main': self.table.name,
+            'fields': ', '.join('"%s"' % f.name for f in self.field_map),
+            'select': select,
+        }
+        execute(qr)
+
+    def _update(self, join_cond):
+        update_cols = [c.name for c in self.field_map \
+                       if c.name not in self.table.index]
+        for name in update_cols:
+            if ctx.flavor == 'sqlite':
+                qr = 'UPDATE "%(main)s" SET "%(name)s" = COALESCE((' \
+                      'SELECT "%(name)s" FROM tmp WHERE %(where)s' \
+                     '), %(name)s)'
+            elif ctx.flavor == 'postgresql':
+                qr = 'UPDATE "%(main)s" '\
+                     'SET "%(name)s" = tmp."%(name)s"' \
+                     'FROM tmp WHERE %(where)s'
+
+            qr = qr % {
+                'main': self.table.name,
+                'name': name,
+                'where': ' AND '.join(join_cond),
+            }
+            execute(qr)
+
+    def _purge(self, join_cond):
+        qr = 'DELETE FROM %(main)s WHERE id IN (' \
+             'SELECT %(main)s.id FROM %(main)s ' \
+             'LEFT JOIN tmp on %(join_cond)s ' \
+             'WHERE tmp.%(field)s IS NULL)'
+        qr = qr % {
+            'main': self.table.name,
+            'join_cond': ' AND '.join(join_cond),
+            'field': self.index_cols[0]
+        }
+        execute(qr)
 
     def read_df(self, filters=None, disable_acl=False, order=None, limit=None):
         if not pandas:
@@ -527,7 +590,6 @@ class View:
         df = pandas.DataFrame.from_records(data, columns=read_columns)
 
         return df
-
 
 class Table:
 
@@ -554,22 +616,6 @@ class Table:
     def get_column(self, name):
         return self._column_dict[name]
 
-    def first(self, field, **where):
-        qr = 'SELECT %s FROM %s' % (field, self.name)
-        args = tuple()
-
-        if where:
-            conds = ['%s = %%s' % key for key in where]
-            for val in where.values():
-                args = args + (val,)
-            qr += ' WHERE %s ' % ' AND '.join(conds)
-        qr += 'LIMIT 1'
-
-        res = next(execute(qr, args), None)
-        if res is None:
-            return None
-        return res[0]
-
     def get_foreign_values(self, desc):
         rel_name, field = desc.split('.')
         rel = self.get_column(rel_name)
@@ -581,11 +627,13 @@ class Table:
     def get(cls, table_name):
         return REGISTRY[table_name]
 
+    def __repr__(self):
+        return '<Table %s>' % self.name
+
 
 class Column:
 
     def __init__(self, name, ctype):
-
         if ' ' in ctype:
             ctype, self.fk = ctype.split()
         else:
@@ -629,7 +677,7 @@ class Column:
                 value = str(value)
             value = value.strip()
             if encoding is not None:
-                value = value.encode('utf-8')
+                value = value.encode(encoding)
         elif self.ctype == 'TIMESTAMP' and hasattr(value, 'timetuple'):
             value = datetime.datetime(*value.timetuple()[:6])
         elif self.ctype == 'DATE' and hasattr(value, 'timetuple'):
@@ -637,8 +685,9 @@ class Column:
 
         return value
 
-    def __str__(self):
+    def __repr__(self):
         return '<Column %s %s>' % (self.name, self.ctype)
+
 
 class Reference:
 
@@ -649,7 +698,7 @@ class Reference:
         self.join_alias = join_alias
         self.column = column
 
-    def __str__(self):
+    def __repr__(self):
         return '<Reference table=%s field=%s>' % (
             self.remote_table.name,
             self.remote_field)
@@ -914,6 +963,7 @@ def parse_uri(db_uri):
 @contextmanager
 def connect(cfg):
     uri = parse_uri(cfg.get('db_uri', 'sqlite:///:memory:'))
+    ctx.reset()
     ctx.flavor = uri.scheme
     ctx.cfg = cfg
 
@@ -953,16 +1003,13 @@ def connect(cfg):
 
     try:
         yield
-
     except:
-        connection.close()
+        connection.rollback()
         raise
-
     else:
         connection.commit()
-        connection.close()
-
     finally:
+        connection.close()
         ctx.reset_cache()
 
 
