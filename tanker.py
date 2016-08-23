@@ -992,25 +992,19 @@ def connect(cfg):
         raise ValueError('Unsupported scheme "%s" in uri "%s"' % (
             uri.scheme, uri))
 
-    cursor = connection.cursor()
-    ctx.cursor = cursor
     ctx.connection = connection
+    with connection:
+        ctx.cursor = connection.cursor()
 
-    schema = cfg.get('schema')
-    if not REGISTRY and schema:
-        for table_def in schema:
-            ctx.register(table_def)
+        schema = cfg.get('schema')
+        if not REGISTRY and schema:
+            for table_def in schema:
+                ctx.register(table_def)
 
-    try:
-        yield
-    except:
-        connection.rollback()
-        raise
-    else:
-        connection.commit()
-    finally:
-        connection.close()
-        ctx.reset_cache()
+        try:
+            yield connection
+        finally:
+            ctx.reset_cache()
 
 
 def yaml_load(stream):
