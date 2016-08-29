@@ -113,6 +113,7 @@ class Context(threading.local):
         elif self.flavor == 'postgresql':
             qr = "SELECT table_name FROM information_schema.tables " \
             "WHERE table_schema = 'public'"
+        self.db_tables.update(name for name, in execute(qr))
 
         # Create tables and id columns
         for table in REGISTRY.itervalues():
