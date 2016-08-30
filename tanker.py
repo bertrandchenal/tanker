@@ -471,7 +471,8 @@ class View:
             data = [[record.get(f.name) for f in self.all_fields] \
                     for record in data]
         elif pandas and isinstance(data, pandas.DataFrame):
-            data = data.values
+            fields = [f.name for f in self.all_fields]
+            data = data[fields].values
 
         # Fill tmp
         if ctx.flavor == 'postgresql':
