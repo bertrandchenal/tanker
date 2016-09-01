@@ -2,7 +2,8 @@ import os
 import pytest
 import yaml
 
-from tanker import connect, create_tables, View, logger, yaml_load, fetch, save
+from tanker import (connect, create_tables, View, logger, yaml_load, fetch,
+                    save, execute)
 
 DB_FILE = ':memory:' #'test.db'
 logger.setLevel('ERROR')
@@ -46,16 +47,30 @@ members = [
 ]
 
 
-@pytest.yield_fixture(scope='function')
-def session():
-    # Remove previous db
-    if DB_FILE != ':memory:' and os.path.exists(DB_FILE):
-        os.unlink(DB_FILE)
+@pytest.yield_fixture(scope='function', params=['sqlite', 'pg'])
+def session(request):
+    if request.param == 'sqlite':
+        # Remove previous db
+        if DB_FILE != ':memory:' and os.path.exists(DB_FILE):
+            os.unlink(DB_FILE)
 
-    cfg = {
-        'db_uri': 'sqlite:///' + DB_FILE,
-        'schema': schema,
-    }
+        cfg = {
+            'db_uri': 'sqlite:///' + DB_FILE,
+            'schema': schema,
+        }
+
+    elif request.param == 'pg':
+        cfg = {
+            'db_uri': 'postgresql:///tanker_test',
+            'schema': schema,
+        }
+        with connect(cfg):
+            execute('''
+            DROP TABLE member;
+            DROP TABLE team;
+            DROP TABLE country;
+            ''')
+    # for cfg in (sqlite_cfg, pg_cfg):
     with connect(cfg):
         create_tables()
         View('team', ['name', 'country.name']).write(teams)
