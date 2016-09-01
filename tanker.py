@@ -105,6 +105,7 @@ class Context(threading.local):
         elif self.flavor == 'postgresql':
             qr = "SELECT table_name FROM information_schema.tables " \
             "WHERE table_schema = 'public'"
+        self.db_tables.update(name for name, in execute(qr))
 
         # Create tables and id columns
         for table in REGISTRY.itervalues():
@@ -465,7 +466,8 @@ class View:
             data = [[record.get(f.name) for f in self.all_fields] \
                     for record in data]
         elif pandas and isinstance(data, pandas.DataFrame):
-            data = data.values
+            fields = [f.name for f in self.all_fields]
+            data = data[fields].values
 
         # Fill tmp
         if ctx.flavor == 'postgresql':
@@ -1009,25 +1011,19 @@ def connect(cfg):
         raise ValueError('Unsupported scheme "%s" in uri "%s"' % (
             uri.scheme, uri))
 
-    cursor = connection.cursor()
-    ctx.cursor = cursor
     ctx.connection = connection
+    with connection:
+        ctx.cursor = connection.cursor()
 
-    schema = cfg.get('schema')
-    if not REGISTRY and schema:
-        for table_def in schema:
-            ctx.register(table_def)
+        schema = cfg.get('schema')
+        if not REGISTRY and schema:
+            for table_def in schema:
+                ctx.register(table_def)
 
-    try:
-        yield
-    except:
-        connection.rollback()
-        raise
-    else:
-        connection.commit()
-    finally:
-        connection.close()
-        ctx.reset_cache()
+        try:
+            yield connection
+        finally:
+            ctx.reset_cache()
 
 
 def yaml_load(stream):
