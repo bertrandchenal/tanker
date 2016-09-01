@@ -67,14 +67,6 @@ class Context(threading.local):
             query = buf[:-2]
             return query
 
-    def mk_avail_param(self, name, values):
-        table_def = {
-            'table': name,
-            'columns': {'name': 'varchar'},
-        }
-
-        self.register(table_def)
-
     def register(self, table_def):
         values = table_def.get('values')
         columns = [Column(*c) for c in table_def['columns'].items()]
@@ -348,8 +340,11 @@ class View:
     def get_field(self, name):
         return self.field_dict.get(name)
 
-    def read(self, filters=None, filter_by=None, disable_acl=False, order=None,
-             limit=None):
+    def _build_filter_cond(self, filters=None, filter_by=None):
+        where = []
+        qr_args = tuple()
+        ref_set = ReferenceSet(self.table)
+
         # filters can be a query string or a list of query string
         if isinstance(filters, basestring):
             filters = [filters]
@@ -357,30 +352,6 @@ class View:
             filters = []
         # filter_by is a dict containing strict equality conditions
         filter_by = filter_by or {}
-
-        acl_rules = ctx.cfg.get('acl_rules')
-        if acl_rules and not disable_acl:
-            rule = ctx.access_rules.get(self.table.name)
-            if rule:
-                filters = filters[:]
-                filters.extend(rule['filters'])
-
-        selects = []
-        where = []
-        qr_args = tuple()
-
-        table_def = self.table.name
-        alias = None
-        ref_set = ReferenceSet(self.table, table_alias=alias)
-
-        # Add select fields
-        for f in self.all_fields:
-            if f.ftype == 'LITERAL':
-                selects.append("'%s' as %s" % (f.value, f.desc))
-            else:
-                ref = ref_set.add(f.desc)
-                selects.append('%s.%s' % (ref.join_alias, ref.remote_field))
-
         # Parse expression filters
         for line in filters:
             fltr = Expression(self, ref_set)
@@ -395,10 +366,34 @@ class View:
             where.append('%s = %%s' % field)
             qr_args = qr_args + (val,)
 
+        return where, qr_args, ref_set
+
+    def read(self, filters=None, filter_by=None, disable_acl=False, order=None,
+             limit=None):
+
+        acl_rules = ctx.cfg.get('acl_rules')
+        if acl_rules and not disable_acl:
+            rule = ctx.access_rules.get(self.table.name)
+            if rule:
+                filters = filters[:]
+                filters.extend(rule['filters'])
+
+        selects = []
+        where, qr_args, ref_set = self._build_filter_cond(
+            filters=filters, filter_by=filter_by)
+
+        # Add select fields
+        for f in self.all_fields:
+            if f.ftype == 'LITERAL':
+                selects.append("'%s' as %s" % (f.value, f.desc))
+            else:
+                ref = ref_set.add(f.desc)
+                selects.append('%s.%s' % (ref.join_alias, ref.remote_field))
+
         qr = 'SELECT %(selects)s FROM %(main_table)s'
         qr = qr % {
             'selects': ', '.join(selects),
-            'main_table': table_def,
+            'main_table': self.table.name,
         }
         qr += ' ' + ' '.join(ref_set.get_sql_joins())
 
@@ -501,16 +496,38 @@ class View:
         # Clean tmp table
         execute('DROP TABLE tmp')
 
-    def delete(self, data):
-        with self._prepare_write(data) as join_cond:
-            qr = 'DELETE FROM %(main)s WHERE id IN (' \
-                 'SELECT %(main)s.id FROM %(main)s ' \
-                 'INNER JOIN tmp on %(join_cond)s)'
+    def delete(self, data=None, filters=None, filter_by=None):
+        if not any((data, filters, filter_by)):
+            raise ValueError('No deletion criteria given')
+
+        if data and (filters or filter_by):
+            raise ValueError('Deletion by both data and filter not supported')
+
+        where, qr_args, ref_set = self._build_filter_cond(
+            filters=filters, filter_by=filter_by)
+
+        if data:
+            with self._prepare_write(data) as join_cond:
+                qr = 'DELETE FROM %(main)s WHERE id IN (' \
+                     'SELECT %(main)s.id FROM %(main)s ' \
+                     'INNER JOIN tmp on %(join_cond)s)'
+                qr = qr % {
+                    'main': self.table.name,
+                    'join_cond': ' AND '.join(join_cond),
+                }
+                execute(qr)
+        else:
+            qr = ('DELETE FROM %(main_table)s WHERE id IN ('
+                 'SELECT %(main_table)s.id FROM %(main_table)s '
+                  '%(joins)s '
+                  'WHERE %(where)s)')
+
             qr = qr % {
-                'main': self.table.name,
-                'join_cond': ' AND '.join(join_cond),
+                'main_table': self.table.name,
+                'where': ' AND '.join(where),
+                'joins': ' '.join(ref_set.get_sql_joins())
             }
-            execute(qr)
+            execute(qr, qr_args)
 
     def write(self, data, purge=False, insert=True, update=True):
         with self._prepare_write(data) as join_cond:
