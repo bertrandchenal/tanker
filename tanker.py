@@ -23,7 +23,6 @@ except ImportError:
 
 __version__ = '0.1'
 
-REGISTRY = OrderedDict()
 COLUMN_TYPE = ('TIMESTAMP', 'DATE', 'FLOAT', 'INTEGER', 'M2O', 'O2M', 'VARCHAR',
                'BOOL')
 QUOTE_SEPARATION = re.compile(r"(.*?)('.*?')", re.DOTALL)
@@ -34,20 +33,23 @@ logging.basicConfig(format=fmt)
 logger = logging.getLogger('tanker')
 logger.setLevel(logging.INFO)
 
+
 class Context(threading.local):
 
     def __init__(self):
         super(Context, self).__init__()
         self.reset()
 
-    def reset(self):
-        self.flavor = None
-        self.cursor = None
-        self.connection = None
+    def reset(self, flavor=None, connection=None, cfg=None):
+        self.flavor = flavor
+        self.connection = connection
+        self.cursor = connection and connection.cursor()
         self.aliases = {'null': None}
+        self.cfg = cfg
         self._fk_cache = {}
         self.db_tables = set()
         self.db_fields = set()
+        self.registry = OrderedDict()
 
     def _prepare_query(self, query):
         if self.flavor == 'postgresql':
@@ -112,7 +114,7 @@ class Context(threading.local):
         self.db_tables.update(name for name, in execute(qr))
 
         # Create tables and id columns
-        for table in REGISTRY.itervalues():
+        for table in self.registry.itervalues():
             if table.name in self.db_tables:
                 continue
             if self.flavor == 'sqlite':
@@ -140,10 +142,10 @@ class Context(threading.local):
             self.db_fields.update(
                 '%s.%s' % (table_name, c) for c in current_cols)
 
-            if table_name not in REGISTRY:
+            if table_name not in self.registry:
                 continue
 
-            table = REGISTRY[table_name]
+            table = self.registry[table_name]
             for col in table.columns:
                 if col.name in current_cols:
                     continue
@@ -166,7 +168,7 @@ class Context(threading.local):
 
         indexes = set(name for name, in execute(qr))
 
-        for table in REGISTRY.itervalues():
+        for table in self.registry.itervalues():
             if not table.index:
                 continue
 
@@ -184,7 +186,7 @@ class Context(threading.local):
             db_cons = set(name for name, in execute(qr))
 
             unique_qr = 'ALTER TABLE %s ADD CONSTRAINT %s UNIQUE (%s)';
-            for table in REGISTRY.itervalues():
+            for table in self.registry.itervalues():
                 for cols in table.unique:
                     cons_name = 'unique_' + '_'.join(cols)
                     if len(cons_name) > 63:
@@ -195,7 +197,7 @@ class Context(threading.local):
                     execute(unique_qr % (table.name, cons_name, cons_cols))
 
         # Add pre-defined data
-        for table in REGISTRY.itervalues():
+        for table in self.registry.itervalues():
             if not table.values:
                 continue
             view = View(table.name, fields=table.values[0].keys())
@@ -636,7 +638,7 @@ class Table:
                 raise ValueError('No index defined on %s' % name)
         self.index = [index] if isinstance(index, basestring) else index
         self._column_dict = dict((col.name, col) for col in self.columns)
-        REGISTRY[name] = self
+        ctx.registry[name] = self
 
     def get_column(self, name):
         return self._column_dict[name]
@@ -650,7 +652,7 @@ class Table:
 
     @classmethod
     def get(cls, table_name):
-        return REGISTRY[table_name]
+        return ctx.registry[table_name]
 
     def __repr__(self):
         return '<Table %s>' % self.name
@@ -988,17 +990,15 @@ def parse_uri(db_uri):
 @contextmanager
 def connect(cfg):
     uri = parse_uri(cfg.get('db_uri', 'sqlite:///:memory:'))
-    ctx.reset()
-    ctx.flavor = uri.scheme
-    ctx.cfg = cfg
+    flavor = uri.scheme
 
-    if ctx.flavor == 'sqlite':
+    if flavor == 'sqlite':
         db_path = uri.dbname
         connection = sqlite3.connect(db_path,
                                      detect_types=sqlite3.PARSE_DECLTYPES)
         connection.execute('PRAGMA foreign_keys=ON')
 
-    elif ctx.flavor == 'postgresql':
+    elif flavor == 'postgresql':
         if psycopg2 is None:
             raise ImportError(
                 'Cannot connect to "%s" without psycopg2 package '\
@@ -1017,12 +1017,11 @@ def connect(cfg):
         raise ValueError('Unsupported scheme "%s" in uri "%s"' % (
             uri.scheme, uri))
 
-    ctx.connection = connection
     with connection:
-        ctx.cursor = connection.cursor()
+        ctx.reset(flavor=flavor, connection=connection, cfg=cfg)
 
         schema = cfg.get('schema')
-        if not REGISTRY and schema:
+        if not ctx.registry and schema:
             for table_def in schema:
                 ctx.register(table_def)
 
