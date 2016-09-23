@@ -77,8 +77,12 @@ class Context(threading.local):
               unique=table_def.get('unique'),
         )
 
-    def reset_cache(self):
-        self._fk_cache = {}
+    def reset_cache(self, table=None):
+        if table is None:
+            self._fk_cache = {}
+        else:
+            if table in self._fk_cache:
+                del self._fk_cache[table]
 
     def resolve_fk(self, fields, values):
         remote_table = fields[0].col.get_foreign_table().name
@@ -497,6 +501,8 @@ class View:
 
         # Clean tmp table
         execute('DROP TABLE tmp')
+        # Clean cache for current table
+        ctx.reset_cache(self.table.name)
 
     def delete(self, data=None, filters=None, filter_by=None):
         if not any((data, filters, filter_by)):
