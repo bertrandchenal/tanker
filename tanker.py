@@ -260,12 +260,23 @@ def format_args(qr_params, args):
         if not isinstance(prm, ExpressionParam):
             yield prm
             continue
-        # Read value from args, auto-magically expand lists
+        # Read value from cfg and args
         key = prm[1:-1]
+        # Extract dots
+        if '.' in key:
+            attrs = key.split('.')
+            key, attrs = attrs[0], attrs[1:]
+        else:
+            attrs = []
+        # Get value from cfg and args
         if key in ctx.cfg:
             value = ctx.cfg[key]
         else:
             value = args[key]
+        # Eval dotted attributes
+        for name in attrs:
+            value = getattr(value, name)
+        # auto-magically expand lists
         if isinstance(value, (tuple, list)):
             for item in value:
                 yield item
@@ -978,8 +989,12 @@ class Expression(object):
                 raise ValueError('"%s" not understood' % exp)
 
         elif isinstance(exp, ExpressionParam):
+            if '.' in exp:
+                prefix = exp.split('.')[0] + '}'
+            else:
+                prefix = exp
             self.params.append(exp)
-            return exp
+            return prefix
 
         elif not isinstance(exp, list):
             return self.emit_literal(exp)

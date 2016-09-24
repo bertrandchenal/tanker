@@ -1,4 +1,3 @@
-
 from tanker import View, Expression, ctx
 from base_test import session
 
@@ -34,3 +33,12 @@ def test_args(session):
     cond = '(in name {names})'
     rows = view.read(cond).args(names=['Red', 'Blue'])
     assert sorted(rows) == [('Blue',), ('Red',)]
+
+    # Test with an object
+    cond = '(in name {obj.name})'
+    class Obj:
+        pass
+    obj = Obj()
+    obj.name = 'Blue'
+    rows = view.read(cond).args(obj=obj)
+    assert sorted(rows) == [('Blue',)]
