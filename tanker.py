@@ -1,5 +1,6 @@
 from collections import OrderedDict, defaultdict
 from contextlib import contextmanager
+from itertools import chain
 from urlparse import urlparse
 import csv
 import datetime
@@ -222,22 +223,55 @@ def log_sql(query, params=None):
 ctx = Context()
 
 
-def execute(query, params=None):
-    query = ctx._prepare_query(query)
-    log_sql(query, params)
-
+def execute(query, args=None, params=None):
     if params:
-        ctx.cursor.execute(query, params)
+        query = format_query(query, params)
+        args = tuple(format_params(args, params))
+    log_sql(query, args)
+    query = ctx._prepare_query(query)
+    if args:
+        ctx.cursor.execute(query, args)
     else:
         ctx.cursor.execute(query)
     return ctx.cursor
 
-
-def executemany(query, params):
+def executemany(query, args, params=None):
+    if params:
+        query = format_query(query, params)
+        args = tuple(format_params(args, params))
     query = ctx._prepare_query(query)
-    log_sql(query, params)
-    ctx.cursor.executemany(query, params)
+    log_sql(query, args)
+    ctx.cursor.executemany(query, args)
     return ctx.cursor
+
+def format_query(qr, params):
+    if not params:
+        return qr
+    to_format = {}
+    for key, value in chain(params.items(), ctx.cfg.items()):
+        if isinstance(value, (tuple, list)):
+            to_format[key] = ','.join('%s' for _ in value)
+        else:
+            to_format[key] = '%s'
+    return qr.format(**to_format)
+
+def format_params(qr_args, params):
+    for a in qr_args:
+        if not isinstance(a, ExpressionParam):
+            yield a
+            continue
+        # Read value from params, auto-magically expand lists
+        key = a[1:-1]
+        if key in ctx.cfg:
+            value = ctx.cfg[key]
+        else:
+            value = params[key]
+        if isinstance(value, (tuple, list)):
+            for item in value:
+                yield item
+        else:
+            yield value
+
 
 
 def copy_from(buff, table, **kwargs):
@@ -375,8 +409,8 @@ class View:
 
         return where, qr_args, ref_set
 
-    def read(self, filters=None, filter_by=None, disable_acl=False, order=None,
-             limit=None):
+    def read(self, filters=None, args=None, filter_by=None, disable_acl=False,
+             order=None, limit=None):
 
         acl_rules = ctx.cfg.get('acl_rules')
         if acl_rules and not disable_acl:
@@ -434,11 +468,9 @@ class View:
             qr += ' ORDER BY ' + ', '.join(order_by)
 
         if limit is not None:
-            qr += ' LIMIT %s'
-            qr_args = qr_args + (limit,)
+            qr += ' LIMIT %s' % int(limit)
 
-        res = execute(qr, qr_args)
-        return res
+        return Cursor(qr, qr_args, args)
 
     def format_line(self, row, encoding=None):
         for col in self.field_map:
@@ -617,6 +649,33 @@ class View:
         df = pandas.DataFrame.from_records(data, columns=read_columns)
 
         return df
+
+
+class Cursor:
+
+    def __init__(self, qr, qr_args, kwargs):
+        self.db_cursor = None
+        self.qr = qr
+        self.qr_args = qr_args
+        self._kwargs = kwargs
+
+    def args(self, *args, **kwargs):
+        self._arg = args
+        self._kwargs = kwargs
+        # reset db_cursor to allow to call args & re-launch query
+        self.db_cursor = None
+        return self
+
+    def __iter__(self):
+        if self.db_cursor is not None:
+            return self.db_cursor
+
+        self.db_cursor = execute(self.qr, self.qr_args, self._kwargs)
+        return self.db_cursor
+
+    def next(self):
+        return next(iter(self))
+
 
 class Table:
 
@@ -806,6 +865,9 @@ class ReferenceSet:
 class ExpressionSymbol(str):
     pass
 
+class ExpressionParam(str):
+    pass
+
 class Expression(object):
     # Inspired by http://norvig.com/lispy.html
 
@@ -878,7 +940,7 @@ class Expression(object):
         self.args = []
         # Parse string
         lexer = shlex.shlex(exp.encode('utf-8'))
-        lexer.wordchars += '.!=<>:'
+        lexer.wordchars += '.!=<>:{}'
         ast = self.read(list(lexer))
 
         # Eval ast wrt to env
@@ -890,14 +952,6 @@ class Expression(object):
             # Try to resolve x wrt current view
             if exp.lower() in self.builtins:
                 return self.builtins[exp.lower()]
-
-            elif exp.startswith(':'):
-                # Search for config content
-                items = exp[1:].split('.')
-                parent = ctx.cfg
-                for item in items:
-                    parent = getattr(parent, item)
-                return self.emit_literal(parent)
 
             ref = None
             if exp.startswith('_parent.'):
@@ -924,6 +978,10 @@ class Expression(object):
                 return res
             else:
                 raise ValueError('"%s" not understood' % exp)
+
+        elif isinstance(exp, ExpressionParam):
+            self.args.append(exp)
+            return exp
 
         elif not isinstance(exp, list):
             return self.emit_literal(exp)
@@ -963,6 +1021,10 @@ class Expression(object):
         for q in ('"', "'"):
             if token[0] == q and token[-1] == q:
                 return token[1:-1]
+
+        if len(token) > 1 and token[0] == '{' and token[-1] == '}':
+            return ExpressionParam(token)
+
         try:
             return int(token)
         except ValueError:
@@ -980,7 +1042,6 @@ class Expression(object):
 
         self.args.append(x)
         return '%s'
-
 
 def parse_uri(db_uri):
     uri = urlparse(db_uri)

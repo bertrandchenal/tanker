@@ -66,9 +66,9 @@ def session(request):
         }
         with connect(cfg):
             execute('''
-            DROP TABLE member;
-            DROP TABLE team;
-            DROP TABLE country;
+            DROP TABLE IF EXISTS member;
+            DROP TABLE IF EXISTS team;
+            DROP TABLE IF EXISTS country;
             ''')
     # for cfg in (sqlite_cfg, pg_cfg):
     with connect(cfg):
