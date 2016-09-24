@@ -256,12 +256,12 @@ def format_query(qr, args):
     return qr.format(**to_format)
 
 def format_args(qr_params, args):
-    for a in qr_params:
-        if not isinstance(a, ExpressionParam):
-            yield a
+    for prm in qr_params:
+        if not isinstance(prm, ExpressionParam):
+            yield prm
             continue
         # Read value from args, auto-magically expand lists
-        key = a[1:-1]
+        key = prm[1:-1]
         if key in ctx.cfg:
             value = ctx.cfg[key]
         else:
