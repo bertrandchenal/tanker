@@ -16,9 +16,21 @@ def test_subselect(session):
     assert res == expected
 
 
-def test_params(session):
+def test_args(session):
     ctx.cfg['cfg_team'] = 'Red'
     view = View('team', ['name'])
+
+    # simple test
+    cond = '(= name {name})'
+    rows = view.read(cond).args(name='Blue')
+    assert sorted(rows) == [('Blue',)]
+
+    # Mix value from config
     cond = '(in name {cfg_team} {name})'
     rows = view.read(cond).args(name='Blue')
+    assert sorted(rows) == [('Blue',), ('Red',)]
+
+    # Test with a list in args
+    cond = '(in name {names})'
+    rows = view.read(cond).args(names=['Red', 'Blue'])
     assert sorted(rows) == [('Blue',), ('Red',)]

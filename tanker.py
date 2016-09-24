@@ -223,55 +223,54 @@ def log_sql(query, params=None):
 ctx = Context()
 
 
-def execute(query, args=None, params=None):
-    if params:
-        query = format_query(query, params)
-        args = tuple(format_params(args, params))
-    log_sql(query, args)
-    query = ctx._prepare_query(query)
+def execute(query, params=None, args=None):
     if args:
-        ctx.cursor.execute(query, args)
+        query = format_query(query, args)
+        params = tuple(format_args(params, args))
+    log_sql(query, params)
+    query = ctx._prepare_query(query)
+    if params:
+        ctx.cursor.execute(query, params)
     else:
         ctx.cursor.execute(query)
     return ctx.cursor
 
-def executemany(query, args, params=None):
-    if params:
-        query = format_query(query, params)
-        args = tuple(format_params(args, params))
+def executemany(query, params, args=None):
+    if args:
+        query = format_query(query, args)
+        params = tuple(format_args(params, args))
     query = ctx._prepare_query(query)
-    log_sql(query, args)
-    ctx.cursor.executemany(query, args)
+    log_sql(query, params)
+    ctx.cursor.executemany(query, params)
     return ctx.cursor
 
-def format_query(qr, params):
-    if not params:
+def format_query(qr, args):
+    if not args:
         return qr
     to_format = {}
-    for key, value in chain(params.items(), ctx.cfg.items()):
+    for key, value in chain(args.items(), ctx.cfg.items()):
         if isinstance(value, (tuple, list)):
             to_format[key] = ','.join('%s' for _ in value)
         else:
             to_format[key] = '%s'
     return qr.format(**to_format)
 
-def format_params(qr_args, params):
-    for a in qr_args:
+def format_args(qr_params, args):
+    for a in qr_params:
         if not isinstance(a, ExpressionParam):
             yield a
             continue
-        # Read value from params, auto-magically expand lists
+        # Read value from args, auto-magically expand lists
         key = a[1:-1]
         if key in ctx.cfg:
             value = ctx.cfg[key]
         else:
-            value = params[key]
+            value = args[key]
         if isinstance(value, (tuple, list)):
             for item in value:
                 yield item
         else:
             yield value
-
 
 
 def copy_from(buff, table, **kwargs):
@@ -383,7 +382,7 @@ class View:
 
     def _build_filter_cond(self, filters=None, filter_by=None):
         where = []
-        qr_args = tuple()
+        qr_params = tuple()
         ref_set = ReferenceSet(self.table)
 
         # filters can be a query string or a list of query string
@@ -398,19 +397,19 @@ class View:
             fltr = Expression(self, ref_set)
             sql_cond = fltr.eval(line)
             where.append(sql_cond)
-            qr_args = qr_args + tuple(fltr.args)
+            qr_params = qr_params + tuple(fltr.params)
 
         # Add simple filter_by conditions
         for key, val in filter_by.items():
             ref = ref_set.add(key)
             field = '%s.%s' % (ref.join_alias, ref.remote_field)
             where.append('%s = %%s' % field)
-            qr_args = qr_args + (val,)
+            qr_params = qr_params + (val,)
 
-        return where, qr_args, ref_set
+        return where, qr_params, ref_set
 
-    def read(self, filters=None, args=None, filter_by=None, disable_acl=False,
-             order=None, limit=None):
+    def read(self, filters=None, filter_by=None, disable_acl=False,
+             order=None, limit=None, args=None):
 
         acl_rules = ctx.cfg.get('acl_rules')
         if acl_rules and not disable_acl:
@@ -420,7 +419,7 @@ class View:
                 filters.extend(rule['filters'])
 
         selects = []
-        where, qr_args, ref_set = self._build_filter_cond(
+        where, qr_params, ref_set = self._build_filter_cond(
             filters=filters, filter_by=filter_by)
 
         # Add select fields
@@ -470,7 +469,7 @@ class View:
         if limit is not None:
             qr += ' LIMIT %s' % int(limit)
 
-        return Cursor(qr, qr_args, args)
+        return Cursor(qr, qr_params, args)
 
     def format_line(self, row, encoding=None):
         for col in self.field_map:
@@ -545,7 +544,7 @@ class View:
         if data and (filters or filter_by):
             raise ValueError('Deletion by both data and filter not supported')
 
-        where, qr_args, ref_set = self._build_filter_cond(
+        where, qr_params, ref_set = self._build_filter_cond(
             filters=filters, filter_by=filter_by)
 
         if data:
@@ -569,7 +568,7 @@ class View:
                 'where': ' AND '.join(where),
                 'joins': ' '.join(ref_set.get_sql_joins())
             }
-            execute(qr, qr_args)
+            execute(qr, qr_params)
 
     def write(self, data, purge=False, insert=True, update=True):
         with self._prepare_write(data) as join_cond:
@@ -653,15 +652,14 @@ class View:
 
 class Cursor:
 
-    def __init__(self, qr, qr_args, kwargs):
+    def __init__(self, qr, qr_params, kwargs):
         self.db_cursor = None
         self.qr = qr
-        self.qr_args = qr_args
-        self._kwargs = kwargs
+        self.qr_params = qr_params
+        self.kwargs = kwargs
 
-    def args(self, *args, **kwargs):
-        self._arg = args
-        self._kwargs = kwargs
+    def args(self, **kwargs):
+        self.kwargs = kwargs
         # reset db_cursor to allow to call args & re-launch query
         self.db_cursor = None
         return self
@@ -670,7 +668,7 @@ class Cursor:
         if self.db_cursor is not None:
             return self.db_cursor
 
-        self.db_cursor = execute(self.qr, self.qr_args, self._kwargs)
+        self.db_cursor = execute(self.qr, self.qr_params, self.kwargs)
         return self.db_cursor
 
     def next(self):
@@ -895,7 +893,7 @@ class Expression(object):
     }
 
     def __init__(self, view, ref_set=None, parent=None):
-        self.args = None
+        self.params = None
         self.view = view
         # Populate env with view fields
         self.env = self.base_env(view.table)
@@ -928,7 +926,7 @@ class Expression(object):
         ref_set = ReferenceSet(view.table, parent=self.ref_set)
         exp = Expression(view, ref_set, parent=self)
         env = exp.base_env(view.table)
-        exp.args = self.args
+        exp.params = self.params
         res = [exp._eval(subexp , env) for subexp in tail]
         joins = ' '.join(ref_set.get_sql_joins())
         if joins:
@@ -937,7 +935,7 @@ class Expression(object):
         return ' '.join(res)
 
     def eval(self, exp):
-        self.args = []
+        self.params = []
         # Parse string
         lexer = shlex.shlex(exp.encode('utf-8'))
         lexer.wordchars += '.!=<>:{}'
@@ -980,7 +978,7 @@ class Expression(object):
                 raise ValueError('"%s" not understood' % exp)
 
         elif isinstance(exp, ExpressionParam):
-            self.args.append(exp)
+            self.params.append(exp)
             return exp
 
         elif not isinstance(exp, list):
@@ -1037,10 +1035,10 @@ class Expression(object):
     def emit_literal(self, x):
         # Collect literal and return placeholder
         if isinstance(x, (tuple, list)):
-            self.args.extend(x)
+            self.params.extend(x)
             return ','.join('%s' for _ in x)
 
-        self.args.append(x)
+        self.params.append(x)
         return '%s'
 
 def parse_uri(db_uri):
