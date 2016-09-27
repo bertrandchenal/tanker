@@ -22,17 +22,17 @@ def test_args(session):
     # simple test
     cond = '(= name {name})'
     rows = view.read(cond).args(name='Blue')
-    assert sorted(rows) == [('Blue',)]
+    assert sorted(rows) == [('Blue',), ('Blue',)]
 
     # Mix value from config
     cond = '(in name {cfg_team} {name})'
     rows = view.read(cond).args(name='Blue')
-    assert sorted(rows) == [('Blue',), ('Red',)]
+    assert sorted(rows) == [('Blue',), ('Blue',), ('Red',)]
 
     # Test with a list in args
     cond = '(in name {names})'
     rows = view.read(cond).args(names=['Red', 'Blue'])
-    assert sorted(rows) == [('Blue',), ('Red',)]
+    assert sorted(rows) == [('Blue',), ('Blue',), ('Red',)]
 
     # Test with an object
     cond = '(in name {obj.name})'
@@ -41,4 +41,4 @@ def test_args(session):
     obj = Obj()
     obj.name = 'Blue'
     rows = view.read(cond).args(obj=obj)
-    assert sorted(rows) == [('Blue',)]
+    assert sorted(rows) == [('Blue',), ('Blue',)]

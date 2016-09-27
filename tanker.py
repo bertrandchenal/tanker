@@ -72,7 +72,11 @@ class Context(threading.local):
 
     def register(self, table_def):
         values = table_def.get('values')
-        columns = [Column(*c) for c in table_def['columns'].items()]
+        defaults = table_def.get('defaults', {})
+        columns = []
+        for col_name, col_type in table_def['columns'].items():
+            new_col = Column(col_name, col_type, default=defaults.get(col_name))
+            columns.append(new_col)
         # Instanciating the table adds it to REGISTRY
         Table(name=table_def['table'], columns=columns,
               values=values,
@@ -114,21 +118,27 @@ class Context(threading.local):
             "WHERE table_schema = 'public'"
         self.db_tables.update(name for name, in execute(qr))
 
-        # Create tables and id columns
+        # Create tables and simple columns
         for table in self.registry.itervalues():
             if table.name in self.db_tables:
                 continue
             if self.flavor == 'sqlite':
-                col_type = 'INTEGER'
+                id_type = 'INTEGER'
             elif self.flavor == 'postgresql':
-                col_type = 'SERIAL'
-            qr = 'CREATE TABLE "%s" (id %s PRIMARY KEY)' % (
-                table.name, col_type)
+                id_type = 'SERIAL'
+
+            col_defs = ['id %s PRIMARY KEY' % id_type]
+            for col in table.columns:
+                if col.ctype in ('M2O', 'O2M') or col.name == 'id':
+                    continue
+                col_defs.append('%s %s' % (col.name, col.sql_definition()))
+
+            qr = 'CREATE TABLE "%s" (%s)' % (table.name, ', '.join(col_defs))
             execute(qr)
             self.db_tables.add(table.name)
             logger.info('Table "%s" created', table.name)
 
-        # Create other columns
+        # Add M2O columns
         for table_name in self.db_tables:
             if self.flavor == 'sqlite':
                 qr = 'PRAGMA table_info("%s")' % table_name
@@ -146,11 +156,12 @@ class Context(threading.local):
             if table_name not in self.registry:
                 continue
 
+            # Add M2O columns
             table = self.registry[table_name]
             for col in table.columns:
-                if col.name in current_cols:
+                if col.ctype != 'M2O':
                     continue
-                if col.ctype == 'O2M':
+                if col.name in current_cols:
                     continue
                 qr = 'ALTER TABLE %(table)s '\
                      'ADD COLUMN "%(name)s" %(def)s'
@@ -289,7 +300,6 @@ def copy_from(buff, table, **kwargs):
     ctx.cursor.copy_from(buff, table, **kwargs)
     return ctx.cursor
 
-
 def create_tables():
     ctx.create_tables()
 
@@ -300,7 +310,6 @@ def fetch(tablename, filter_by):
         return
     keys = (f.name for f in view.fields)
     return dict(zip(keys, values))
-
 
 def save(tablename, data):
     fields = data.keys()
@@ -591,6 +600,9 @@ class View:
             if purge:
                 self._purge(join_cond)
 
+        # Clean cache for current table
+        ctx.reset_cache(self.table.name)
+
     def _insert(self, join_cond):
         qr = 'INSERT INTO %(main)s (%(fields)s) %(select)s'
         select = 'SELECT %(tmp_fields)s FROM tmp '\
@@ -685,6 +697,8 @@ class Cursor:
     def next(self):
         return next(iter(self))
 
+    def all(self):
+        return list(self)
 
 class Table:
 
@@ -708,6 +722,10 @@ class Table:
         self._column_dict = dict((col.name, col) for col in self.columns)
         ctx.registry[name] = self
 
+        for col in self.index:
+            if col not in self._column_dict:
+                raise ValueError('Index column "%s" does not exist' % col)
+
     def get_column(self, name):
         return self._column_dict[name]
 
@@ -728,19 +746,22 @@ class Table:
 
 class Column:
 
-    def __init__(self, name, ctype):
+    def __init__(self, name, ctype, default=None):
         if ' ' in ctype:
             ctype, self.fk = ctype.split()
         else:
             self.fk = None
         self.name = name
         self.ctype = ctype.upper()
+        self.default = default
         if self.ctype not in COLUMN_TYPE:
             raise ValueError('Unexpected type %s for column %s' % (ctype, name))
 
     def sql_definition(self):
         # Simple field
         if not self.fk:
+            if self.default:
+                return '%s DEFAULT %s' % (self.ctype, self.default)
             return self.ctype
         # O2M
         if self.ctype == 'O2M':

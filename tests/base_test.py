@@ -5,7 +5,9 @@ import yaml
 from tanker import (connect, create_tables, View, logger, yaml_load, fetch,
                     save, execute)
 
-DB_FILE = ':memory:' #'test.db'
+DB_FILE = ':memory:'
+DB_TYPES = ['sqlite', ] # 'pg'
+
 logger.setLevel('ERROR')
 
 # Tables definitions can be written in yaml
@@ -16,6 +18,7 @@ yaml_def = '''
     country: m2o country.id
   index:
     - name
+    - country
 - table: country
   columns:
     name: varchar
@@ -30,13 +33,17 @@ yaml_def = '''
   columns:
     name: varchar
     registration_code: varchar
+    created_at: timestamp
     team: m2o team.id
   index:
     - registration_code
+  defaults:
+    created_at: current_timestamp
 '''
 
-schema = yaml_load(yaml_def)
+SCHEMA = yaml_load(yaml_def)
 teams = [
+    ['Blue', 'Belgium'],
     ['Red', 'Belgium'],
     ['Blue', 'France'],
 ]
@@ -47,30 +54,26 @@ members = [
 ]
 
 
-@pytest.yield_fixture(scope='function', params=['sqlite', 'pg'])
+def get_config(db_type, schema=SCHEMA):
+    if db_type == 'sqlite':
+        db_uri = 'sqlite:///' + DB_FILE
+    elif db_type == 'pg':
+        db_uri = 'postgresql:///tanker_test'
+
+    cfg = {
+        'db_uri': db_uri,
+        'schema': schema,
+    }
+
+    with connect(cfg):
+        to_clean = [t['table'] for t in schema]
+        for table in to_clean:
+            execute('DROP TABLE IF EXISTS %s' % table)
+    return cfg
+
+@pytest.yield_fixture(scope='function', params=DB_TYPES)
 def session(request):
-    if request.param == 'sqlite':
-        # Remove previous db
-        if DB_FILE != ':memory:' and os.path.exists(DB_FILE):
-            os.unlink(DB_FILE)
-
-        cfg = {
-            'db_uri': 'sqlite:///' + DB_FILE,
-            'schema': schema,
-        }
-
-    elif request.param == 'pg':
-        cfg = {
-            'db_uri': 'postgresql:///tanker_test',
-            'schema': schema,
-        }
-        with connect(cfg):
-            execute('''
-            DROP TABLE IF EXISTS member;
-            DROP TABLE IF EXISTS team;
-            DROP TABLE IF EXISTS country;
-            ''')
-    # for cfg in (sqlite_cfg, pg_cfg):
+    cfg = get_config(request.param)
     with connect(cfg):
         create_tables()
         View('team', ['name', 'country.name']).write(teams)
@@ -89,12 +92,12 @@ def test_load(session):
     expected = [('Belgium',), ('France',), ('Holland',)]
     check(expected, View('country', ['name']).read())
 
-
 def test_write(session):
     team_view = View('team', ['name', 'country.name'])
     team_view.write([('Orange', 'Holland')])
 
     expected = [('Red', 'Belgium',),
+                ('Blue', 'Belgium',),
                 ('Blue', 'France',),
                 ('Orange', 'Holland',)]
     res = team_view.read()
@@ -109,7 +112,8 @@ def test_no_insert(session):
     ], insert=False)
 
     expected = [('Red', 'Belgium',),
-                ('Blue', 'Belgium',),]
+                ('Blue', 'Belgium',),
+                ('Blue', 'France',)]
     res = team_view.read()
     check(expected, res)
 
@@ -122,6 +126,7 @@ def test_no_update(session):
     ], update=False)
 
     expected = [('Red', 'Belgium',),
+                ('Blue', 'Belgium',),
                 ('Blue', 'France',),
                 ('Orange', 'Holland',)]
     res = team_view.read()
@@ -167,11 +172,9 @@ def test_delete_filter(session):
 
 
 def test_fetch_save(session):
-    save('team', {
-        'name': 'Red',
-        'country.name': 'France',
+    save('member', {
+        'registration_code': '007',
+        'name': 'Bond'
     })
 
-    country_view = View('country', ['id'])
-    france_id, = next(country_view.read(filter_by={'name': 'France'}))
-    assert fetch('team', {'name': 'Red'})['country'] == france_id
+    assert fetch('member', {'registration_code': '007'})['name'] == 'Bond'
