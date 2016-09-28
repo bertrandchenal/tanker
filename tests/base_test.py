@@ -5,8 +5,9 @@ import yaml
 from tanker import (connect, create_tables, View, logger, yaml_load, fetch,
                     save, execute)
 
-DB_FILE = ':memory:'
-DB_TYPES = ['sqlite', ] # 'pg'
+SQLITE_FILE = 'test.db'
+PG_DB = 'tanker_test'
+DB_TYPES = ['sqlite', 'pg']
 
 logger.setLevel('ERROR')
 
@@ -56,9 +57,9 @@ members = [
 
 def get_config(db_type, schema=SCHEMA):
     if db_type == 'sqlite':
-        db_uri = 'sqlite:///' + DB_FILE
+        db_uri = 'sqlite:///' + SQLITE_FILE
     elif db_type == 'pg':
-        db_uri = 'postgresql:///tanker_test'
+        db_uri = 'postgresql:///' + PG_DB
 
     cfg = {
         'db_uri': db_uri,
@@ -68,7 +69,10 @@ def get_config(db_type, schema=SCHEMA):
     with connect(cfg):
         to_clean = [t['table'] for t in schema]
         for table in to_clean:
-            execute('DROP TABLE IF EXISTS %s' % table)
+            qr = 'DROP TABLE IF EXISTS %s' % table
+            if db_type == 'pg':
+                qr += ' CASCADE'
+            execute(qr)
     return cfg
 
 @pytest.yield_fixture(scope='function', params=DB_TYPES)

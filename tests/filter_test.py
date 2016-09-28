@@ -16,7 +16,8 @@ def test_subselect(session):
 
 
 def test_args(session):
-    ctx.cfg['cfg_team'] = 'Red'
+    # Add config value, to use it later
+    ctx().cfg['cfg_team'] = 'Red'
     view = View('team', ['name'])
 
     # simple test

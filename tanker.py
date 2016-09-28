@@ -1,6 +1,7 @@
 from collections import OrderedDict, defaultdict
 from contextlib import contextmanager
 from itertools import chain
+from threading import Thread
 from urlparse import urlparse
 import csv
 import datetime
@@ -35,22 +36,61 @@ logger = logging.getLogger('tanker')
 logger.setLevel(logging.INFO)
 
 
-class Context(threading.local):
+class TankerThread(Thread):
+
+    def __init__(self, *args, **kwargs):
+        self.parent_context = ctx().copy()
+        super(TankerThread, self).__init__(*args, **kwargs)
+
+    def run(self):
+        CTX_STACK.reset([self.parent_context])
+        super(TankerThread, self).run()
+
+class ContextStack():
 
     def __init__(self):
-        super(Context, self).__init__()
-        self.reset()
+        self._local = threading.local()
+        self._local.contexts = []
 
-    def reset(self, flavor=None, connection=None, cfg=None):
+    def reset(self, contexts):
+        self._local.contexts = contexts
+
+    def push(self, flavor=None, connection=None, cfg=None):
+        new_ctx = Context(flavor=flavor, connection=connection, cfg=cfg)
+        self._local.contexts.append(new_ctx)
+        return new_ctx
+
+    def pop(self):
+        self._local.contexts.pop()
+
+    def active_context(self):
+        return self._local.contexts[-1]
+
+
+class Context:
+
+    def __init__(self, flavor, connection, cfg):
         self.flavor = flavor
         self.connection = connection
-        self.cursor = connection and connection.cursor()
-        self.aliases = {'null': None}
+        self.cursor = connection.cursor()
         self.cfg = cfg
+        self.aliases = {'null': None}
         self._fk_cache = {}
         self.db_tables = set()
         self.db_fields = set()
         self.registry = OrderedDict()
+
+    def copy(self):
+        '''
+        Create a clone of self, will trigger instanciation of a new cursor
+        (the connection is shared)
+        '''
+        new_ctx = Context(self.flavor, self.connection, self.cfg)
+        new_ctx.aliases = self.aliases
+        new_ctx.db_fields = self.db_fields
+        new_ctx.db_tables = self.db_tables
+        new_ctx.registry = self.registry
+        return new_ctx
 
     def _prepare_query(self, query):
         if self.flavor == 'postgresql':
@@ -230,8 +270,8 @@ def log_sql(query, params=None):
             params = params[:1000] + '...'
         logger.debug('SQL Query:\n%s\nSQL Params:\n%s%s', query, indent, params)
 
-
-ctx = Context()
+CTX_STACK = ContextStack()
+ctx = CTX_STACK.active_context
 
 
 def execute(query, params=None, args=None):
@@ -239,27 +279,29 @@ def execute(query, params=None, args=None):
         query = format_query(query, args)
         params = tuple(format_args(params, args))
     log_sql(query, params)
-    query = ctx._prepare_query(query)
+    c = ctx()
+    query = c._prepare_query(query)
     if params:
-        ctx.cursor.execute(query, params)
+        c.cursor.execute(query, params)
     else:
-        ctx.cursor.execute(query)
-    return ctx.cursor
+        c.cursor.execute(query)
+    return c.cursor
 
 def executemany(query, params, args=None):
     if args:
         query = format_query(query, args)
         params = tuple(format_args(params, args))
-    query = ctx._prepare_query(query)
+    c = ctx()
+    query = c._prepare_query(query)
     log_sql(query, params)
-    ctx.cursor.executemany(query, params)
-    return ctx.cursor
+    c.cursor.executemany(query, params)
+    return c.cursor
 
 def format_query(qr, args):
     if not args:
         return qr
     to_format = {}
-    for key, value in chain(args.items(), ctx.cfg.items()):
+    for key, value in chain(args.items(), ctx().cfg.items()):
         if isinstance(value, (tuple, list)):
             to_format[key] = ','.join('%s' for _ in value)
         else:
@@ -280,8 +322,9 @@ def format_args(qr_params, args):
         else:
             attrs = []
         # Get value from cfg and args
-        if key in ctx.cfg:
-            value = ctx.cfg[key]
+        c = ctx()
+        if key in c.cfg:
+            value = c.cfg[key]
         else:
             value = args[key]
         # Eval dotted attributes
@@ -297,11 +340,12 @@ def format_args(qr_params, args):
 
 def copy_from(buff, table, **kwargs):
     log_sql('"COPY FROM" called on table %s' % table)
-    ctx.cursor.copy_from(buff, table, **kwargs)
-    return ctx.cursor
+    cursor = ctx().cursor
+    cursor.copy_from(buff, table, **kwargs)
+    return cursor
 
 def create_tables():
-    ctx.create_tables()
+    ctx().create_tables()
 
 def fetch(tablename, filter_by):
     view = View(tablename)
@@ -323,6 +367,7 @@ class ViewField:
         self.name = name
         self.desc = desc
         self.ref = None
+        self.ctx = ctx()
 
         if '.' in desc:
             ftype = 'INTEGER'
@@ -331,9 +376,9 @@ class ViewField:
             ctype = remote_col.ctype
             self.col = table.get_column(desc.split('.')[0])
 
-        elif desc in ctx.aliases:
+        elif desc in self.ctx.aliases:
             ftype = ctype = 'LITERAL'
-            self.value = ctx.aliases[desc]
+            self.value = self.ctx.aliases[desc]
             self.col = None
 
         else:
@@ -356,6 +401,7 @@ class ViewField:
 class View:
 
     def __init__(self, table, fields=None, melt=False):
+        self.ctx = ctx()
         self.table = Table.get(table)
         if fields is None:
             fields = [(f.name, f.name) for f in self.table.columns \
@@ -430,10 +476,10 @@ class View:
 
     def read(self, filters=None, filter_by=None, disable_acl=False,
              order=None, limit=None, args=None):
-
-        acl_rules = ctx.cfg.get('acl_rules')
+        c = ctx()
+        acl_rules = self.ctx.cfg.get('acl_rules')
         if acl_rules and not disable_acl:
-            rule = ctx.access_rules.get(self.table.name)
+            rule = self.ctx.access_rules.get(self.table.name)
             if rule:
                 filters = filters[:]
                 filters.extend(rule['filters'])
@@ -502,13 +548,14 @@ class View:
                     yield int(row[idx[0]])
                 else:
                     # Resole foreign key reference
-                    yield ctx.resolve_fk(fields, values)
+                    yield ctx().resolve_fk(fields, values)
             else:
                 yield col.format(row[idx[0]], encoding=encoding)
 
     @contextmanager
     def _prepare_write(self, data):
         # Create tmp
+        c = ctx()
         not_null = lambda n: 'NOT NULL' if n in self.index_fields else ''
         qr = 'CREATE TEMPORARY TABLE tmp (%s)'
         qr = qr % ', '.join('"%s" %s %s' % (
@@ -527,7 +574,7 @@ class View:
             data = data[fields].values
 
         # Fill tmp
-        if ctx.flavor == 'postgresql':
+        if self.ctx.flavor == 'postgresql':
             buff = io.BytesIO()
             writer = csv.writer(buff, delimiter='\t')
             for row in data:
@@ -555,7 +602,7 @@ class View:
         # Clean tmp table
         execute('DROP TABLE tmp')
         # Clean cache for current table
-        ctx.reset_cache(self.table.name)
+        self.ctx.reset_cache(self.table.name)
 
     def delete(self, data=None, filters=None, filter_by=None):
         if not any((data, filters, filter_by)):
@@ -601,7 +648,7 @@ class View:
                 self._purge(join_cond)
 
         # Clean cache for current table
-        ctx.reset_cache(self.table.name)
+        ctx().reset_cache(self.table.name)
 
     def _insert(self, join_cond):
         qr = 'INSERT INTO %(main)s (%(fields)s) %(select)s'
@@ -631,12 +678,13 @@ class View:
     def _update(self, join_cond):
         update_cols = [c.name for c in self.field_map \
                        if c.name not in self.table.index]
+        c = ctx()
         for name in update_cols:
-            if ctx.flavor == 'sqlite':
+            if self.ctx.flavor == 'sqlite':
                 qr = 'UPDATE "%(main)s" SET "%(name)s" = COALESCE((' \
                       'SELECT "%(name)s" FROM tmp WHERE %(where)s' \
                      '), %(name)s)'
-            elif ctx.flavor == 'postgresql':
+            elif self.ctx.flavor == 'postgresql':
                 qr = 'UPDATE "%(main)s" '\
                      'SET "%(name)s" = tmp."%(name)s"' \
                      'FROM tmp WHERE %(where)s'
@@ -720,7 +768,7 @@ class Table:
                 raise ValueError('No index defined on %s' % name)
         self.index = [index] if isinstance(index, basestring) else index
         self._column_dict = dict((col.name, col) for col in self.columns)
-        ctx.registry[name] = self
+        ctx().registry[name] = self
 
         for col in self.index:
             if col not in self._column_dict:
@@ -738,7 +786,7 @@ class Table:
 
     @classmethod
     def get(cls, table_name):
-        return ctx.registry[table_name]
+        return ctx().registry[table_name]
 
     def __repr__(self):
         return '<Table %s>' % self.name
@@ -1089,7 +1137,7 @@ def connect(cfg):
 
     if flavor == 'sqlite':
         db_path = uri.dbname
-        connection = sqlite3.connect(db_path,
+        connection = sqlite3.connect(db_path, check_same_thread=False,
                                      detect_types=sqlite3.PARSE_DECLTYPES)
         connection.execute('PRAGMA foreign_keys=ON')
 
@@ -1113,17 +1161,17 @@ def connect(cfg):
             uri.scheme, uri))
 
     with connection:
-        ctx.reset(flavor=flavor, connection=connection, cfg=cfg)
+        new_ctx = CTX_STACK.push(flavor=flavor, connection=connection, cfg=cfg)
 
         schema = cfg.get('schema')
-        if not ctx.registry and schema:
+        if not new_ctx.registry and schema:
             for table_def in schema:
-                ctx.register(table_def)
+                new_ctx.register(table_def)
 
         try:
-            yield connection
+            yield new_ctx
         finally:
-            ctx.reset_cache()
+            CTX_STACK.pop()
 
 
 def yaml_load(stream):
