@@ -656,7 +656,7 @@ class View:
                  'LEFT JOIN %(main_table)s ON ( %(join_cond)s) ' \
                  'WHERE %(where_cond)s'
 
-        # Concider only new rows
+        # Consider only new rows
         where_cond = []
         for name in self.index_cols:
             where_cond.append('%s."%s" IS NULL' % (self.table.name, name))
