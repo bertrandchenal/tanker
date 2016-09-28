@@ -3,7 +3,7 @@ from Queue import Queue
 from threading import Thread, current_thread
 import pytest
 
-from tanker import connect, create_tables, View, TankerThread
+from tanker import connect, create_tables, View, TankerThread, ctx
 from base_test import get_config, DB_TYPES
 
 NB_THREADS = 2
@@ -64,5 +64,18 @@ def test_read_thread(session):
     for t in read_threads:
         t.join()
 
+
 def test_nested_read(session):
-    pass
+    cursor = View('country').read()
+    first = next(cursor)
+
+    # Needed because table creation and content is not committed yet
+    current_ctx = ctx()
+    current_ctx.connection.commit()
+
+    # We re-use the current config to create a nested context
+    with connect(ctx().cfg):
+        nested_res = View('country').read().all()
+
+    res = [first] + list(cursor)
+    assert res ==  nested_res
