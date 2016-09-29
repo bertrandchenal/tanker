@@ -444,6 +444,8 @@ class View:
         self.field_idx = defaultdict(list)
         idx = 0
         for view_field in self.all_fields:
+            if view_field.col is None:
+                continue
             if self.field_map[view_field.col] and view_field.col.ctype != 'M2O':
                 raise ValueError(
                     'Column %s is specified several time in view' \
@@ -507,7 +509,8 @@ class View:
         # Add select fields
         for f in self.all_fields:
             if f.ftype == 'LITERAL':
-                selects.append("'%s' as %s" % (f.value, f.desc))
+                qr_params += (f.value,)
+                selects.append("%%s as %s" % f.desc)
             else:
                 ref = ref_set.add(f.desc)
                 selects.append('%s.%s' % (ref.join_alias, ref.remote_field))
@@ -550,7 +553,6 @@ class View:
 
         if limit is not None:
             qr += ' LIMIT %s' % int(limit)
-
         return Cursor(qr, qr_params, args)
 
     def format_line(self, row, encoding=None):

@@ -58,3 +58,19 @@ def test_limit_order(session):
 
     res = view.read(limit=1, order=('name', 'DESC')).all()
     assert res == [('Holland',)]
+
+def test_aliases(session):
+    # Add alias
+    now = datetime.now()
+    c = ctx()
+    c.aliases.update({
+        'now': now
+    })
+
+    view = View('country', ['name', 'now'])
+    expected = view.read().all()
+    if c.flavor == 'sqlite':
+        ok = lambda r: r[1] == str(now)
+    else:
+        ok = lambda r: r[1] == now
+    assert all(ok for r in expected)
