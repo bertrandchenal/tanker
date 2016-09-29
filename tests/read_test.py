@@ -51,6 +51,12 @@ def test_args(session):
     rows = view.read(cond).args(obj=obj)
     assert sorted(rows) == [('Blue',), ('Blue',)]
 
+    # Test with an dict
+    cond = '(in name {data.name})'
+    data = {'name': 'Red'}
+    rows = view.read(cond).args(data=data)
+    assert sorted(rows) == [('Red',)]
+
 def test_limit_order(session):
     view = View('country', ['name'])
     res = view.read(limit=1, order='name').all()

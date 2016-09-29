@@ -344,7 +344,10 @@ def format_args(qr_params, args, kwargs):
                 value = kwargs[key]
             # Eval dotted attributes
             for name in attrs:
-                value = getattr(value, name)
+                if isinstance(value, dict):
+                    value = value[name]
+                else:
+                    value = getattr(value, name)
 
         # auto-magically expand lists
         if isinstance(value, (tuple, list)):
