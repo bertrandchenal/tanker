@@ -1,5 +1,7 @@
+from datetime import datetime
+
 from tanker import View, Expression, ctx
-from base_test import session
+from base_test import session, members
 
 
 def test_subselect(session):
@@ -24,6 +26,11 @@ def test_args(session):
     cond = '(= name {name})'
     rows = view.read(cond).args(name='Blue')
     assert sorted(rows) == [('Blue',), ('Blue',)]
+
+    # simple test, anonymous
+    cond = '(= name {})'
+    rows = view.read(cond).args('Red')
+    assert sorted(rows) == [('Red',)]
 
     # Mix value from config
     cond = '(in name {cfg_team} {name})'
@@ -51,3 +58,24 @@ def test_limit_order(session):
 
     res = view.read(limit=1, order=('name', 'DESC')).all()
     assert res == [('Holland',)]
+
+def test_aliases(session):
+
+    view = View('country', ['name'])
+    expected = view.read().all()
+    res = view.read('(isnot name null)').all()
+    assert expected == res
+
+    view = View('member', [
+        'name',
+        'team.country.name',
+        'team.name',
+        'registration_code'])
+    view.write(members)
+
+    # Add alias
+    ctx().aliases.update({
+        'now': str(datetime.now())
+    })
+    res = view.read('(<= created_at now)').all()
+    assert len(res) == len(members)

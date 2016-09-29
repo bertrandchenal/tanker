@@ -281,10 +281,10 @@ CTX_STACK = ContextStack()
 ctx = CTX_STACK.active_context
 
 
-def execute(query, params=None, args=None):
-    if args:
-        query = format_query(query, args)
-        params = tuple(format_args(params, args))
+def execute(query, params=None, args=None, kwargs=None):
+    if args or kwargs:
+        query = format_query(query, args, kwargs)
+        params = tuple(format_args(params, args, kwargs))
     log_sql(query, params)
     c = ctx()
     query = c._prepare_query(query)
@@ -294,49 +294,58 @@ def execute(query, params=None, args=None):
         c.cursor.execute(query)
     return c.cursor
 
-def executemany(query, params, args=None):
-    if args:
-        query = format_query(query, args)
-        params = tuple(format_args(params, args))
+def executemany(query, params, args=None, kwargs=None):
+    if args or kwargs:
+        query = format_query(query, args, kwargs)
+        params = tuple(format_args(params, args, kwargs))
     c = ctx()
     query = c._prepare_query(query)
     log_sql(query, params)
     c.cursor.executemany(query, params)
     return c.cursor
 
-def format_query(qr, args):
-    if not args:
-        return qr
-    to_format = {}
-    for key, value in chain(args.items(), ctx().cfg.items()):
-        if isinstance(value, (tuple, list)):
-            to_format[key] = ','.join('%s' for _ in value)
-        else:
-            to_format[key] = '%s'
-    return qr.format(**to_format)
+def format_query(qr, args, kwargs):
+    format_args = []
+    format_kwargs = {}
+    fmt = lambda val: (','.join('%s' for _ in val)
+                     if isinstance(val, (tuple, list))
+                     else '%s')
 
-def format_args(qr_params, args):
+    format_args = [fmt(v) for v in args]
+    for key, value in chain(kwargs.items(), ctx().cfg.items()):
+            format_kwargs[key] = fmt(value)
+
+    return qr.format(*format_args, **format_kwargs)
+
+def format_args(qr_params, args, kwargs):
+    pos = 0
     for prm in qr_params:
         if not isinstance(prm, ExpressionParam):
             yield prm
             continue
-        # Read value from cfg and args
-        key = prm[1:-1]
-        # Extract dots
-        if '.' in key:
-            attrs = key.split('.')
-            key, attrs = attrs[0], attrs[1:]
+
+        # Extract value
+        if prm == '{}':
+            value = args[pos]
+            pos += 1
         else:
-            attrs = []
-        # Get value from cfg and args
-        c = ctx()
-        if key in c.cfg:
-            value = c.cfg[key]
-        else:
-            value = args[key]
-        # Eval dotted attributes
-        for name in attrs:
-            value = getattr(value, name)
+            key = prm[1:-1]
+            # Extract dots
+            if '.' in key:
+                attrs = key.split('.')
+                key, attrs = attrs[0], attrs[1:]
+            else:
+                attrs = []
+            # Get value from cfg and kwargs
+            c = ctx()
+            if key in c.cfg:
+                value = c.cfg[key]
+            else:
+                value = kwargs[key]
+            # Eval dotted attributes
+            for name in attrs:
+                value = getattr(value, name)
+
         # auto-magically expand lists
         if isinstance(value, (tuple, list)):
             for item in value:
@@ -730,14 +739,20 @@ class View:
 
 class Cursor:
 
-    def __init__(self, qr, qr_params, kwargs):
+    def __init__(self, qr, qr_params, args):
         self.db_cursor = None
         self.qr = qr
         self.qr_params = qr_params
-        self.kwargs = kwargs
+        if isinstance(args, dict):
+            self._kwargs = args
+            self._args = None
+        else:
+            self._args = args
+            self._kwargs = None
 
-    def args(self, **kwargs):
-        self.kwargs = kwargs
+    def args(self, *args, **kwargs):
+        self._args = args
+        self._kwargs = kwargs
         # reset db_cursor to allow to call args & re-launch query
         self.db_cursor = None
         return self
@@ -746,7 +761,8 @@ class Cursor:
         if self.db_cursor is not None:
             return self.db_cursor
 
-        self.db_cursor = execute(self.qr, self.qr_params, self.kwargs)
+        self.db_cursor = execute(self.qr, self.qr_params, self._args,
+                                 self._kwargs)
         return self.db_cursor
 
     def next(self):
@@ -982,8 +998,9 @@ class Expression(object):
     def __init__(self, view, ref_set=None, parent=None):
         self.params = None
         self.view = view
-        # Populate env with view fields
+        # Populate env with view fields & aliases
         self.env = self.base_env(view.table)
+
         self.builtins = Expression.builtins.copy()
         self.builtins['select'] = self._select
 
@@ -997,8 +1014,9 @@ class Expression(object):
 
     def base_env(self, table, ref_set=None):
         env = {}
+        env.update(ctx().aliases)
         for field in self.view.all_fields:
-            env[field.name] = field.desc
+            env[field.name] = field
         return env
 
     def _select(self, *fields):
@@ -1012,8 +1030,8 @@ class Expression(object):
         view = View(table)
         ref_set = ReferenceSet(view.table, parent=self.ref_set)
         exp = Expression(view, ref_set, parent=self)
-        env = exp.base_env(view.table)
         exp.params = self.params
+        env = exp.base_env(view.table)
         res = [exp._eval(subexp , env) for subexp in tail]
         joins = ' '.join(ref_set.get_sql_joins())
         if joins:
@@ -1050,8 +1068,11 @@ class Expression(object):
                 except KeyError:
                     pass
             elif exp in env:
-                desc = env[exp]
-                ref = self.ref_set.add(desc)
+                val = env[exp]
+                if isinstance(val, ViewField):
+                    ref = self.ref_set.add(val.desc)
+                else:
+                    return self.emit_literal(val)
             else:
                 try:
                     ref = self.ref_set.add(exp)
