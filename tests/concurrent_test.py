@@ -79,3 +79,33 @@ def test_nested_read(session):
 
     res = [first] + list(cursor)
     assert res ==  nested_res
+
+
+def test_mixed(session):
+    view = View('country', ['name'])
+    view.write([('Italy',)])
+    countries = [c for c, in view.read()]
+
+    in_q = Queue()
+    out_q = Queue()
+
+    # Needed because table creation and content is not committed yet
+    current_ctx = ctx()
+    current_ctx.connection.commit()
+
+    # We re-use the current config to create a nested context
+    with connect(ctx().cfg):
+        t = TankerThread(target=read, args=(in_q, out_q))
+        t.start()
+
+        res = []
+        for _ in countries:
+            in_q.put('tic')
+            res.append(out_q.get()[1])
+
+        # Release thread loop & wait for it
+        in_q.put('tic')
+        t.join()
+
+    assert 'Italy' in res
+    assert res == countries
