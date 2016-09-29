@@ -19,7 +19,7 @@ def test_subselect(session):
 
 def test_args(session):
     # Add config value, to use it later
-    ctx().cfg['cfg_team'] = 'Red'
+    ctx.cfg['cfg_team'] = 'Red'
     view = View('team', ['name'])
 
     # simple test
@@ -68,14 +68,13 @@ def test_limit_order(session):
 def test_aliases(session):
     # Add alias
     now = datetime.now()
-    c = ctx()
-    c.aliases.update({
+    ctx.aliases.update({
         'now': now
     })
 
     view = View('country', ['name', 'now'])
     expected = view.read().all()
-    if c.flavor == 'sqlite':
+    if ctx.flavor == 'sqlite':
         ok = lambda r: r[1] == str(now)
     else:
         ok = lambda r: r[1] == now

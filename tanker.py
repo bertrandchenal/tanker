@@ -39,7 +39,7 @@ logger.setLevel(logging.INFO)
 class TankerThread(Thread):
 
     def __init__(self, *args, **kwargs):
-        self.parent_context = ctx().copy()
+        self.parent_context = ctx.copy()
         super(TankerThread, self).__init__(*args, **kwargs)
 
     def run(self):
@@ -72,6 +72,12 @@ class ContextStack():
 
     def active_context(self):
         return self._local.contexts[-1]
+
+
+class ShallowContext:
+
+    def __getattr__(self, name):
+        return getattr(CTX_STACK.active_context(), name)
 
 
 class Context:
@@ -278,7 +284,7 @@ def log_sql(query, params=None):
         logger.debug('SQL Query:\n%s\nSQL Params:\n%s%s', query, indent, params)
 
 CTX_STACK = ContextStack()
-ctx = CTX_STACK.active_context
+ctx = ShallowContext()
 
 
 def execute(query, params=None, args=None, kwargs=None):
@@ -286,23 +292,21 @@ def execute(query, params=None, args=None, kwargs=None):
         query = format_query(query, args, kwargs)
         params = tuple(format_args(params, args, kwargs))
     log_sql(query, params)
-    c = ctx()
-    query = c._prepare_query(query)
+    query = ctx._prepare_query(query)
     if params:
-        c.cursor.execute(query, params)
+        ctx.cursor.execute(query, params)
     else:
-        c.cursor.execute(query)
-    return c.cursor
+        ctx.cursor.execute(query)
+    return ctx.cursor
 
 def executemany(query, params, args=None, kwargs=None):
     if args or kwargs:
         query = format_query(query, args, kwargs)
         params = tuple(format_args(params, args, kwargs))
-    c = ctx()
-    query = c._prepare_query(query)
+    query = ctx._prepare_query(query)
     log_sql(query, params)
-    c.cursor.executemany(query, params)
-    return c.cursor
+    ctx.cursor.executemany(query, params)
+    return ctx.cursor
 
 def format_query(qr, args, kwargs):
     format_args = []
@@ -312,7 +316,7 @@ def format_query(qr, args, kwargs):
                      else '%s')
 
     format_args = [fmt(v) for v in args]
-    for key, value in chain(kwargs.items(), ctx().cfg.items()):
+    for key, value in chain(kwargs.items(), ctx.cfg.items()):
             format_kwargs[key] = fmt(value)
 
     return qr.format(*format_args, **format_kwargs)
@@ -337,9 +341,8 @@ def format_args(qr_params, args, kwargs):
             else:
                 attrs = []
             # Get value from cfg and kwargs
-            c = ctx()
-            if key in c.cfg:
-                value = c.cfg[key]
+            if key in ctx.cfg:
+                value = ctx.cfg[key]
             else:
                 value = kwargs[key]
             # Eval dotted attributes
@@ -359,12 +362,12 @@ def format_args(qr_params, args, kwargs):
 
 def copy_from(buff, table, **kwargs):
     log_sql('"COPY FROM" called on table %s' % table)
-    cursor = ctx().cursor
+    cursor = ctx.cursor
     cursor.copy_from(buff, table, **kwargs)
     return cursor
 
 def create_tables():
-    ctx().create_tables()
+    ctx.create_tables()
 
 def fetch(tablename, filter_by):
     view = View(tablename)
@@ -386,7 +389,7 @@ class ViewField:
         self.name = name
         self.desc = desc
         self.ref = None
-        self.ctx = ctx()
+        self.ctx = ctx
 
         if '.' in desc:
             ftype = 'INTEGER'
@@ -420,7 +423,7 @@ class ViewField:
 class View:
 
     def __init__(self, table, fields=None, melt=False):
-        self.ctx = ctx()
+        self.ctx = ctx
         self.table = Table.get(table)
         if fields is None:
             fields = [(f.name, f.name) for f in self.table.columns \
@@ -497,7 +500,6 @@ class View:
 
     def read(self, filters=None, filter_by=None, disable_acl=False,
              order=None, limit=None, args=None):
-        c = ctx()
         acl_rules = self.ctx.cfg.get('acl_rules')
         if acl_rules and not disable_acl:
             rule = self.ctx.access_rules.get(self.table.name)
@@ -569,14 +571,13 @@ class View:
                     yield int(row[idx[0]])
                 else:
                     # Resole foreign key reference
-                    yield ctx().resolve_fk(fields, values)
+                    yield ctx.resolve_fk(fields, values)
             else:
                 yield col.format(row[idx[0]], encoding=encoding)
 
     @contextmanager
     def _prepare_write(self, data):
         # Create tmp
-        c = ctx()
         not_null = lambda n: 'NOT NULL' if n in self.index_fields else ''
         qr = 'CREATE TEMPORARY TABLE tmp (%s)'
         qr = qr % ', '.join('"%s" %s %s' % (
@@ -669,7 +670,7 @@ class View:
                 self._purge(join_cond)
 
         # Clean cache for current table
-        ctx().reset_cache(self.table.name)
+        ctx.reset_cache(self.table.name)
 
     def _insert(self, join_cond):
         qr = 'INSERT INTO %(main)s (%(fields)s) %(select)s'
@@ -699,7 +700,6 @@ class View:
     def _update(self, join_cond):
         update_cols = [c.name for c in self.field_map \
                        if c.name not in self.table.index]
-        c = ctx()
         for name in update_cols:
             if self.ctx.flavor == 'sqlite':
                 qr = 'UPDATE "%(main)s" SET "%(name)s" = COALESCE((' \
@@ -796,7 +796,7 @@ class Table:
                 raise ValueError('No index defined on %s' % name)
         self.index = [index] if isinstance(index, basestring) else index
         self._column_dict = dict((col.name, col) for col in self.columns)
-        ctx().registry[name] = self
+        ctx.registry[name] = self
 
         for col in self.index:
             if col not in self._column_dict:
@@ -814,7 +814,7 @@ class Table:
 
     @classmethod
     def get(cls, table_name):
-        return ctx().registry[table_name]
+        return ctx.registry[table_name]
 
     def __repr__(self):
         return '<Table %s>' % self.name

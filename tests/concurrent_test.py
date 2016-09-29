@@ -70,11 +70,10 @@ def test_nested_read(session):
     first = next(cursor)
 
     # Needed because table creation and content is not committed yet
-    current_ctx = ctx()
-    current_ctx.connection.commit()
+    ctx.connection.commit()
 
     # We re-use the current config to create a nested context
-    with connect(ctx().cfg):
+    with connect(ctx.cfg):
         nested_res = View('country').read().all()
 
     res = [first] + list(cursor)
@@ -90,11 +89,10 @@ def test_mixed(session):
     out_q = Queue()
 
     # Needed because table creation and content is not committed yet
-    current_ctx = ctx()
-    current_ctx.connection.commit()
+    ctx.connection.commit()
 
     # We re-use the current config to create a nested context
-    with connect(ctx().cfg):
+    with connect(ctx.cfg):
         t = TankerThread(target=read, args=(in_q, out_q))
         t.start()
 
