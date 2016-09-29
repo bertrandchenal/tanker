@@ -43,3 +43,11 @@ def test_args(session):
     obj.name = 'Blue'
     rows = view.read(cond).args(obj=obj)
     assert sorted(rows) == [('Blue',), ('Blue',)]
+
+def test_limit_order(session):
+    view = View('country', ['name'])
+    res = view.read(limit=1, order='name').all()
+    assert res == [('Belgium',)]
+
+    res = view.read(limit=1, order=('name', 'DESC')).all()
+    assert res == [('Holland',)]
