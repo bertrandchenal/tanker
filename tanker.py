@@ -58,6 +58,13 @@ class ContextStack():
     def push(self, flavor=None, connection=None, cfg=None):
         new_ctx = Context(flavor=flavor, connection=connection, cfg=cfg)
         self._local.contexts.append(new_ctx)
+
+        # TODO: provide a cache of the registry per uri (to avoid this loop)
+        schema = cfg and cfg.get('schema')
+        if not new_ctx.registry and schema:
+            for table_def in schema:
+                new_ctx.register(table_def)
+
         return new_ctx
 
     def pop(self):
@@ -1162,11 +1169,6 @@ def connect(cfg):
 
     with connection:
         new_ctx = CTX_STACK.push(flavor=flavor, connection=connection, cfg=cfg)
-
-        schema = cfg.get('schema')
-        if not new_ctx.registry and schema:
-            for table_def in schema:
-                new_ctx.register(table_def)
 
         try:
             yield new_ctx
