@@ -1,7 +1,7 @@
 from datetime import datetime
 
 from tanker import View, Expression, ctx
-from base_test import session, members
+from base_test import session
 
 
 def test_subselect(session):
@@ -58,24 +58,3 @@ def test_limit_order(session):
 
     res = view.read(limit=1, order=('name', 'DESC')).all()
     assert res == [('Holland',)]
-
-def test_aliases(session):
-
-    view = View('country', ['name'])
-    expected = view.read().all()
-    res = view.read('(isnot name null)').all()
-    assert expected == res
-
-    view = View('member', [
-        'name',
-        'team.country.name',
-        'team.name',
-        'registration_code'])
-    view.write(members)
-
-    # Add alias
-    ctx().aliases.update({
-        'now': str(datetime.now())
-    })
-    res = view.read('(<= created_at now)').all()
-    assert len(res) == len(members)

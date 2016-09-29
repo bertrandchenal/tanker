@@ -998,7 +998,7 @@ class Expression(object):
     def __init__(self, view, ref_set=None, parent=None):
         self.params = None
         self.view = view
-        # Populate env with view fields & aliases
+        # Populate env with view fields
         self.env = self.base_env(view.table)
 
         self.builtins = Expression.builtins.copy()
@@ -1014,7 +1014,6 @@ class Expression(object):
 
     def base_env(self, table, ref_set=None):
         env = {}
-        env.update(ctx().aliases)
         for field in self.view.all_fields:
             env[field.name] = field
         return env
@@ -1069,10 +1068,7 @@ class Expression(object):
                     pass
             elif exp in env:
                 val = env[exp]
-                if isinstance(val, ViewField):
-                    ref = self.ref_set.add(val.desc)
-                else:
-                    return self.emit_literal(val)
+                ref = self.ref_set.add(val.desc)
             else:
                 try:
                     ref = self.ref_set.add(exp)
