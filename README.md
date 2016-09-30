@@ -14,8 +14,3 @@ See the `examples` folder for a quick overview of the main features.
 
 Tanker is available under the ISC Licence, see LICENCE file at the
 root of the repository.
-
-
-## Roadmap
-
-  - Add support for parameter substitution, to prevent code injection
