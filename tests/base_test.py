@@ -17,6 +17,7 @@ yaml_def = '''
   columns:
     name: varchar
     country: m2o country.id
+    members: o2m member.team
   index:
     - name
     - country

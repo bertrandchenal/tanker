@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from tanker import View, Expression, ctx
+from tanker import View, Expression, ctx, format_query
 from base_test import session
 
 
@@ -33,9 +33,9 @@ def test_args(session):
     assert sorted(rows) == [('Red',)]
 
     # Mix value from config
-    cond = '(in name {cfg_team} {name})'
-    rows = view.read(cond).args(name='Blue')
-    assert sorted(rows) == [('Blue',), ('Blue',), ('Red',)]
+    cond = '(in name {cfg_team})'
+    rows = view.read(cond)
+    assert sorted(rows) == [('Red',)]
 
     # Test with a list in args
     cond = '(in name {names})'
@@ -56,6 +56,13 @@ def test_args(session):
     data = {'name': 'Red'}
     rows = view.read(cond).args(data=data)
     assert sorted(rows) == [('Red',)]
+
+    qr = ' {} {spam!r} {foo:>5}'
+    qr, params = format_query(qr, args=['ham'],
+                              kwargs={'spam': 'spam', 'foo': 'foo'})
+    assert qr == ' %s %s %s'
+    assert params == (['ham'], ['spam'], ['  foo'])
+
 
 def test_limit_order(session):
     view = View('country', ['name'])
@@ -79,3 +86,10 @@ def test_aliases(session):
     else:
         ok = lambda r: r[1] == now
     assert all(ok for r in expected)
+
+
+def test_filters(session):
+    view = View('team', ['name'])
+    filters = '(= country.name "France")'
+    res = view.read(filters).all()
+    assert res == [('Blue',)]

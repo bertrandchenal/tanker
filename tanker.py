@@ -1,6 +1,7 @@
 from collections import OrderedDict, defaultdict
 from contextlib import contextmanager
-from itertools import chain
+from itertools import chain, cycle
+from string import Formatter
 from threading import Thread
 from urlparse import urlparse
 import csv
@@ -61,6 +62,7 @@ class ContextStack():
 
         # TODO: provide a cache of the registry per uri (to avoid this loop)
         schema = cfg and cfg.get('schema')
+
         if not new_ctx.registry and schema:
             for table_def in schema:
                 new_ctx.register(table_def)
@@ -227,9 +229,9 @@ class Context:
 
         # Create indexes
         if self.flavor == 'sqlite':
-            qr = "select name from sqlite_master where type = 'index'"
+            qr = "SELECT name FROM sqlite_master WHERE type = 'index'"
         elif self.flavor == 'postgresql':
-            qr = "select indexname from pg_indexes where schemaname = 'public'"
+            qr = "SELECT indexname FROM pg_indexes WHERE schemaname = 'public'"
 
         indexes = set(name for name, in execute(qr))
 
@@ -288,11 +290,11 @@ ctx = ShallowContext()
 
 
 def execute(query, params=None, args=None, kwargs=None):
-    if args or kwargs:
-        query = format_query(query, args, kwargs)
-        params = tuple(format_args(params, args, kwargs))
+    query, extra_params = format_query(query, args, kwargs)
+    params = tuple(merge_params(params, extra_params))
     log_sql(query, params)
     query = ctx._prepare_query(query)
+
     if params:
         ctx.cursor.execute(query, params)
     else:
@@ -300,64 +302,80 @@ def execute(query, params=None, args=None, kwargs=None):
     return ctx.cursor
 
 def executemany(query, params, args=None, kwargs=None):
-    if args or kwargs:
-        query = format_query(query, args, kwargs)
-        params = tuple(format_args(params, args, kwargs))
+    query, extra_params  = format_query(query, args, kwargs)
+    params = tuple(merge_params(params, extra_params))
+
     query = ctx._prepare_query(query)
     log_sql(query, params)
     ctx.cursor.executemany(query, params)
     return ctx.cursor
 
-def format_query(qr, args, kwargs):
-    format_args = []
-    format_kwargs = {}
-    fmt = lambda val: (','.join('%s' for _ in val)
-                     if isinstance(val, (tuple, list))
-                     else '%s')
-
-    format_args = [fmt(v) for v in args]
-    for key, value in chain(kwargs.items(), ctx.cfg.items()):
-            format_kwargs[key] = fmt(value)
-
-    return qr.format(*format_args, **format_kwargs)
-
-def format_args(qr_params, args, kwargs):
-    pos = 0
-    for prm in qr_params:
-        if not isinstance(prm, ExpressionParam):
+def merge_params(params, extra_params):
+    if not params:
+        return
+    extra_it = cycle(extra_params)
+    for prm in params:
+        if isinstance(prm, ExpressionParam):
+            for value in next(extra_it):
+                yield value
+        else:
             yield prm
-            continue
 
-        # Extract value
-        if prm == '{}':
-            value = args[pos]
+def format_query(qr, args=None, kwargs=None):
+    if not (args or kwargs):
+        return qr, tuple()
+    args = args or []
+    kwargs = kwargs or {}
+    qr_list = []
+    qr_params = []
+    formatter = Formatter()
+    tokens = formatter.parse(qr)
+    pos = 0
+    for literal_text, field_name, spec, conversion in tokens:
+        if literal_text:
+            qr_list.append(literal_text)
+        if field_name is None:
+            continue
+        # Get value from arg or kwargs
+        if field_name == '':
+            values = [args[pos]]
             pos += 1
         else:
-            key = prm[1:-1]
-            # Extract dots
-            if '.' in key:
-                attrs = key.split('.')
-                key, attrs = attrs[0], attrs[1:]
+            if '.' in field_name:
+                key = field_name.split('.', 1)[0]
             else:
-                attrs = []
-            # Get value from cfg and kwargs
-            if key in ctx.cfg:
-                value = ctx.cfg[key]
-            else:
-                value = kwargs[key]
-            # Eval dotted attributes
-            for name in attrs:
-                if isinstance(value, dict):
-                    value = value[name]
-                else:
-                    value = getattr(value, name)
+                key = field_name
+            values = list(format_arg(
+                formatter, field_name, kwargs[key], spec))
 
-        # auto-magically expand lists
-        if isinstance(value, (tuple, list)):
-            for item in value:
-                yield item
+        # Collect placeholders & values
+        qr_list.append(','.join('%s' for _ in values))
+        qr_params.append(values)
+
+    return ''.join(qr_list), tuple(qr_params)
+
+def format_arg(formatter, key, value, spec):
+    # Extract dots
+    if '.' in key:
+        attrs = key.split('.')
+        key, attrs = attrs[0], attrs[1:]
+    else:
+        attrs = []
+
+    # Eval dotted attributes
+    for name in attrs:
+        if isinstance(value, dict):
+            value = value[name]
         else:
-            yield value
+            value = getattr(value, name)
+
+    # auto-magically expand lists
+    if isinstance(value, (tuple, list)):
+        for item in value:
+            yield formatter.format_field(item, spec)
+
+    else:
+        yield formatter.format_field(value, spec)
 
 
 def copy_from(buff, table, **kwargs):
@@ -420,14 +438,14 @@ class ViewField:
         return '<ViewField %s>' % self.desc
 
 
-class View:
+class View(object):
 
     def __init__(self, table, fields=None, melt=False):
         self.ctx = ctx
         self.table = Table.get(table)
         if fields is None:
             fields = [(f.name, f.name) for f in self.table.columns \
-                      if f.ctype != 'O2M' and f.name != 'id']
+                      if f.name != 'id']
         elif isinstance(fields, basestring):
             fields = [[fields, fields]]
         elif isinstance(fields, dict):
@@ -439,8 +457,6 @@ class View:
 
         self.fields = [ViewField(name, desc, self.table) \
                        for name, desc in fields]
-
-        self.all_fields = self.fields[:]
         self.field_dict = dict((f.name, f) for f in self.fields)
 
         # field_map hold relation between fields given by the user and
@@ -449,7 +465,7 @@ class View:
         self.field_map = defaultdict(list)
         self.field_idx = defaultdict(list)
         idx = 0
-        for view_field in self.all_fields:
+        for view_field in self.fields:
             if view_field.col is None:
                 continue
             if self.field_map[view_field.col] and view_field.col.ctype != 'M2O':
@@ -461,7 +477,7 @@ class View:
             idx += 1
 
         # Index fields identify each line in the data
-        self.index_fields = [f for f in self.all_fields \
+        self.index_fields = [f for f in self.fields \
                              if f.col and f.col.name in self.table.index]
         # Index fields identify each row in the table
         self.index_cols = [c.name for c in self.field_map \
@@ -500,19 +516,22 @@ class View:
 
     def read(self, filters=None, filter_by=None, disable_acl=False,
              order=None, limit=None, args=None):
+
+        if isinstance(filters, basestring):
+            filters = [filters]
+
         acl_rules = self.ctx.cfg.get('acl_rules')
         if acl_rules and not disable_acl:
-            rule = self.ctx.access_rules.get(self.table.name)
+            rule = acl_rules.get(self.table.name)
             if rule:
-                filters = filters[:]
-                filters.extend(rule['filters'])
+                filters = rule['filters'] + (filters or [])
 
         selects = []
         where, qr_params, ref_set = self._build_filter_cond(
             filters=filters, filter_by=filter_by)
 
         # Add select fields
-        for f in self.all_fields:
+        for f in self.fields:
             if f.ftype == 'LITERAL':
                 qr_params += (f.value,)
                 selects.append("%%s as %s" % f.desc)
@@ -589,10 +608,10 @@ class View:
 
         # Handle list of dict and dataframes
         if isinstance(data, list) and isinstance(data[0], dict):
-            data = [[record.get(f.name) for f in self.all_fields] \
+            data = [[record.get(f.name) for f in self.fields] \
                     for record in data]
         elif pandas and isinstance(data, pandas.DataFrame):
-            fields = [f.name for f in self.all_fields]
+            fields = [f.name for f in self.fields]
             data = data[fields].values
 
         # Fill tmp
@@ -736,7 +755,7 @@ class View:
         # Create df from read data
         data = self.read(filters=filters, disable_acl=disable_acl,
                          order=order, limit=limit)
-        read_columns = [f.name for f in self.all_fields]
+        read_columns = [f.name for f in self.fields]
         df = pandas.DataFrame.from_records(data, columns=read_columns)
 
         return df
@@ -766,8 +785,11 @@ class Cursor:
         if self.db_cursor is not None:
             return self.db_cursor
 
-        self.db_cursor = execute(self.qr, self.qr_params, self._args,
-                                 self._kwargs)
+        kwargs = {}
+        kwargs.update(self._kwargs or {})
+        cfg = ctx.cfg
+        kwargs.update(cfg)
+        self.db_cursor = execute(self.qr, self.qr_params, self._args, kwargs)
         return self.db_cursor
 
     def next(self):
@@ -1019,7 +1041,7 @@ class Expression(object):
 
     def base_env(self, table, ref_set=None):
         env = {}
-        for field in self.view.all_fields:
+        for field in self.view.fields:
             env[field.name] = field
         return env
 
@@ -1087,12 +1109,8 @@ class Expression(object):
                 raise ValueError('"%s" not understood' % exp)
 
         elif isinstance(exp, ExpressionParam):
-            if '.' in exp:
-                prefix = exp.split('.')[0] + '}'
-            else:
-                prefix = exp
             self.params.append(exp)
-            return prefix
+            return exp
 
         elif not isinstance(exp, list):
             return self.emit_literal(exp)
