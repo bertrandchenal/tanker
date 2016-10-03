@@ -289,16 +289,27 @@ CTX_STACK = ContextStack()
 ctx = ShallowContext()
 
 
+# Build tuple of backend exceptions we want to catch
+DB_EXCEPTION = (sqlite3.OperationalError,)
+if psycopg2 is not None:
+    DB_EXCEPTION += (psycopg2.ProgrammingError,)
+
+class DBError(Exception):
+    pass
+
 def execute(query, params=None, args=None, kwargs=None):
     query, extra_params = format_query(query, args, kwargs)
     params = tuple(merge_params(params, extra_params))
     log_sql(query, params)
     query = ctx._prepare_query(query)
 
-    if params:
-        ctx.cursor.execute(query, params)
-    else:
-        ctx.cursor.execute(query)
+    try:
+        if params:
+            ctx.cursor.execute(query, params)
+        else:
+            ctx.cursor.execute(query)
+    except DB_EXCEPTION as e:
+        raise DBError(e)
     return ctx.cursor
 
 def executemany(query, params, args=None, kwargs=None):
