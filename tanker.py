@@ -155,7 +155,7 @@ class Context:
                 _, desc = field.desc.split('.', 1)
                 read_fields.append(desc)
             view = View(remote_table, read_fields + ['id'])
-            res = dict((val[:-1], val[-1]) for val in view.read())
+            res = dict((val[:-1], val[-1]) for val in view.read(disable_acl=True))
             self._fk_cache[key] = res
 
         res = self._fk_cache[key].get(values)
