@@ -66,7 +66,7 @@ connect(cfg)` block.
 
 Tanker usage is centered around the `View` object, it is used to
 define a mapping between the relational world and Python. For example,
-to write and read countries, whe define a view based on the country
+to write and read countries, we define a view based on the country
 table:
 
     country_view = View(
