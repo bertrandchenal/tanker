@@ -139,3 +139,22 @@ same name in different countries):
                            'registration_code'],
     ])
     view.write(members)
+
+
+### Pandas Dataframes
+
+Instead of passing a list of list we can use a dataframe, and use a
+dictionary to map dataframe columns to database columns.
+
+    df = DataFrame({
+        'Team': ['Blue', 'Red'],
+        'Country': ['France', 'Belgium']
+        })
+    view = View('team', {
+        'Team': 'name',
+        'Country': 'country.name',
+    })
+    view.write(data)
+
+    df_copy = view.read_df()
+
