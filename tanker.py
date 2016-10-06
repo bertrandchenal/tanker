@@ -161,7 +161,7 @@ class Context:
         res = self._fk_cache[key].get(values)
         if res is None:
             raise ValueError('Values (%s) are not known in table "%s"' % (
-                ','.join(map(str, values)), remote_table))
+                ', '.join(map(str, values)), remote_table))
         return res
 
     def create_tables(self):
@@ -360,7 +360,7 @@ def format_query(qr, args=None, kwargs=None):
                 formatter, field_name, kwargs[key], spec))
 
         # Collect placeholders & values
-        qr_list.append(','.join('%s' for _ in values))
+        qr_list.append(', '.join('%s' for _ in values))
         qr_params.append(values)
 
     return ''.join(qr_list), tuple(qr_params)
@@ -1180,7 +1180,7 @@ class Expression(object):
         # Collect literal and return placeholder
         if isinstance(x, (tuple, list)):
             self.params.extend(x)
-            return ','.join('%s' for _ in x)
+            return ', '.join('%s' for _ in x)
 
         self.params.append(x)
         return '%s'
