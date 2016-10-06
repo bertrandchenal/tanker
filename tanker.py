@@ -542,13 +542,15 @@ class View(object):
             filters=filters, filter_by=filter_by)
 
         # Add select fields
+        field_params = tuple()
         for f in self.fields:
             if f.ftype == 'LITERAL':
-                qr_params += (f.value,)
+                field_params += (f.value,)
                 selects.append("%%s as %s" % f.desc)
             else:
                 ref = ref_set.add(f.desc)
                 selects.append('%s.%s' % (ref.join_alias, ref.remote_field))
+        qr_params = field_params + qr_params
 
         qr = 'SELECT %(selects)s FROM %(main_table)s'
         qr = qr % {

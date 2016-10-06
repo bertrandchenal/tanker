@@ -80,13 +80,20 @@ def test_aliases(session):
     })
 
     view = View('country', ['name', 'now'])
-    expected = view.read().all()
+    res = view.read().all()
     if ctx.flavor == 'sqlite':
         ok = lambda r: r[1] == str(now)
     else:
         ok = lambda r: r[1] == now
-    assert all(ok for r in expected)
+    assert all(ok for r in res)
 
+    ctx.aliases.update({
+        'type': 'TYPE'
+    })
+    view = View('country', ['name', 'type'])
+    filters = '(= name "France")'
+    res = view.read(filters).all()
+    assert res == [('France', 'TYPE')]
 
 def test_filters(session):
     view = View('team', ['name'])
