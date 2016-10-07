@@ -4,6 +4,12 @@ from tanker import View, Expression, ctx, format_query
 from base_test import session
 
 
+def test_filters(session):
+    view = View('team', ['name'])
+    filters = '(= country.name "France")'
+    res = view.read(filters).all()
+    assert res == [('Blue',)]
+
 def test_subselect(session):
     view = View('team')
     cond = (
@@ -51,18 +57,18 @@ def test_args(session):
     rows = view.read(cond).args(obj=obj)
     assert sorted(rows) == [('Blue',), ('Blue',)]
 
-    # Test with an dict
+    # Test with a dict
     cond = '(in name {data.name})'
     data = {'name': 'Red'}
     rows = view.read(cond).args(data=data)
     assert sorted(rows) == [('Red',)]
 
+    # test formatting features
     qr = ' {} {spam!r} {foo:>5}'
     qr, params = format_query(qr, args=['ham'],
                               kwargs={'spam': 'spam', 'foo': 'foo'})
     assert qr == ' %s %s %s'
     assert params == (['ham'], ['spam'], ['  foo'])
-
 
 def test_limit_order(session):
     view = View('country', ['name'])
@@ -86,10 +92,3 @@ def test_aliases(session):
     else:
         ok = lambda r: r[1] == now
     assert all(ok for r in expected)
-
-
-def test_filters(session):
-    view = View('team', ['name'])
-    filters = '(= country.name "France")'
-    res = view.read(filters).all()
-    assert res == [('Blue',)]
