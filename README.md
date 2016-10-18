@@ -88,6 +88,33 @@ returns the database cursor, the `.all()` allows to fetch all the
 records.
 
 
+### Index role
+
+As you can see in the database definition, each table comes with an
+index. This index is required by design in Tanker, its main role is to
+allow Tanker to know what to do with each record when `View.write` is
+called. Thanks to the index we know if the record is already in the
+database (and in this case will generate an `UPDATE` statement) or if
+the record is new (and use an `INSERT` query).
+
+It's especially handy when dealing for example with data coming from a
+website scraper or from an spreadsheet, where a technical id (like an
+integer or a uuid) is not always available.
+
+To avoid to launch one query per record and suffer from network
+latencies, what Tanker do to speed up writes is to create a temporary
+table, insert all the record as one batch and then join this temporary
+table with the actual one to know which record to insert and which to
+update.
+
+Unfortunately, SQLite is not able to handle transactional table
+creation (even a temporary one), hence automatically trigger a commit
+before the `CREATE` statement. It's not an issue if your transaction
+do only one `View.write` call, but if several are done and the
+transaction is aborted, only the last will be rollbacked.  Postgresql
+has no such limitation.
+
+
 ### Foreign key resolution
 
 To populate the `team` table we have to provide a team name and a
