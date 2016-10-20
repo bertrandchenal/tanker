@@ -658,7 +658,7 @@ class View(object):
         # Clean cache for current table
         self.ctx.reset_cache(self.table.name)
 
-    def delete(self, data=None, filters=None, filter_by=None):
+    def delete(self, filters=None, filter_by=None, data=None, args=None):
         if not any((data, filters, filter_by)):
             raise ValueError('No deletion criteria given')
 
@@ -689,7 +689,7 @@ class View(object):
                 'where': ' AND '.join(where),
                 'joins': ' '.join(ref_set.get_sql_joins())
             }
-            execute(qr, qr_params)
+            return Cursor(qr, qr_params, args).all()
 
     def write(self, data, purge=False, insert=True, update=True):
         with self._prepare_write(data) as join_cond:

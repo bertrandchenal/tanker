@@ -261,7 +261,7 @@ dictionary to map dataframe columns to database columns.
 
 
 ### Documentation TODO
-
+  - Deletion (by data, by filter)
   - ACL
   - Aliases
 
