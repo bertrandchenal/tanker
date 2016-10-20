@@ -24,7 +24,7 @@ try:
 except ImportError:
     psycopg2 = None
 
-__version__ = '0.1.1'
+__version__ = '0.1.2'
 
 COLUMN_TYPE = ('TIMESTAMP', 'DATE', 'FLOAT', 'INTEGER', 'M2O', 'O2M', 'VARCHAR',
                'BOOL')
@@ -161,7 +161,7 @@ class Context:
         res = self._fk_cache[key].get(values)
         if res is None:
             raise ValueError('Values (%s) are not known in table "%s"' % (
-                ','.join(map(str, values)), remote_table))
+                ', '.join(map(str, values)), remote_table))
         return res
 
     def create_tables(self):
@@ -360,7 +360,7 @@ def format_query(qr, args=None, kwargs=None):
                 formatter, field_name, kwargs[key], spec))
 
         # Collect placeholders & values
-        qr_list.append(','.join('%s' for _ in values))
+        qr_list.append(', '.join('%s' for _ in values))
         qr_params.append(values)
 
     return ''.join(qr_list), tuple(qr_params)
@@ -542,13 +542,15 @@ class View(object):
             filters=filters, filter_by=filter_by)
 
         # Add select fields
+        field_params = tuple()
         for f in self.fields:
             if f.ftype == 'LITERAL':
-                qr_params += (f.value,)
+                field_params += (f.value,)
                 selects.append("%%s as %s" % f.desc)
             else:
                 ref = ref_set.add(f.desc)
                 selects.append('%s.%s' % (ref.join_alias, ref.remote_field))
+        qr_params = field_params + qr_params
 
         qr = 'SELECT %(selects)s FROM %(main_table)s'
         qr = qr % {
@@ -1178,7 +1180,7 @@ class Expression(object):
         # Collect literal and return placeholder
         if isinstance(x, (tuple, list)):
             self.params.extend(x)
-            return ','.join('%s' for _ in x)
+            return ', '.join('%s' for _ in x)
 
         self.params.append(x)
         return '%s'

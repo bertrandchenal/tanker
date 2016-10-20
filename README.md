@@ -264,7 +264,6 @@ dictionary to map dataframe columns to database columns.
 
 ### Documentation TODO
 
-  - Explain View.write behaviour (update vs insert & indexes)
   - ACL
   - Aliases
 

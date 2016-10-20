@@ -28,12 +28,12 @@ def test_args(session):
     ctx.cfg['cfg_team'] = 'Red'
     view = View('team', ['name'])
 
-    # simple test
+    # Simple test
     cond = '(= name {name})'
     rows = view.read(cond).args(name='Blue')
     assert sorted(rows) == [('Blue',), ('Blue',)]
 
-    # simple test, anonymous
+    # Simple test, anonymous
     cond = '(= name {})'
     rows = view.read(cond).args('Red')
     assert sorted(rows) == [('Red',)]
@@ -63,7 +63,7 @@ def test_args(session):
     rows = view.read(cond).args(data=data)
     assert sorted(rows) == [('Red',)]
 
-    # test formatting features
+    # Test formatting features
     qr = ' {} {spam!r} {foo:>5}'
     qr, params = format_query(qr, args=['ham'],
                               kwargs={'spam': 'spam', 'foo': 'foo'})
@@ -86,9 +86,23 @@ def test_aliases(session):
     })
 
     view = View('country', ['name', 'now'])
-    expected = view.read().all()
+    res = view.read().all()
     if ctx.flavor == 'sqlite':
         ok = lambda r: r[1] == str(now)
     else:
         ok = lambda r: r[1] == now
-    assert all(ok for r in expected)
+    assert all(ok for r in res)
+
+    ctx.aliases.update({
+        'type': 'TYPE'
+    })
+    view = View('country', ['name', 'type'])
+    filters = '(= name "France")'
+    res = view.read(filters).all()
+    assert res == [('France', 'TYPE')]
+
+def test_filters(session):
+    view = View('team', ['name'])
+    filters = '(= country.name "France")'
+    res = view.read(filters).all()
+    assert res == [('Blue',)]
