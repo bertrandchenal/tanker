@@ -7,8 +7,6 @@ steroids.
 Currently Postgresql and Sqlite are supported. There is also optional
 support for pandas DataFrames.
 
-See the `examples` folder for a quick overview of the main features.
-
 
 ## Licence
 
@@ -54,7 +52,7 @@ m2o country.id` will generate the following column definition:
 
     "country" INTEGER REFERENCES "country" (id) ON DELETE CASCADE
 
-If not specified, `sqlite:///:memory:` will be used as `db_uri` to use
+If not specified, `sqlite:///:memory:` will be used as `db_uri`. To use
 Postgresql, the uri should looks like
 `postgresql://login:passwd@hostname/dbname`
 
@@ -74,7 +72,7 @@ table:
         ['name']    # The fields we want to map
     )
 
-So now we can add write to the database:
+So now we can write to the database:
 
     countries = [['Belgium'], ['France']]
     country_view.write(countries)
@@ -93,7 +91,7 @@ records.
 As you can see in the database definition, each table comes with an
 index. This index is required by design in Tanker, its main role is to
 allow Tanker to know what to do with each record when `View.write` is
-called. Thanks to the index we know if the record is already in the
+called. Thanks to the index, we know if the record is already in the
 database (and in this case will generate an `UPDATE` statement) or if
 the record is new (and use an `INSERT` query).
 
@@ -159,7 +157,7 @@ Here, two join queries will be automatically generated, one between
 
 
 To add a member we have to link it to a team, whose index is composed
-of both the name and the country column (so we allow two team with the
+of both the name and the country column (so we allow two teams with the
 same name in different countries):
 
     members = [
@@ -207,7 +205,7 @@ own
 [string format method](https://docs.python.org/2/library/stdtypes.html#str.format),
 and will make use of the DB-API's parameter substitution (see for
 example
-[the sqlite documentation](https://docs.python.org/2/library/sqlite3.html)). Example:
+[the sqlite documentation](https://docs.python.org/2/library/sqlite3.html)):
 
     cond = '(= name {name})'
     rows = team_view.read(cond).args(name='Blue')
@@ -221,8 +219,8 @@ in the object passed as argument:
 
 The dot notation also supports dictionnaries, so the above example
 whould work with `data={'code': '001'}`. The query arguments can also
-refer values from the configuration (which can be reach from the `ctx`
-object), like:
+refer to values from the configuration (which can be reach from the
+`ctx` object), like:
 
     ctx.cfg['default_team'] = 'Red'
     cond = '(in name {default_team})'
