@@ -151,31 +151,6 @@ def test_purge(session):
     check(expected, res)
 
 
-def test_delete_data(session):
-    team_view = View('team', ['name'])
-    team_view.delete([('Blue',)])
-
-    expected = [('Red',)]
-    res = team_view.read()
-    check(expected, res)
-
-def test_delete_filter_by(session):
-    team_view = View('team', ['name'])
-    team_view.delete(filter_by={'name': 'Blue'})
-
-    expected = [('Red',)]
-    res = team_view.read()
-    check(expected, res)
-
-def test_delete_filter(session):
-    team_view = View('team', ['name'])
-    team_view.delete(filters='(= name "Blue")')
-
-    expected = [('Red',)]
-    res = team_view.read()
-    check(expected, res)
-
-
 def test_fetch_save(session):
     save('member', {
         'registration_code': '007',

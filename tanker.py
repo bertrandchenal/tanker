@@ -161,7 +161,7 @@ class Context:
         res = self._fk_cache[key].get(values)
         if res is None:
             raise ValueError('Values (%s) are not known in table "%s"' % (
-                ', '.join(map(str, values)), remote_table))
+                ', '.join(map(repr, values)), remote_table))
         return res
 
     def create_tables(self):
@@ -603,6 +603,9 @@ class View(object):
                     yield int(row[idx[0]])
                 else:
                     # Resole foreign key reference
+                    values = tuple(
+                        f.col.format(v, encoding=encoding, astype=f.ctype)
+                        for f, v in zip(fields, values))
                     yield ctx.resolve_fk(fields, values)
             else:
                 yield col.format(row[idx[0]], encoding=encoding)
@@ -632,8 +635,8 @@ class View(object):
             buff = io.BytesIO()
             writer = csv.writer(buff, delimiter='\t')
             for row in data:
-                line = self.format_line(row)
-                writer.writerow(list(line))
+                line = list(self.format_line(row, encoding='utf-8'))
+                writer.writerow(line)
             buff.seek(0)
             copy_from(buff, 'tmp', null='')
         else:
@@ -664,7 +667,6 @@ class View(object):
 
         if data and (filters or filter_by):
             raise ValueError('Deletion by both data and filter not supported')
-
         where, qr_params, ref_set = self._build_filter_cond(
             filters=filters, filter_by=filter_by)
 
@@ -689,7 +691,9 @@ class View(object):
                 'where': ' AND '.join(where),
                 'joins': ' '.join(ref_set.get_sql_joins())
             }
-            return Cursor(qr, qr_params, args).all()
+
+            # execute(qr, qr_params, args)
+            return iter(Cursor(qr, qr_params, args))
 
     def write(self, data, purge=False, insert=True, update=True):
         with self._prepare_write(data) as join_cond:
@@ -887,27 +891,26 @@ class Column:
         return Table.get(name)
 
 
-    def format(self, value, encoding=None):
+    def format(self, value, encoding=None, astype=None):
         '''
         Sanitize value wrt the column type of the current field.
         '''
-
         if value is None:
             return None
         elif pandas and pandas.isnull(value):
             return None
-
-        if self.ctype == 'INTEGER' and not isinstance(value, int):
+        astype = astype or self.ctype
+        if astype == 'INTEGER' and not isinstance(value, int):
             value = int(value)
-        elif self.ctype == 'VARCHAR':
+        elif astype == 'VARCHAR':
             if not isinstance(value, basestring):
                 value = str(value)
             value = value.strip()
             if encoding is not None:
                 value = value.encode(encoding)
-        elif self.ctype == 'TIMESTAMP' and hasattr(value, 'timetuple'):
+        elif astype == 'TIMESTAMP' and hasattr(value, 'timetuple'):
             value = datetime.datetime(*value.timetuple()[:6])
-        elif self.ctype == 'DATE' and hasattr(value, 'timetuple'):
+        elif astype == 'DATE' and hasattr(value, 'timetuple'):
             value = datetime.date(*value.timetuple()[:3])
 
         return value
@@ -1192,7 +1195,8 @@ def parse_uri(db_uri):
 
 @contextmanager
 def connect(cfg):
-    uri = parse_uri(cfg.get('db_uri', 'sqlite:///:memory:'))
+    db_uri = cfg.get('db_uri', 'sqlite:///:memory:')
+    uri = parse_uri(db_uri)
     flavor = uri.scheme
 
     if flavor == 'sqlite':
@@ -1205,7 +1209,7 @@ def connect(cfg):
         if psycopg2 is None:
             raise ImportError(
                 'Cannot connect to "%s" without psycopg2 package '\
-                'installed' % uri)
+                'installed' % db_uri)
         con_info = "dbname='%s' " % uri.dbname
         if uri.hostname:
             con_info += "host='%s' " % uri.hostname
