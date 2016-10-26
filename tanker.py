@@ -1190,7 +1190,8 @@ def parse_uri(db_uri):
 
 @contextmanager
 def connect(cfg):
-    uri = parse_uri(cfg.get('db_uri', 'sqlite:///:memory:'))
+    db_uri = cfg.get('db_uri', 'sqlite:///:memory:')
+    uri = parse_uri(db_uri)
     flavor = uri.scheme
 
     if flavor == 'sqlite':
@@ -1203,7 +1204,7 @@ def connect(cfg):
         if psycopg2 is None:
             raise ImportError(
                 'Cannot connect to "%s" without psycopg2 package '\
-                'installed' % uri)
+                'installed' % db_uri)
         con_info = "dbname='%s' " % uri.dbname
         if uri.hostname:
             con_info += "host='%s' " % uri.hostname
