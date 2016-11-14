@@ -132,7 +132,7 @@ class Context:
         for col_name, col_type in table_def['columns'].items():
             new_col = Column(col_name, col_type, default=defaults.get(col_name))
             columns.append(new_col)
-        # Instanciating the table adds it to REGISTRY
+        # Instanciating the table adds it to current registry
         Table(name=table_def['table'], columns=columns,
               values=values,
               index=table_def.get('index'),
