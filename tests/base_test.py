@@ -153,7 +153,7 @@ def test_purge(session):
 
 def test_delete_data(session):
     team_view = View('team', ['name'])
-    team_view.delete([('Blue',)])
+    team_view.delete(data=[('Blue',)])
 
     expected = [('Red',)]
     res = team_view.read()

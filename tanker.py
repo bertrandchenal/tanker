@@ -590,7 +590,7 @@ class View(object):
 
         if limit is not None:
             qr += ' LIMIT %s' % int(limit)
-        return Cursor(qr, qr_params, args)
+        return Cursor(self, qr, qr_params, args)
 
     def format_line(self, row, encoding=None):
         for col in self.field_map:
@@ -689,7 +689,7 @@ class View(object):
                 'where': ' AND '.join(where),
                 'joins': ' '.join(ref_set.get_sql_joins())
             }
-            return Cursor(qr, qr_params, args).all()
+            return Cursor(self, qr, qr_params, args).all()
 
     def write(self, data, purge=False, insert=True, update=True):
         with self._prepare_write(data) as join_cond:
@@ -761,22 +761,12 @@ class View(object):
         }
         execute(qr)
 
-    def read_df(self, filters=None, disable_acl=False, order=None, limit=None):
-        if not pandas:
-            raise ImportError('The pandas module is required by read_df')
-
-        # Create df from read data
-        data = self.read(filters=filters, disable_acl=disable_acl,
-                         order=order, limit=limit)
-        read_columns = [f.name for f in self.fields]
-        df = pandas.DataFrame.from_records(data, columns=read_columns)
-
-        return df
 
 
 class Cursor:
 
-    def __init__(self, qr, qr_params, args):
+    def __init__(self, view, qr, qr_params, args):
+        self.view = view
         self.db_cursor = None
         self.qr = qr
         self.qr_params = qr_params
@@ -810,6 +800,14 @@ class Cursor:
 
     def all(self):
         return list(self)
+
+    def df(self):
+        if not pandas:
+            raise ImportError('The pandas module is required by read_df')
+        read_columns = [f.name for f in self.view.fields]
+        df = pandas.DataFrame.from_records(self, columns=read_columns)
+        return df
+
 
 class Table:
 
