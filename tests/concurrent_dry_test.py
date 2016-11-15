@@ -16,6 +16,11 @@ def session(request):
     yield
 
 def test_read_thread(session):
+    '''
+    Test a situation where threads are created outside of any active
+    context (hence dry).
+    '''
+
     cfg = get_config('sqlite')
     with connect(cfg):
         create_tables()
