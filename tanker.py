@@ -40,7 +40,7 @@ logger.setLevel(logging.INFO)
 class TankerThread(Thread):
 
     def __init__(self, *args, **kwargs):
-        self.parent_context = ctx.copy()
+        self.parent_context = ctx.copy() # FIXME handle situation when stack is empty
         super(TankerThread, self).__init__(*args, **kwargs)
 
     def run(self):
