@@ -836,7 +836,11 @@ class Table:
                 raise ValueError('Index column "%s" does not exist' % col)
 
     def get_column(self, name):
-        return self._column_dict[name]
+        try:
+            return self._column_dict[name]
+        except KeyError:
+            raise KeyError('Column "%s" not found in table "%s"' % (
+                name, self.name))
 
     def get_foreign_values(self, desc):
         rel_name, field = desc.split('.')
