@@ -40,11 +40,15 @@ logger.setLevel(logging.INFO)
 class TankerThread(Thread):
 
     def __init__(self, *args, **kwargs):
-        self.parent_context = ctx.copy() # FIXME handle situation when stack is empty
+        if CTX_STACK._local.contexts:
+            # Capture current context if any
+            self.stack = [ctx.copy()]
+        else:
+            self.stack = []
         super(TankerThread, self).__init__(*args, **kwargs)
 
     def run(self):
-        CTX_STACK.reset([self.parent_context])
+        CTX_STACK.reset(self.stack)
         super(TankerThread, self).run()
 
 class ContextStack():
@@ -691,7 +695,7 @@ class View(object):
                 'where': ' AND '.join(where),
                 'joins': ' '.join(ref_set.get_sql_joins())
             }
-            return Cursor(self, qr, qr_params, args).all()
+            return iter(Cursor(self, qr, qr_params, args))
 
     def write(self, data, purge=False, insert=True, update=True):
         with self._prepare_write(data) as join_cond:
