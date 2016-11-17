@@ -803,7 +803,7 @@ class Cursor:
 
     def df(self):
         if not pandas:
-            raise ImportError('The pandas module is required by read_df')
+            raise ImportError('The pandas module is required by Cursor.df')
         read_columns = [f.name for f in self.view.fields]
         df = pandas.DataFrame.from_records(self, columns=read_columns)
         return df
