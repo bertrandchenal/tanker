@@ -1,7 +1,7 @@
 from datetime import datetime
 
 from tanker import View, Expression, ctx, format_query
-from base_test import session
+from .base_test import session
 
 
 def test_filters(session):

@@ -3,7 +3,12 @@ from contextlib import contextmanager
 from itertools import chain, cycle
 from string import Formatter
 from threading import Thread
-from urlparse import urlparse
+try:
+    # PY2
+    from urlparse import urlparse
+except ImportError:
+    # PY3
+    from urllib.parse import urlparse
 import csv
 import datetime
 import io
@@ -11,6 +16,7 @@ import logging
 import re
 import shlex
 import sqlite3
+import sys
 import textwrap
 import threading
 
@@ -24,7 +30,17 @@ try:
 except ImportError:
     psycopg2 = None
 
-__version__ = '0.1.3'
+# Python2/Python3 magic
+PY2 = sys.version_info[0] == 2
+if PY2:
+    BuffIO = io.BytesIO
+else:
+    BuffIO = io.StringIO
+if not PY2:
+    basestring = (str, bytes)
+
+
+__version__ = '0.1.4'
 
 COLUMN_TYPE = ('TIMESTAMP', 'DATE', 'FLOAT', 'INTEGER', 'M2O', 'O2M', 'VARCHAR',
                'BOOL')
@@ -159,7 +175,8 @@ class Context:
                 _, desc = field.desc.split('.', 1)
                 read_fields.append(desc)
             view = View(remote_table, read_fields + ['id'])
-            res = dict((val[:-1], val[-1]) for val in view.read(disable_acl=True))
+            res = dict((val[:-1], val[-1])
+                       for val in view.read(disable_acl=True))
             self._fk_cache[key] = res
 
         res = self._fk_cache[key].get(values)
@@ -178,7 +195,7 @@ class Context:
         self.db_tables.update(name for name, in execute(qr))
 
         # Create tables and simple columns
-        for table in self.registry.itervalues():
+        for table in self.registry.values():
             if table.name in self.db_tables:
                 continue
             if self.flavor == 'sqlite':
@@ -239,7 +256,7 @@ class Context:
 
         indexes = set(name for name, in execute(qr))
 
-        for table in self.registry.itervalues():
+        for table in self.registry.values():
             if not table.index:
                 continue
 
@@ -257,7 +274,7 @@ class Context:
             db_cons = set(name for name, in execute(qr))
 
             unique_qr = 'ALTER TABLE %s ADD CONSTRAINT %s UNIQUE (%s)';
-            for table in self.registry.itervalues():
+            for table in self.registry.values():
                 for cols in table.unique:
                     cons_name = 'unique_' + '_'.join(cols)
                     if len(cons_name) > 63:
@@ -268,10 +285,10 @@ class Context:
                     execute(unique_qr % (table.name, cons_name, cons_cols))
 
         # Add pre-defined data
-        for table in self.registry.itervalues():
+        for table in self.registry.values():
             if not table.values:
                 continue
-            view = View(table.name, fields=table.values[0].keys())
+            view = View(table.name, fields=list(table.values[0].keys()))
             view.write(table.values)
 
 
@@ -412,7 +429,7 @@ def fetch(tablename, filter_by):
 
 def save(tablename, data):
     fields = data.keys()
-    view = View(tablename, fields)
+    view = View(tablename, list(fields))
     view.write([data])
 
 
@@ -455,7 +472,7 @@ class ViewField:
 
 class View(object):
 
-    def __init__(self, table, fields=None, melt=False):
+    def __init__(self, table, fields=None):
         self.ctx = ctx
         self.table = Table.get(table)
         if fields is None:
@@ -568,7 +585,7 @@ class View(object):
 
         if order:
             order_by = []
-            if isinstance(order, (basestring, tuple)):
+            if isinstance(order, (str, tuple)):
                 order = [order]
             for item in order:
                 if isinstance(item, (list, tuple)):
@@ -594,7 +611,7 @@ class View(object):
 
         if limit is not None:
             qr += ' LIMIT %s' % int(limit)
-        return Cursor(self, qr, qr_params, args)
+        return TankerCursor(self, qr, qr_params, args)
 
     def format_line(self, row, encoding=None):
         for col in self.field_map:
@@ -623,7 +640,7 @@ class View(object):
             col.name,
             fields[0].ftype,
             not_null(col.name)) \
-        for col, fields in self.field_map.iteritems())
+        for col, fields in self.field_map.items())
         execute(qr)
 
         # Handle list of dict and dataframes
@@ -636,7 +653,7 @@ class View(object):
 
         # Fill tmp
         if self.ctx.flavor == 'postgresql':
-            buff = io.BytesIO()
+            buff = BuffIO()
             writer = csv.writer(buff, delimiter='\t')
             for row in data:
                 line = list(self.format_line(row, encoding='utf-8'))
@@ -695,7 +712,7 @@ class View(object):
                 'where': ' AND '.join(where),
                 'joins': ' '.join(ref_set.get_sql_joins())
             }
-            return iter(Cursor(self, qr, qr_params, args))
+            return iter(TankerCursor(self, qr, qr_params, args))
 
     def write(self, data, purge=False, insert=True, update=True):
         with self._prepare_write(data) as join_cond:
@@ -769,7 +786,7 @@ class View(object):
 
 
 
-class Cursor:
+class TankerCursor:
 
     def __init__(self, view, qr, qr_params, args):
         self.view = view
@@ -800,6 +817,9 @@ class Cursor:
         kwargs.update(cfg)
         self.db_cursor = execute(self.qr, self.qr_params, self._args, kwargs)
         return self.db_cursor
+
+    def __next__(self):
+        return next(iter(self))
 
     def next(self):
         return next(iter(self))
@@ -910,8 +930,8 @@ class Column:
             if not isinstance(value, basestring):
                 value = str(value)
             value = value.strip()
-            if encoding is not None:
-                value = value.encode(encoding)
+            # if encoding is not None: ## OK py2
+            #     value = value.decode(encoding)
         elif astype == 'TIMESTAMP' and hasattr(value, 'timetuple'):
             value = datetime.datetime(*value.timetuple()[:6])
         elif astype == 'DATE' and hasattr(value, 'timetuple'):
@@ -1088,7 +1108,7 @@ class Expression(object):
     def eval(self, exp):
         self.params = []
         # Parse string
-        lexer = shlex.shlex(exp.encode('utf-8'))
+        lexer = shlex.shlex(exp)
         lexer.wordchars += '.!=<>:{}'
         ast = self.read(list(lexer))
 
@@ -1192,19 +1212,16 @@ class Expression(object):
         self.params.append(x)
         return '%s'
 
-def parse_uri(db_uri):
-    uri = urlparse(db_uri)
-    uri.dbname = uri.path[1:] # Ignore the first /
-    return uri
 
 @contextmanager
 def connect(cfg):
     db_uri = cfg.get('db_uri', 'sqlite:///:memory:')
-    uri = parse_uri(db_uri)
+    uri = urlparse(db_uri)
+    dbname = uri.path[1:]
     flavor = uri.scheme
 
     if flavor == 'sqlite':
-        db_path = uri.dbname
+        db_path = dbname
         connection = sqlite3.connect(db_path, check_same_thread=False,
                                      detect_types=sqlite3.PARSE_DECLTYPES)
         connection.execute('PRAGMA foreign_keys=ON')
@@ -1214,7 +1231,7 @@ def connect(cfg):
             raise ImportError(
                 'Cannot connect to "%s" without psycopg2 package '\
                 'installed' % db_uri)
-        con_info = "dbname='%s' " % uri.dbname
+        con_info = "dbname='%s' " % dbname
         if uri.hostname:
             con_info += "host='%s' " % uri.hostname
         if uri.username:
