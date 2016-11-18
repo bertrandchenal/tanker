@@ -1,10 +1,13 @@
 from collections import defaultdict
-from Queue import Queue
+try:
+    from Queue import Queue
+except ImportError:
+    from queue import Queue
 from threading import Thread, current_thread
 import pytest
 
 from tanker import connect, create_tables, View, TankerThread, ctx
-from base_test import get_config, DB_TYPES
+from .base_test import get_config, DB_TYPES
 
 NB_THREADS = 2
 

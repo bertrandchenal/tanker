@@ -1,5 +1,5 @@
 from tanker import View
-from base_test import session
+from .base_test import session
 
 def test_delete_data(session):
     view = View('country', ['name'])

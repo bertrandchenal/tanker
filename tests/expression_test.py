@@ -1,6 +1,6 @@
 import pytest
 from tanker import Table, View, Column, Expression, ctx
-from base_test import session
+from .base_test import session
 
 
 def test_bitwise_operator(session):

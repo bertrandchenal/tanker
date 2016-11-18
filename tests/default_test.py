@@ -1,5 +1,5 @@
 from tanker import View, Expression
-from base_test import session, members
+from .base_test import session, members
 
 def test_timestamp(session):
     view = View('member', [

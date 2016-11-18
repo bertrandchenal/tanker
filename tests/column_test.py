@@ -2,7 +2,7 @@ from itertools import product
 
 import pytest
 from tanker import View, Expression
-from base_test import get_config, DB_TYPES
+from .base_test import get_config, DB_TYPES
 
 
 COL_TYPES = ['integer', 'timestamp']

@@ -1,6 +1,6 @@
 from pandas import DataFrame
 from tanker import View, Expression, ctx
-from base_test import session
+from .base_test import session
 
 
 def test_read_write(session):
