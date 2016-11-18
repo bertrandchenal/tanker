@@ -25,8 +25,10 @@ try:
 except ImportError:
     pandas = None
 
+PG_POOLS = {}
 try:
     import psycopg2
+    from psycopg2.pool import ThreadedConnectionPool
 except ImportError:
     psycopg2 = None
 
@@ -1221,7 +1223,7 @@ def connect(cfg):
     uri = urlparse(db_uri)
     dbname = uri.path[1:]
     flavor = uri.scheme
-
+    pg_pool = None
     if flavor == 'sqlite':
         db_path = dbname
         connection = sqlite3.connect(db_path, check_same_thread=False,
@@ -1240,20 +1242,27 @@ def connect(cfg):
             con_info += "user='%s' " % uri.username
         if uri.password:
             con_info += "password='%s' " % uri.password
-        connection = psycopg2.connect(con_info)
+
+        # Find pool for given uri
+        pg_pool = PG_POOLS.get(con_info)
+        if pg_pool is None:
+            pool_size = cfg.get('pg_pool_size', 10)
+            pg_pool = ThreadedConnectionPool(1, pool_size, con_info)
+        connection = pg_pool.getconn()
         connection.set_client_encoding('UTF8')
 
     else:
         raise ValueError('Unsupported scheme "%s" in uri "%s"' % (
             uri.scheme, uri))
 
-    with connection:
-        new_ctx = CTX_STACK.push(flavor=flavor, connection=connection, cfg=cfg)
-
-        try:
-            yield new_ctx
-        finally:
-            CTX_STACK.pop()
+    new_ctx = CTX_STACK.push(flavor=flavor, connection=connection, cfg=cfg)
+    try:
+        yield new_ctx
+        connection.commit()
+    finally:
+        CTX_STACK.pop()
+        if pg_pool is not None:
+            pg_pool.putconn(connection)
 
 
 def yaml_load(stream):
