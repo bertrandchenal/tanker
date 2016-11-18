@@ -71,12 +71,14 @@ class ContextStack():
 
     def __init__(self):
         self._local = threading.local()
-        self._local.contexts = []
 
     def reset(self, contexts):
         self._local.contexts = contexts
 
     def push(self, flavor=None, connection=None, cfg=None):
+        if not hasattr(self._local, 'contexts'):
+            self._local.contexts = []
+
         new_ctx = Context(flavor=flavor, connection=connection, cfg=cfg)
         self._local.contexts.append(new_ctx)
 

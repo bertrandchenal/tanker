@@ -270,8 +270,7 @@ dictionary to map dataframe columns to database columns.
 
 Some ideas, in no particular order:
 
-  - Replace `read_df` by `read().df()`, like that we can do
-    `read().args(**kw).df()`
+  - Add support for psycopg2 pool
   - Allow to excute complete queries with s-expressions (select,
     update, insert and delete).
   - Add support for

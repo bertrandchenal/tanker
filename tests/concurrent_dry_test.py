@@ -6,7 +6,7 @@ except ImportError:
 from threading import Thread, current_thread
 import pytest
 
-from tanker import connect, create_tables, View, TankerThread, ctx
+from tanker import connect, create_tables, View,  ctx
 from .base_test import get_config, DB_TYPES
 
 NB_THREADS = 2
@@ -37,7 +37,7 @@ def test_read_thread(session):
     for i in range(NB_THREADS):
         in_q = Queue(maxsize=1)
         in_queues.append(in_q)
-        t = TankerThread(target=read, args=(in_q, out_q, cfg))
+        t = Thread(target=read, args=(in_q, out_q, cfg))
         t.start()
         read_threads.append(t)
 
