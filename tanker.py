@@ -1259,6 +1259,9 @@ def connect(cfg):
     try:
         yield new_ctx
         connection.commit()
+    except:
+        connection.rollback()
+        raise
     finally:
         CTX_STACK.pop()
         if pg_pool is not None:
