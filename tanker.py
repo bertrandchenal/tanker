@@ -69,7 +69,89 @@ class TankerThread(Thread):
         CTX_STACK.reset(self.stack)
         super(TankerThread, self).run()
 
-class ContextStack():
+
+class Pool:
+
+    _pools = {}
+
+    def __init__(self, db_uri, cfg):
+        self.cfg = cfg
+        self.registry = {}
+        uri = urlparse(db_uri)
+        dbname = uri.path[1:]
+        self.flavor = uri.scheme
+
+        if self.flavor == 'sqlite':
+            self.conn_args = [dbname]
+            self.conn_kwargs = {
+                'check_same_thread': False,
+                'detect_types': sqlite3.PARSE_DECLTYPES,
+            }
+
+        elif self.flavor == 'postgresql':
+            if psycopg2 is None:
+                raise ImportError(
+                    'Cannot connect to "%s" without psycopg2 package '\
+                    'installed' % db_uri)
+            con_info = "dbname='%s' " % dbname
+            if uri.hostname:
+                con_info += "host='%s' " % uri.hostname
+            if uri.username:
+                con_info += "user='%s' " % uri.username
+            if uri.password:
+                con_info += "password='%s' " % uri.password
+
+            pool_size = cfg.get('pg_pool_size', 10)
+            self.pg_pool = ThreadedConnectionPool(1, pool_size, con_info)
+
+        else:
+            raise ValueError('Unsupported scheme "%s" in uri "%s"' % (
+                uri.scheme, uri))
+
+    @contextmanager
+    def get_context(self):
+        if self.flavor == 'sqlite':
+            connection = sqlite3.connect(*self.conn_args, **self.conn_kwargs)
+            connection.execute('PRAGMA foreign_keys=ON')
+        elif self.flavor == 'postgresql':
+            connection = self.pg_pool.getconn()
+            connection.set_client_encoding('UTF8')
+        else:
+            raise ValueError('Unexpected flavor "%s"' % self.flavor)
+
+        new_ctx = CTX_STACK.push(connection, self)
+
+        # Makes new_ctx init the pool registry if still empty
+        schema = self.cfg and self.cfg.get('schema')
+        if not self.registry and schema:
+            for table_def in schema:
+                new_ctx.register(table_def)
+
+        try:
+            yield new_ctx
+            connection.commit()
+        except:
+            connection.rollback()
+            raise
+        finally:
+            CTX_STACK.pop()
+            if self.flavor == 'postgresql':
+                self.pg_pool.putconn(connection)
+
+    @classmethod
+    def get_pool(cls, cfg):
+        db_uri = cfg.get('db_uri', 'sqlite:///:memory:')
+        pool = cls._pools.get(db_uri)
+        if pool:
+            # Return existing pool for current db if any
+            return pool
+
+        pool = Pool(db_uri, cfg)
+        cls._pools[db_uri] = pool
+        return pool
+
+
+class ContextStack:
 
     def __init__(self):
         self._local = threading.local()
@@ -77,20 +159,12 @@ class ContextStack():
     def reset(self, contexts):
         self._local.contexts = contexts
 
-    def push(self, flavor=None, connection=None, cfg=None):
+    def push(self, connection, pool):
         if not hasattr(self._local, 'contexts'):
             self._local.contexts = []
 
-        new_ctx = Context(flavor=flavor, connection=connection, cfg=cfg)
+        new_ctx = Context(connection, pool)
         self._local.contexts.append(new_ctx)
-
-        # TODO: provide a cache of the registry per uri (to avoid this loop)
-        schema = cfg and cfg.get('schema')
-
-        if not new_ctx.registry and schema:
-            for table_def in schema:
-                new_ctx.register(table_def)
-
         return new_ctx
 
     def pop(self):
@@ -105,26 +179,27 @@ class ShallowContext:
     def __getattr__(self, name):
         return getattr(CTX_STACK.active_context(), name)
 
-
 class Context:
 
-    def __init__(self, flavor, connection, cfg):
-        self.flavor = flavor
+    def __init__(self, connection, pool):
+        self.flavor = pool.flavor
         self.connection = connection
         self.cursor = connection.cursor()
-        self.cfg = cfg
+        self.cfg = pool.cfg
         self.aliases = {'null': None}
         self._fk_cache = {}
         self.db_tables = set()
         self.db_fields = set()
-        self.registry = OrderedDict()
+        # Share pool registry
+        self.pool = pool
+        self.registry = pool.registry
 
     def copy(self):
         '''
         Create a clone of self, will trigger instanciation of a new cursor
         (the connection is shared)
         '''
-        new_ctx = Context(self.flavor, self.connection, self.cfg)
+        new_ctx = Context(self.connection, self.pool)
         new_ctx.aliases = self.aliases
         new_ctx.db_fields = self.db_fields
         new_ctx.db_tables = self.db_tables
@@ -1218,54 +1293,10 @@ class Expression(object):
 
 
 @contextmanager
-def connect(cfg):
-    db_uri = cfg.get('db_uri', 'sqlite:///:memory:')
-    uri = urlparse(db_uri)
-    dbname = uri.path[1:]
-    flavor = uri.scheme
-    pg_pool = None
-    if flavor == 'sqlite':
-        db_path = dbname
-        connection = sqlite3.connect(db_path, check_same_thread=False,
-                                     detect_types=sqlite3.PARSE_DECLTYPES)
-        connection.execute('PRAGMA foreign_keys=ON')
-
-    elif flavor == 'postgresql':
-        if psycopg2 is None:
-            raise ImportError(
-                'Cannot connect to "%s" without psycopg2 package '\
-                'installed' % db_uri)
-        con_info = "dbname='%s' " % dbname
-        if uri.hostname:
-            con_info += "host='%s' " % uri.hostname
-        if uri.username:
-            con_info += "user='%s' " % uri.username
-        if uri.password:
-            con_info += "password='%s' " % uri.password
-
-        # Find pool for given uri
-        pg_pool = PG_POOLS.get(con_info)
-        if pg_pool is None:
-            pool_size = cfg.get('pg_pool_size', 10)
-            pg_pool = ThreadedConnectionPool(1, pool_size, con_info)
-        connection = pg_pool.getconn()
-        connection.set_client_encoding('UTF8')
-
-    else:
-        raise ValueError('Unsupported scheme "%s" in uri "%s"' % (
-            uri.scheme, uri))
-
-    new_ctx = CTX_STACK.push(flavor=flavor, connection=connection, cfg=cfg)
-    try:
-        yield new_ctx
-        connection.commit()
-    except:
-        connection.rollback()
-        raise
-    finally:
-        CTX_STACK.pop()
-        if pg_pool is not None:
-            pg_pool.putconn(connection)
+def connect(cfg=None):
+    pool = Pool.get_pool(cfg or {})
+    with pool.get_context() as ctx:
+        yield ctx
 
 
 def yaml_load(stream):
