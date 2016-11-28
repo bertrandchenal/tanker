@@ -5,7 +5,7 @@ from .base_test import session
 
 
 def test_read_write(session):
-    japan = '日本'.decode('utf-8')
+    japan = '日本'
     team_view = View('country', ['name'])
     team_view.write([(japan,)])
 

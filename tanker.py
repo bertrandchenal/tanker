@@ -1009,8 +1009,9 @@ class Column:
             if not isinstance(value, basestring):
                 value = str(value)
             value = value.strip()
-            # if encoding is not None: ## OK py2
-            #     value = value.decode(encoding)
+            # if PY2 and encoding is not None:
+            #     print(value)
+            #     value = value.encode(encoding)
         elif astype == 'TIMESTAMP' and hasattr(value, 'timetuple'):
             value = datetime.datetime(*value.timetuple()[:6])
         elif astype == 'DATE' and hasattr(value, 'timetuple'):
