@@ -112,6 +112,7 @@ class Pool:
     def get_context(self):
         if self.flavor == 'sqlite':
             connection = sqlite3.connect(*self.conn_args, **self.conn_kwargs)
+            connection.text_factory = str
             connection.execute('PRAGMA foreign_keys=ON')
         elif self.flavor == 'postgresql':
             connection = self.pg_pool.getconn()
@@ -692,7 +693,7 @@ class View(object):
             qr += ' LIMIT %s' % int(limit)
         return TankerCursor(self, qr, qr_params, args)
 
-    def format_line(self, row, encoding=None):
+    def format_line(self, row):
         for col in self.field_map:
             idx = self.field_idx[col]
             if col.ctype == 'M2O':
@@ -704,11 +705,11 @@ class View(object):
                 else:
                     # Resole foreign key reference
                     values = tuple(
-                        f.col.format(v, encoding=encoding, astype=f.ctype)
+                        f.col.format(v, astype=f.ctype)
                         for f, v in zip(fields, values))
                     yield ctx.resolve_fk(fields, values)
             else:
-                yield col.format(row[idx[0]], encoding=encoding)
+                yield col.format(row[idx[0]])
 
     @contextmanager
     def _prepare_write(self, data):
@@ -735,7 +736,7 @@ class View(object):
             buff = BuffIO()
             writer = csv.writer(buff, delimiter='\t')
             for row in data:
-                line = list(self.format_line(row, encoding='utf-8'))
+                line = list(self.format_line(row))
                 writer.writerow(line)
             buff.seek(0)
             copy_from(buff, 'tmp', null='')
@@ -994,7 +995,7 @@ class Column:
         return Table.get(name)
 
 
-    def format(self, value, encoding=None, astype=None):
+    def format(self, value, astype=None):
         '''
         Sanitize value wrt the column type of the current field.
         '''
@@ -1009,9 +1010,6 @@ class Column:
             if not isinstance(value, basestring):
                 value = str(value)
             value = value.strip()
-            # if PY2 and encoding is not None:
-            #     print(value)
-            #     value = value.encode(encoding)
         elif astype == 'TIMESTAMP' and hasattr(value, 'timetuple'):
             value = datetime.datetime(*value.timetuple()[:6])
         elif astype == 'DATE' and hasattr(value, 'timetuple'):
