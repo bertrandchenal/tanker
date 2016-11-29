@@ -11,3 +11,7 @@ def test_read_write(session):
 
     row = team_view.read(filter_by={'name': japan}).next()
     assert row[0] == japan
+
+    fltr = '(= name "%s")' % japan
+    row = team_view.read(fltr).next()
+    assert row[0] == japan
