@@ -44,8 +44,8 @@ if not PY2:
 
 __version__ = '0.2'
 
-COLUMN_TYPE = ('TIMESTAMP', 'DATE', 'FLOAT', 'INTEGER', 'M2O', 'O2M', 'VARCHAR',
-               'BOOL')
+COLUMN_TYPE = ('TIMESTAMP', 'DATE', 'FLOAT', 'INTEGER', 'M2O', 'O2M',
+               'VARCHAR', 'BOOL')
 QUOTE_SEPARATION = re.compile(r"(.*?)('.*?')", re.DOTALL)
 NAMED_RE = re.compile(r"%\(([^\)]+)\)s")
 
@@ -91,7 +91,7 @@ class Pool:
         elif self.flavor == 'postgresql':
             if psycopg2 is None:
                 raise ImportError(
-                    'Cannot connect to "%s" without psycopg2 package '\
+                    'Cannot connect to "%s" without psycopg2 package '
                     'installed' % db_uri)
             con_info = "dbname='%s' " % dbname
             if uri.hostname:
@@ -180,6 +180,7 @@ class ShallowContext:
     def __getattr__(self, name):
         return getattr(CTX_STACK.active_context(), name)
 
+
 class Context:
 
     def __init__(self, connection, pool):
@@ -230,14 +231,14 @@ class Context:
         defaults = table_def.get('defaults', {})
         columns = []
         for col_name, col_type in table_def['columns'].items():
-            new_col = Column(col_name, col_type, default=defaults.get(col_name))
+            new_col = Column(
+                col_name, col_type, default=defaults.get(col_name))
             columns.append(new_col)
         # Instanciating the table adds it to current registry
         Table(name=table_def['table'], columns=columns,
               values=values,
               index=table_def.get('index'),
-              unique=table_def.get('unique'),
-        )
+              unique=table_def.get('unique'))
 
     def reset_cache(self, table=None):
         if table is None:
@@ -271,7 +272,7 @@ class Context:
             qr = "SELECT name FROM sqlite_master WHERE type = 'table'"
         elif self.flavor == 'postgresql':
             qr = "SELECT table_name FROM information_schema.tables " \
-            "WHERE table_schema = 'public'"
+                 "WHERE table_schema = 'public'"
         self.db_tables.update(name for name, in execute(qr))
 
         # Create tables and simple columns
@@ -350,15 +351,17 @@ class Context:
 
         # Add unique constrains (not supported by sqlite)
         if self.flavor != 'sqlite':
-            qr = 'select constraint_name from information_schema.table_constraints'
+            qr = 'SELECT constraint_name '\
+                 'FROM information_schema.table_constraints'
             db_cons = set(name for name, in execute(qr))
 
-            unique_qr = 'ALTER TABLE %s ADD CONSTRAINT %s UNIQUE (%s)';
+            unique_qr = 'ALTER TABLE %s ADD CONSTRAINT %s UNIQUE (%s)'
             for table in self.registry.values():
                 for cols in table.unique:
                     cons_name = 'unique_' + '_'.join(cols)
                     if len(cons_name) > 63:
-                        ValueError('Constrain name "%s" is too big' % cons_name)
+                        msg = 'Constrain name "%s" is too big'
+                        ValueError(msg % cons_name)
                     if cons_name in db_cons:
                         continue
                     cons_cols = ', '.join(cols)
@@ -384,7 +387,8 @@ def log_sql(query, params=None):
         params = str(params)
         if len(params) > 1000:
             params = params[:1000] + '...'
-        logger.debug('SQL Query:\n%s\nSQL Params:\n%s%s', query, indent, params)
+        logger.debug('SQL Query:\n%s\nSQL Params:\n%s%s',
+                     query, indent, params)
 
 CTX_STACK = ContextStack()
 ctx = ShallowContext()
@@ -395,15 +399,14 @@ DB_EXCEPTION = (sqlite3.OperationalError,)
 if psycopg2 is not None:
     DB_EXCEPTION += (psycopg2.ProgrammingError,)
 
+
 class DBError(Exception):
     pass
 
-def execute(query, params=None, args=None, kwargs=None):
-    query, extra_params = format_query(query, args, kwargs)
-    params = tuple(merge_params(params, extra_params))
+
+def execute(query, params=None):
     log_sql(query, params)
     query = ctx._prepare_query(query)
-
     try:
         if params:
             ctx.cursor.execute(query, params)
@@ -413,81 +416,12 @@ def execute(query, params=None, args=None, kwargs=None):
         raise DBError(e)
     return ctx.cursor
 
-def executemany(query, params, args=None, kwargs=None):
-    query, extra_params  = format_query(query, args, kwargs)
-    params = tuple(merge_params(params, extra_params))
 
+def executemany(query, params):
     query = ctx._prepare_query(query)
     log_sql(query, params)
     ctx.cursor.executemany(query, params)
     return ctx.cursor
-
-def merge_params(params, extra_params):
-    if not params:
-        return
-    extra_it = cycle(extra_params)
-    for prm in params:
-        if isinstance(prm, ExpressionParam):
-            for value in next(extra_it):
-                yield value
-        else:
-            yield prm
-
-def format_query(qr, args=None, kwargs=None):
-    if not (args or kwargs):
-        return qr, tuple()
-    args = args or []
-    kwargs = kwargs or {}
-    qr_list = []
-    qr_params = []
-    formatter = Formatter()
-    tokens = formatter.parse(qr)
-    pos = 0
-    for literal_text, field_name, spec, conversion in tokens:
-        if literal_text:
-            qr_list.append(literal_text)
-        if field_name is None:
-            continue
-        # Get value from arg or kwargs
-        if field_name == '':
-            values = [args[pos]]
-            pos += 1
-        else:
-            if '.' in field_name:
-                key = field_name.split('.', 1)[0]
-            else:
-                key = field_name
-            values = list(format_arg(
-                formatter, field_name, kwargs[key], spec))
-
-        # Collect placeholders & values
-        qr_list.append(', '.join('%s' for _ in values))
-        qr_params.append(values)
-
-    return ''.join(qr_list), tuple(qr_params)
-
-def format_arg(formatter, key, value, spec):
-    # Extract dots
-    if '.' in key:
-        attrs = key.split('.')
-        key, attrs = attrs[0], attrs[1:]
-    else:
-        attrs = []
-
-    # Eval dotted attributes
-    for name in attrs:
-        if isinstance(value, dict):
-            value = value[name]
-        else:
-            value = getattr(value, name)
-
-    # auto-magically expand lists
-    if isinstance(value, (tuple, list)):
-        for item in value:
-            yield formatter.format_field(item, spec)
-
-    else:
-        yield formatter.format_field(value, spec)
 
 
 def copy_from(buff, table, **kwargs):
@@ -496,8 +430,10 @@ def copy_from(buff, table, **kwargs):
     cursor.copy_from(buff, table, **kwargs)
     return cursor
 
+
 def create_tables():
     ctx.create_tables()
+
 
 def fetch(tablename, filter_by):
     view = View(tablename)
@@ -506,6 +442,7 @@ def fetch(tablename, filter_by):
         return
     keys = (f.name for f in view.fields)
     return dict(zip(keys, values))
+
 
 def save(tablename, data):
     fields = data.keys()
@@ -524,7 +461,8 @@ class ViewField:
         if '.' in desc:
             ftype = 'INTEGER'
             self.ref = ReferenceSet(table).get_ref(desc)
-            remote_col = self.ref.remote_table.get_column(self.ref.remote_field)
+            remote_col = self.ref.remote_table.get_column(
+                self.ref.remote_field)
             ctype = remote_col.ctype
             self.col = table.get_column(desc.split('.')[0])
 
@@ -556,7 +494,7 @@ class View(object):
         self.ctx = ctx
         self.table = Table.get(table)
         if fields is None:
-            fields = [(f.name, f.name) for f in self.table.columns \
+            fields = [(f.name, f.name) for f in self.table.columns
                       if f.name != 'id']
         elif isinstance(fields, basestring):
             fields = [[fields, fields]]
@@ -567,7 +505,7 @@ class View(object):
         elif isinstance(fields, list) and isinstance(fields[0], tuple):
             fields = fields
 
-        self.fields = [ViewField(name, desc, self.table) \
+        self.fields = [ViewField(name, desc, self.table)
                        for name, desc in fields]
         self.field_dict = dict((f.name, f) for f in self.fields)
 
@@ -582,25 +520,24 @@ class View(object):
                 continue
             if self.field_map[view_field.col] and view_field.col.ctype != 'M2O':
                 raise ValueError(
-                    'Column %s is specified several time in view' \
+                    'Column %s is specified several time in view'
                     % view_field.col.name)
             self.field_map[view_field.col].append(view_field)
             self.field_idx[view_field.col].append(idx)
             idx += 1
 
         # Index fields identify each line in the data
-        self.index_fields = [f for f in self.fields \
+        self.index_fields = [f for f in self.fields
                              if f.col and f.col.name in self.table.index]
         # Index fields identify each row in the table
-        self.index_cols = [c.name for c in self.field_map \
+        self.index_cols = [c.name for c in self.field_map
                            if c.name in self.table.index]
 
     def get_field(self, name):
         return self.field_dict.get(name)
 
     def _build_filter_cond(self, filters=None, filter_by=None):
-        where = []
-        qr_params = tuple()
+        chunks = []
         ref_set = ReferenceSet(self.table)
 
         # filters can be a query string or a list of query string
@@ -612,23 +549,19 @@ class View(object):
         filter_by = filter_by or {}
         # Parse expression filters
         for line in filters:
-            fltr = Expression(self, ref_set)
-            sql_cond = fltr.eval(line)
-            where.append(sql_cond)
-            qr_params = qr_params + tuple(fltr.params)
+            fltr_exp = Expression(self, ref_set)
+            chunks.append(Chunk(fltr_exp, line))
 
         # Add simple filter_by conditions
         for key, val in filter_by.items():
             ref = ref_set.add(key)
             field = '%s.%s' % (ref.join_alias, ref.remote_field)
-            where.append('%s = %%s' % field)
-            qr_params = qr_params + (val,)
+            chunks.append(Chunk('%s = %%s' % field, val))
 
-        return where, qr_params, ref_set
+        return chunks, ref_set
 
     def read(self, filters=None, filter_by=None, disable_acl=False,
              order=None, limit=None, args=None):
-
         if isinstance(filters, basestring):
             filters = [filters]
 
@@ -639,32 +572,28 @@ class View(object):
                 filters = rule['filters'] + (filters or [])
 
         selects = []
-        where, qr_params, ref_set = self._build_filter_cond(
+        filter_chunks, ref_set = self._build_filter_cond(
             filters=filters, filter_by=filter_by)
+        if filter_chunks:
+            filter_chunks = [Chunk('WHERE')] + filter_chunks
 
         # Add select fields
-        field_params = tuple()
+        select_cols = []
+        select_args = []
         for f in self.fields:
             if f.ftype == 'LITERAL':
-                field_params += (f.value,)
-                selects.append("%%s as %s" % f.desc)
+                select_cols.append("%%s as %s" % f.desc)
+                select_args.append(f.value)
             else:
                 ref = ref_set.add(f.desc)
-                selects.append('%s.%s' % (ref.join_alias, ref.remote_field))
-        qr_params = field_params + qr_params
+                select_cols.append('%s.%s' % (ref.join_alias, ref.remote_field))
 
-        qr = 'SELECT %(selects)s FROM %(main_table)s'
-        qr = qr % {
-            'selects': ', '.join(selects),
-            'main_table': self.table.name,
-        }
-        qr += ' ' + ' '.join(ref_set.get_sql_joins())
-
-        if where:
-            qr += ' WHERE ' + ' AND '.join(where)
+        select_chunks = [Chunk('SELECT'),
+                         Chunk(', '.join(select_cols), *select_args),
+                         Chunk('FROM %s' % self.table.name)]
 
         if order:
-            order_by = []
+            order_chunks = [Chunk('ORDER BY')]
             if isinstance(order, (str, tuple)):
                 order = [order]
             for item in order:
@@ -685,13 +614,17 @@ class View(object):
                     ref = ref_set.add(item)
                 else:
                     ref = ref_set.add(field.desc)
-                order_by.append(ptrn % (ref.join_alias, ref.remote_field))
+                order_chunks += [
+                    Chunk(ptrn % (ref.join_alias, ref.remote_field))]
+        else:
+            order_chunks = []
 
-            qr += ' ORDER BY ' + ', '.join(order_by)
-
+        join_chunks = [Chunk(ref_set)]
+        all_chunks = select_chunks + join_chunks + filter_chunks + order_chunks
         if limit is not None:
-            qr += ' LIMIT %s' % int(limit)
-        return TankerCursor(self, qr, qr_params, args)
+            all_chunks += [Chunk('LIMIT %s' % int(limit))]
+
+        return TankerCursor(self, all_chunks)
 
     def format_line(self, row):
         for col in self.field_map:
@@ -719,13 +652,13 @@ class View(object):
         qr = qr % ', '.join('"%s" %s %s' % (
             col.name,
             fields[0].ftype,
-            not_null(col.name)) \
-        for col, fields in self.field_map.items())
+            not_null(col.name))
+            for col, fields in self.field_map.items())
         execute(qr)
 
         # Handle list of dict and dataframes
         if isinstance(data, list) and isinstance(data[0], dict):
-            data = [[record.get(f.name) for f in self.fields] \
+            data = [[record.get(f.name) for f in self.fields]
                     for record in data]
         elif pandas and isinstance(data, pandas.DataFrame):
             fields = [f.name for f in self.fields]
@@ -768,7 +701,7 @@ class View(object):
 
         if data and (filters or filter_by):
             raise ValueError('Deletion by both data and filter not supported')
-        where, qr_params, ref_set = self._build_filter_cond(
+        filter_chunks, ref_set = self._build_filter_cond(
             filters=filters, filter_by=filter_by)
 
         if data:
@@ -781,18 +714,16 @@ class View(object):
                     'join_cond': ' AND '.join(join_cond),
                 }
                 execute(qr)
+
         else:
             qr = ('DELETE FROM %(main_table)s WHERE id IN ('
-                 'SELECT %(main_table)s.id FROM %(main_table)s '
-                  '%(joins)s '
-                  'WHERE %(where)s)')
-
-            qr = qr % {
-                'main_table': self.table.name,
-                'where': ' AND '.join(where),
-                'joins': ' '.join(ref_set.get_sql_joins())
-            }
-            return iter(TankerCursor(self, qr, qr_params, args))
+                  'SELECT %(main_table)s.id FROM %(main_table)s ')
+            qr = qr % {'main_table': self.table.name}
+            chunks = [Chunk(qr)] + [Chunk(ref_set)]
+            if filter_chunks:
+                chunks += [Chunk('WHERE')] + filter_chunks
+            chunks.append(Chunk(')'))
+            return iter(TankerCursor(self, chunks, args=args))
 
     def write(self, data, purge=False, insert=True, update=True):
         with self._prepare_write(data) as join_cond:
@@ -833,7 +764,7 @@ class View(object):
         execute(qr)
 
     def _update(self, join_cond):
-        update_cols = [c.name for c in self.field_map \
+        update_cols = [c.name for c in self.field_map
                        if c.name not in self.table.index]
         for name in update_cols:
             if self.ctx.flavor == 'sqlite':
@@ -865,14 +796,40 @@ class View(object):
         execute(qr)
 
 
+class Chunk:
+    '''
+    Holds a query string or an expression object and the associated values
+    '''
+
+    def __init__(self, query, *params):
+            self.query = query
+            self.params = params
+
+    def expand(self, args, kwargs):
+        if isinstance(self.query, basestring):
+            return self.query, self.params
+        elif isinstance(self.query, Expression):
+            qr = self.query.eval(self.params[0], args, kwargs)
+            return qr, tuple(self.query.params)
+        elif isinstance(self.query, ReferenceSet):
+            # ref set is kept like this because other chunks evel may
+            # create new reference
+            return self.query, []
+        else:
+            raise ValueError('Unexpected chunk value: "%s"' % str(query))
+
+    def __repr__(self):
+        if isinstance(self.query, Expression):
+            return '<Chunk:Expression "%s">' % self.params[0]
+        return '<Chunk %s>' % self.query
+
 
 class TankerCursor:
 
-    def __init__(self, view, qr, qr_params, args):
+    def __init__(self, view, chunks, args=None):
         self.view = view
         self.db_cursor = None
-        self.qr = qr
-        self.qr_params = qr_params
+        self.chunks = chunks
         if isinstance(args, dict):
             self._kwargs = args
             self._args = None
@@ -881,6 +838,9 @@ class TankerCursor:
             self._kwargs = None
 
     def args(self, *args, **kwargs):
+        '''
+        Set args for current cursor
+        '''
         self._args = args
         self._kwargs = kwargs
         # reset db_cursor to allow to call args & re-launch query
@@ -891,12 +851,27 @@ class TankerCursor:
         if self.db_cursor is not None:
             return self.db_cursor
 
+        qr, args = self.expand()
+        self.db_cursor = execute(qr, args)
+        return self.db_cursor
+
+    def expand(self):
         kwargs = {}
         kwargs.update(self._kwargs or {})
         cfg = ctx.cfg
         kwargs.update(cfg)
-        self.db_cursor = execute(self.qr, self.qr_params, self._args, kwargs)
-        return self.db_cursor
+
+        expanded = (c.expand(self._args, kwargs)
+                    for c in self.chunks)
+        chunks_qr, chunks_args = zip(*expanded)
+
+        to_string = (lambda x:
+                     x.get_sql_joins()
+                     if isinstance(x, ReferenceSet)
+                     else (x,))
+        qr = ' '.join(chain(*map(to_string, chunks_qr)))
+        args = chain(*chunks_args)
+        return qr, tuple(args)
 
     def __next__(self):
         return next(iter(self))
@@ -994,7 +969,6 @@ class Column:
         name, _ = self.fk.split('.')
         return Table.get(name)
 
-
     def format(self, value, astype=None):
         '''
         Sanitize value wrt the column type of the current field.
@@ -1035,6 +1009,7 @@ class Reference:
             self.remote_table.name,
             self.remote_field)
 
+
 class ReferenceSet:
 
     def __init__(self, table, table_alias=None, parent=None):
@@ -1069,7 +1044,7 @@ class ReferenceSet:
         alias = alias or self.table_alias
 
         # Simple field, return
-        if not '.' in desc:
+        if '.' not in desc:
             col = table.get_column(desc)
             return Reference(table, desc, self.joins, alias, col)
 
@@ -1111,12 +1086,15 @@ class ReferenceSet:
 class ExpressionSymbol(str):
     pass
 
+
 class ExpressionParam(str):
     pass
+
 
 class Expression(object):
     # Inspired by http://norvig.com/lispy.html
 
+    formatter = Formatter()
     builtins = {
         'and': lambda *xs: '(%s)' % ' AND '.join(xs),
         'or': lambda *xs: '(%s)' % ' OR '.join(xs),
@@ -1176,15 +1154,17 @@ class Expression(object):
         exp = Expression(view, ref_set, parent=self)
         exp.params = self.params
         env = exp.base_env(view.table)
-        res = [exp._eval(subexp , env) for subexp in tail]
+        res = [exp._eval(subexp, env) for subexp in tail]
         joins = ' '.join(ref_set.get_sql_joins())
         if joins:
             # First child is select, so we inject joins just after
             res.insert(1, joins)
         return ' '.join(res)
 
-    def eval(self, exp):
+    def eval(self, exp, args=None, kwargs=None):
         self.params = []
+        self.args = args[:] if args else []
+        self.kwargs = kwargs or {}
         # Parse string
         lexer = shlex.shlex(exp)
         lexer.wordchars += '.!=<>:{}'
@@ -1227,14 +1207,15 @@ class Expression(object):
                 raise ValueError('"%s" not understood' % exp)
 
         elif isinstance(exp, ExpressionParam):
-            self.params.append(exp)
-            return exp
+            value = self.get_param(exp, env)
+            return self.emit_literal(value)
 
         elif not isinstance(exp, list):
             return self.emit_literal(exp)
 
         elif exp[0].upper() == 'FROM':
-            return self.sub_expression(exp[1], exp[2:])
+            table, tail = exp[1], exp[2:]
+            return self.sub_expression(table, tail)
 
         else:
             params = []
@@ -1254,7 +1235,7 @@ class Expression(object):
             L = []
             while tokens[0] != ')':
                 L.append(cls.read(tokens, top_level=False))
-            tokens.pop(0) # pop off ')'
+            tokens.pop(0)  # pop off ')'
             if tokens and top_level:
                 raise ValueError('Unexpected tokens after ending ")"')
             return L
@@ -1270,7 +1251,7 @@ class Expression(object):
                 return token[1:-1]
 
         if len(token) > 1 and token[0] == '{' and token[-1] == '}':
-            return ExpressionParam(token)
+            return ExpressionParam(token[1:-1])
 
         try:
             return int(token)
@@ -1290,6 +1271,38 @@ class Expression(object):
         self.params.append(x)
         return '%s'
 
+    def get_param(self, exp, env):
+        # Formatter support
+        fmt_spec = conversion = None
+        if ':' in exp:
+            exp, fmt_spec = exp.split(':', 1)
+
+        if '!' in exp:
+            exp, conversion = exp.split('!', 1)
+
+        dotted = exp.split('.', 1)
+        key, tail = dotted[0], dotted[1:]
+        try:
+            if key == '':
+                value = self.args.pop(0)
+            else:
+                value = self.args[int(key)]
+        except ValueError:
+            # XXX raise better exception
+            value = self.kwargs[key] if key in self.kwargs else env[key]
+
+        # Resolve dotted expression
+        for attr in tail:
+            if isinstance(value, dict):
+                value = value[attr]
+            else:
+                value = getattr(value, attr)
+        if fmt_spec:
+            value = self.formatter.format_field(value, fmt_spec)
+        if conversion:
+            value = self.formatter.convert_field(value, conversion)
+        return value
+
 
 @contextmanager
 def connect(cfg=None):
@@ -1303,6 +1316,7 @@ def yaml_load(stream):
 
     class OrderedLoader(yaml.Loader):
         pass
+
     def construct_mapping(loader, node):
         loader.flatten_mapping(node)
         return OrderedDict(loader.construct_pairs(node))

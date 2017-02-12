@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from tanker import View, Expression, ctx, format_query
+from tanker import View, Expression, ctx, Expression
 from .base_test import session
 
 
@@ -34,7 +34,7 @@ def test_args(session):
     assert sorted(rows) == [('Blue',), ('Blue',)]
 
     # Simple test, anonymous
-    cond = '(= name {})'
+    cond = '(= name {0})'
     rows = view.read(cond).args('Red')
     assert sorted(rows) == [('Red',)]
 
@@ -62,13 +62,6 @@ def test_args(session):
     data = {'name': 'Red'}
     rows = view.read(cond).args(data=data)
     assert sorted(rows) == [('Red',)]
-
-    # Test formatting features
-    qr = ' {} {spam!r} {foo:>5}'
-    qr, params = format_query(qr, args=['ham'],
-                              kwargs={'spam': 'spam', 'foo': 'foo'})
-    assert qr == ' %s %s %s'
-    assert params == (['ham'], ['spam'], ['  foo'])
 
 def test_limit_order(session):
     view = View('country', ['name'])
@@ -101,8 +94,3 @@ def test_aliases(session):
     res = view.read(filters).all()
     assert res == [('France', 'TYPE')]
 
-def test_filters(session):
-    view = View('team', ['name'])
-    filters = '(= country.name "France")'
-    res = view.read(filters).all()
-    assert res == [('Blue',)]
