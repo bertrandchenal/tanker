@@ -724,7 +724,17 @@ class View(object):
             cur = TankerCursor(self, chunks, args=args).execute()
             return cur.rowcount
 
-    def write(self, data, purge=False, insert=True, update=True):
+    def write(self, data, purge=False, insert=True, update=True, filters=None):
+        '''
+        Write given data to view table. If insert is true, new lines will
+        be inserted.  if update is true, existing line will be
+        updated. If purge is true existing line that are not present
+        in data will be deleted.
+
+        [TODO] If a filter is given, only lines matching the filters
+        will be inserted, updated or deleted.
+        '''
+
         with self._prepare_write(data) as join_cond:
             rowcounts = {}
             # Insertion step
