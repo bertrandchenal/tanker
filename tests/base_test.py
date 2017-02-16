@@ -111,10 +111,14 @@ def test_write(session):
 
 def test_no_insert(session):
     team_view = View('team', ['name', 'country.name'])
-    team_view.write([
+    rowcounts = team_view.write([
         ('Orange', 'Holland'), # This is an insert
         ('Blue', 'Belgium'),
     ], insert=False)
+
+    # Update is there because there is no column to update (everything
+    # is an index
+    assert rowcounts == {'update': 0}
 
     expected = [('Red', 'Belgium',),
                 ('Blue', 'Belgium',),
@@ -125,10 +129,12 @@ def test_no_insert(session):
 
 def test_no_update(session):
     team_view = View('team', ['name', 'country.name'])
-    team_view.write([
+    rowcounts = team_view.write([
         ('Orange', 'Holland'),
         ('Blue', 'Belgium'), # This is an update of Blue team
     ], update=False)
+
+    assert rowcounts == {'insert': 1}
 
     expected = [('Red', 'Belgium',),
                 ('Blue', 'Belgium',),
@@ -140,13 +146,14 @@ def test_no_update(session):
 
 def test_purge(session):
     team_view = View('team', ['name', 'country.name'])
-    team_view.write([
+    rowcounts = team_view.write([
         ('Orange', 'Holland'),
         ('Blue', 'France'),
-    ], purge=True)
+    ], purge=True, insert=False, update=False)
 
-    expected = [('Blue', 'France',),
-                ('Orange', 'Holland',)]
+    assert rowcounts == {'delete': 2}
+
+    expected = [('Blue', 'France',)]
     res = team_view.read()
     check(expected, res)
 

@@ -9,7 +9,7 @@ def test_read_write(session):
     team_view = View('country', ['name'])
     team_view.write([(japan,)])
 
-    row = team_view.read(filter_by={'name': japan}).next()
+    row = team_view.read(filters={'name': japan}).next()
     assert row[0] == japan
 
     fltr = '(= name "%s")' % japan
