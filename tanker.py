@@ -717,7 +717,7 @@ class View(object):
             qr = ('DELETE FROM %(main_table)s WHERE id IN ('
                   'SELECT %(main_table)s.id FROM %(main_table)s ')
             qr = qr % {'main_table': self.table.name}
-            chunks = [Chunk(qr)] + [Chunk(ref_set)]
+            chunks = [Chunk(qr), Chunk(ref_set)]
             if filter_chunks:
                 chunks += [Chunk('WHERE')] + filter_chunks
             chunks.append(Chunk(')'))
