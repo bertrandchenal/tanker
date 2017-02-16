@@ -721,20 +721,26 @@ class View(object):
             if filter_chunks:
                 chunks += [Chunk('WHERE')] + filter_chunks
             chunks.append(Chunk(')'))
-            return iter(TankerCursor(self, chunks, args=args))
+            cur = TankerCursor(self, chunks, args=args).execute()
+            return cur.rowcount
 
     def write(self, data, purge=False, insert=True, update=True):
         with self._prepare_write(data) as join_cond:
+            rowcounts = {}
             # Insertion step
             if insert:
-                self._insert(join_cond)
+                cnt = self._insert(join_cond)
+                rowcounts['insert'] = cnt
             if update:
-                self._update(join_cond)
+                cnt = self._update(join_cond)
+                rowcounts['update'] = cnt
             if purge:
-                self._purge(join_cond)
+                cnt = self._purge(join_cond)
+                rowcounts['delete'] = cnt
 
         # Clean cache for current table
         ctx.reset_cache(self.table.name)
+        return rowcounts
 
     def _insert(self, join_cond):
         qr = 'INSERT INTO %(main)s (%(fields)s) %(select)s'
@@ -759,11 +765,13 @@ class View(object):
             'fields': ', '.join('"%s"' % f.name for f in self.field_map),
             'select': select,
         }
-        execute(qr)
+        cur = TankerCursor(self, [Chunk(qr)]).execute()
+        return cur.rowcount
 
     def _update(self, join_cond):
         update_cols = [c.name for c in self.field_map
                        if c.name not in self.table.index]
+        cur = None
         for name in update_cols:
             if self.ctx.flavor == 'sqlite':
                 qr = 'UPDATE "%(main)s" SET "%(name)s" = COALESCE((' \
@@ -779,7 +787,8 @@ class View(object):
                 'name': name,
                 'where': ' AND '.join(join_cond),
             }
-            execute(qr)
+            cur = TankerCursor(self, [Chunk(qr)]).execute()
+        return cur and cur.rowcount or 0
 
     def _purge(self, join_cond):
         qr = 'DELETE FROM %(main)s WHERE id IN (' \
@@ -791,7 +800,8 @@ class View(object):
             'join_cond': ' AND '.join(join_cond),
             'field': self.index_cols[0]
         }
-        execute(qr)
+        cur = TankerCursor(self, [Chunk(qr)]).execute()
+        return cur.rowcount
 
 
 class Chunk:
@@ -845,13 +855,16 @@ class TankerCursor:
         self.db_cursor = None
         return self
 
-    def __iter__(self):
+    def execute(self):
         if self.db_cursor is not None:
             return self.db_cursor
 
         qr, args = self.expand()
         self.db_cursor = execute(qr, args)
         return self.db_cursor
+
+    def __iter__(self):
+        return self.execute()
 
     def expand(self):
         kwargs = {}
