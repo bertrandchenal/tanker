@@ -437,7 +437,7 @@ def create_tables():
 
 def fetch(tablename, filter_by):
     view = View(tablename)
-    values = next(view.read(filter_by=filter_by), None)
+    values = next(view.read(filters=filter_by), None)
     if values is None:
         return
     keys = (f.name for f in view.fields)
@@ -536,32 +536,32 @@ class View(object):
     def get_field(self, name):
         return self.field_dict.get(name)
 
-    def _build_filter_cond(self, filters=None, filter_by=None):
+    def _build_filter_cond(self, filters):
         chunks = []
         ref_set = ReferenceSet(self.table)
+        if not filters:
+            return chunks, ref_set
 
-        # filters can be a query string or a list of query string
+        # filters can be a dict
+        if isinstance(filters, dict):
+            # Add simple equal conditions
+            for key, val in filters.items():
+                ref = ref_set.add(key)
+                field = '%s.%s' % (ref.join_alias, ref.remote_field)
+                chunks.append(Chunk('%s = %%s' % field, val))
+            return chunks, ref_set
+
+        # Filters can be a query string or a list of query string
         if isinstance(filters, basestring):
             filters = [filters]
-        elif filters is None:
-            filters = []
-        # filter_by is a dict containing strict equality conditions
-        filter_by = filter_by or {}
         # Parse expression filters
         for line in filters:
             fltr_exp = Expression(self, ref_set)
             chunks.append(Chunk(fltr_exp, line))
-
-        # Add simple filter_by conditions
-        for key, val in filter_by.items():
-            ref = ref_set.add(key)
-            field = '%s.%s' % (ref.join_alias, ref.remote_field)
-            chunks.append(Chunk('%s = %%s' % field, val))
-
         return chunks, ref_set
 
-    def read(self, filters=None, filter_by=None, disable_acl=False,
-             order=None, limit=None, args=None):
+    def read(self, filters=None, disable_acl=False, order=None, limit=None,
+             args=None):
         if isinstance(filters, basestring):
             filters = [filters]
 
@@ -572,8 +572,7 @@ class View(object):
                 filters = rule['filters'] + (filters or [])
 
         selects = []
-        filter_chunks, ref_set = self._build_filter_cond(
-            filters=filters, filter_by=filter_by)
+        filter_chunks, ref_set = self._build_filter_cond(filters)
         if filter_chunks:
             filter_chunks = [Chunk('WHERE')] + filter_chunks
 
@@ -695,14 +694,13 @@ class View(object):
         # Clean cache for current table
         self.ctx.reset_cache(self.table.name)
 
-    def delete(self, filters=None, filter_by=None, data=None, args=None):
-        if not any((data, filters, filter_by)):
+    def delete(self, filters=None, data=None, args=None):
+        if not any((data, filters)):
             raise ValueError('No deletion criteria given')
 
-        if data and (filters or filter_by):
+        if data and filters:
             raise ValueError('Deletion by both data and filter not supported')
-        filter_chunks, ref_set = self._build_filter_cond(
-            filters=filters, filter_by=filter_by)
+        filter_chunks, ref_set = self._build_filter_cond(filters)
 
         if data:
             with self._prepare_write(data) as join_cond:
