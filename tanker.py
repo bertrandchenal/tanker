@@ -964,8 +964,10 @@ class Column:
     def __init__(self, name, ctype, default=None):
         if ' ' in ctype:
             ctype, self.fk = ctype.split()
+            self.foreign_table, self.foreign_col = self.fk.split('.')
         else:
             self.fk = None
+            self.foreign_table = self.foreign_col = None
         self.name = name
         self.ctype = ctype.upper()
         self.default = default
@@ -982,13 +984,11 @@ class Column:
         if self.ctype == 'O2M':
             return None
         # M2O
-        foreign_table, foreign_field = self.fk.split('.')
         return 'INTEGER REFERENCES "%s" (%s) ON DELETE CASCADE' % (
-            foreign_table, foreign_field)
+            self.foreign_table, self.foreign_col)
 
     def get_foreign_table(self):
-        name, _ = self.fk.split('.')
-        return Table.get(name)
+        return Table.get(self.foreign_table)
 
     def format(self, value, astype=None):
         '''
@@ -1037,7 +1037,7 @@ class ReferenceSet:
         '''
         A ReferenceSet helps to 'browse' across table by joining them. The
         ReferenceSet hold the set of joins that has to be done to
-        resolve the fields that were added through the add() method.
+        resolve the cols that were added through the add() method.
         '''
         self.table = table
         self.table_alias = table_alias or table.name
@@ -1055,16 +1055,16 @@ class ReferenceSet:
 
     def get_sql_joins(self):
         for key, alias in self.joins.items():
-            left_table, right_table, left_field, right_field = key
+            left_table, right_table, left_col, right_col = key
             yield 'LEFT JOIN %s AS %s ON (%s.%s = %s.%s)' % (
-                right_table, alias, left_table, left_field, alias, right_field
+                right_table, alias, left_table, left_col, alias, right_col
             )
 
     def get_ref(self, desc, table=None, alias=None):
         table = table or self.table
         alias = alias or self.table_alias
 
-        # Simple field, return
+        # Simple col, return
         if '.' not in desc:
             col = table.get_column(desc)
             return Reference(table, desc, self.joins, alias, col)
@@ -1079,14 +1079,17 @@ class ReferenceSet:
         right_table = foreign_table.name
 
         if rel.ctype == 'M2O':
-            left_field = head
-            right_field = 'id'
+            left_col = head
+            right_col = rel.foreign_col
         else:
-            left_field = 'id'
-            right_field = rel.fk.split('.')[1]
+            # O2M, defined like other_table.fk
+            fk = rel.foreign_col
+            # left_col is the column pointed by the fk
+            left_col = foreign_table.get_column(fk).foreign_col
+            right_col = fk
 
         key_alias = '%s_%s' % (right_table, self.get_nb_joins())
-        key = (left_table, right_table, left_field, right_field)
+        key = (left_table, right_table, left_col, right_col)
         foreign_alias = self.joins.setdefault(key, key_alias)
 
         # Recurse
