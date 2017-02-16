@@ -643,6 +643,36 @@ class View(object):
             else:
                 yield col.format(row[idx[0]])
 
+    def delete(self, filters=None, data=None, args=None):
+        if not any((data, filters)):
+            raise ValueError('No deletion criteria given')
+
+        if data and filters:
+            raise ValueError('Deletion by both data and filter not supported')
+        filter_chunks, ref_set = self._build_filter_cond(filters)
+
+        if data:
+            with self._prepare_write(data) as join_cond:
+                qr = 'DELETE FROM %(main)s WHERE id IN (' \
+                     'SELECT %(main)s.id FROM %(main)s ' \
+                     'INNER JOIN tmp on %(join_cond)s)'
+                qr = qr % {
+                    'main': self.table.name,
+                    'join_cond': ' AND '.join(join_cond),
+                }
+                execute(qr)
+
+        else:
+            qr = ('DELETE FROM %(main_table)s WHERE id IN ('
+                  'SELECT %(main_table)s.id FROM %(main_table)s ')
+            qr = qr % {'main_table': self.table.name}
+            chunks = [Chunk(qr), Chunk(ref_set)]
+            if filter_chunks:
+                chunks += [Chunk('WHERE')] + filter_chunks
+            chunks.append(Chunk(')'))
+            cur = TankerCursor(self, chunks, args=args).execute()
+            return cur.rowcount
+
     @contextmanager
     def _prepare_write(self, data):
         # Create tmp
@@ -693,36 +723,6 @@ class View(object):
         execute('DROP TABLE tmp')
         # Clean cache for current table
         self.ctx.reset_cache(self.table.name)
-
-    def delete(self, filters=None, data=None, args=None):
-        if not any((data, filters)):
-            raise ValueError('No deletion criteria given')
-
-        if data and filters:
-            raise ValueError('Deletion by both data and filter not supported')
-        filter_chunks, ref_set = self._build_filter_cond(filters)
-
-        if data:
-            with self._prepare_write(data) as join_cond:
-                qr = 'DELETE FROM %(main)s WHERE id IN (' \
-                     'SELECT %(main)s.id FROM %(main)s ' \
-                     'INNER JOIN tmp on %(join_cond)s)'
-                qr = qr % {
-                    'main': self.table.name,
-                    'join_cond': ' AND '.join(join_cond),
-                }
-                execute(qr)
-
-        else:
-            qr = ('DELETE FROM %(main_table)s WHERE id IN ('
-                  'SELECT %(main_table)s.id FROM %(main_table)s ')
-            qr = qr % {'main_table': self.table.name}
-            chunks = [Chunk(qr), Chunk(ref_set)]
-            if filter_chunks:
-                chunks += [Chunk('WHERE')] + filter_chunks
-            chunks.append(Chunk(')'))
-            cur = TankerCursor(self, chunks, args=args).execute()
-            return cur.rowcount
 
     def write(self, data, purge=False, insert=True, update=True, filters=None):
         '''
