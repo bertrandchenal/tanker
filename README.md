@@ -270,6 +270,7 @@ dictionary to map dataframe columns to database columns.
 
 Some ideas, in no particular order:
 
+  - Support for table constraints
   - Allow to excute complete queries with s-expressions (select,
     update, insert and delete).
   - Add support for
