@@ -41,7 +41,6 @@ else:
 if not PY2:
     basestring = (str, bytes)
 
-
 __version__ = '0.2'
 
 COLUMN_TYPE = ('TIMESTAMP', 'DATE', 'FLOAT', 'INTEGER', 'M2O', 'O2M',
@@ -1063,7 +1062,11 @@ class Column:
         elif astype == 'VARCHAR':
             if not isinstance(value, basestring):
                 value = str(value)
-            value = value.strip()
+            else:
+                if PY2 and isinstance(value, unicode):
+                    value = value.encode(encoding)
+                if not PY2 and isinstance(value, bytes):
+                    value = value.encode(encoding)
         elif astype == 'TIMESTAMP' and hasattr(value, 'timetuple'):
             value = datetime.datetime(*value.timetuple()[:6])
         elif astype == 'DATE' and hasattr(value, 'timetuple'):
