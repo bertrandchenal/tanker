@@ -186,6 +186,8 @@ class Context:
     def __init__(self, connection, pool):
         self.flavor = pool.flavor
         self.connection = connection
+        if self.flavor == 'postgresql':
+            self.legacy_pg = connection.server_version < 90500
         self.cursor = connection.cursor()
         self.cfg = pool.cfg
         self.aliases = {'null': None}
@@ -724,26 +726,32 @@ class View(object):
         # Clean cache for current table
         self.ctx.reset_cache(self.table.name)
 
-    def write(self, data, purge=False, insert=True, update=True, filters=None):
+    def write(self, data, purge=False, insert=True, update=True):
         '''
         Write given data to view table. If insert is true, new lines will
         be inserted.  if update is true, existing line will be
         updated. If purge is true existing line that are not present
         in data will be deleted.
-
-        [TODO] If a filter is given, only lines matching the filters
-        will be inserted, updated or deleted.
         '''
-
         with self._prepare_write(data) as join_cond:
             rowcounts = {}
-            # Insertion step
-            if insert:
-                cnt = self._insert(join_cond)
-                rowcounts['insert'] = cnt
-            if update:
-                cnt = self._update(join_cond)
-                rowcounts['update'] = cnt
+            # Upsert step
+            if self.ctx.flavor == 'sqlite':
+                cnt = self._sqlite_upsert(
+                    join_cond, insert=insert, update=update)
+                rowcounts['upsert'] = cnt
+            elif ctx.legacy_pg:
+                if insert:
+                    cnt = self._insert(join_cond)
+                    rowcounts['insert'] = cnt
+                if update:
+                    cnt = self._update(join_cond)
+                    rowcounts['update'] = cnt
+            else:
+                # ON-CONFLICT is available since postgres 9.5
+                cnt = self._pg_upsert(join_cond, insert=insert, update=update)
+                rowcounts['upsert'] = cnt
+
             if purge:
                 cnt = self._purge(join_cond)
                 rowcounts['delete'] = cnt
@@ -751,6 +759,57 @@ class View(object):
         # Clean cache for current table
         ctx.reset_cache(self.table.name)
         return rowcounts
+
+    def _sqlite_upsert(self, join_cond, insert, update):
+        qr = 'INSERT OR REPLACE INTO %(main)s (%(fields)s) %(select)s'
+        select = 'SELECT %(tmp_fields)s FROM tmp '\
+                 '%(join_type)s  JOIN %(main_table)s ON ( %(join_cond)s)'
+
+        tmp_fields = ', '.join('tmp."%s"' % f.name for f in self.field_map)
+        select = select % {
+            'tmp_fields': tmp_fields,
+            'main_table': self.table.name,
+            'join_cond': ' AND '.join(join_cond),
+            'join_type': 'LEFT' if insert else 'INNER',
+        }
+        qr = qr % {
+            'main': self.table.name,
+            'fields': ', '.join('"%s"' % f.name for f in self.field_map),
+            'select': select,
+        }
+        cur = TankerCursor(self, [Chunk(qr)]).execute()
+        return cur.rowcount
+
+    def _pg_upsert(self, join_cond, insert, update):
+        tmp_fields = ', '.join('tmp."%s"' % f.name for f in self.field_map)
+        main_fields = ', '.join('"%s"' % f.name for f in self.field_map)
+        upd_fields = []
+        for f in self.field_map:
+             if f.name in self.index_cols:
+                 continue
+             upd_fields.append('"%s" = EXCLUDED."%s"' % (f.name, f.name))
+
+        qr = (
+            'INSERT INTO %(main)s (%(main_fields)s) '
+            'SELECT %(tmp_fields)s FROM tmp '
+            '%(join_type)s JOIN %(main_table)s ON ( %(join_cond)s) ')
+        if upd_fields and update:
+            qr += 'ON CONFLICT (%(idx)s) DO UPDATE SET %(upd_fields)s'
+        else:
+            qr += 'ON CONFLICT (%(idx)s) DO NOTHING'
+
+        qr = qr % {
+            'main': self.table.name,
+            'main_fields': main_fields,
+            'tmp_fields': tmp_fields,
+            'main_table': self.table.name,
+            'join_cond': ' AND '.join(join_cond),
+            'join_type': 'LEFT' if insert else 'INNER',
+            'upd_fields': ', '.join(upd_fields),
+            'idx': ', '.join(self.index_cols),
+        }
+        cur = TankerCursor(self, [Chunk(qr)]).execute()
+        return cur.rowcount
 
     def _insert(self, join_cond):
         qr = 'INSERT INTO %(main)s (%(fields)s) %(select)s'

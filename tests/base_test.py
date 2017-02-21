@@ -7,7 +7,10 @@ from tanker import (connect, create_tables, View, logger, yaml_load, fetch,
 
 SQLITE_FILE = 'test.db'
 PG_DB = 'tanker_test'
-DB_TYPES = ['sqlite', 'pg']
+DB_TYPES = [
+    'sqlite',
+    'pg',
+]
 
 logger.setLevel('ERROR')
 
@@ -116,9 +119,6 @@ def test_no_insert(session):
         ('Blue', 'Belgium'),
     ], insert=False)
 
-    # Update is there because there is no column to update (everything
-    # is an index
-    assert rowcounts == {'update': 0}
 
     expected = [('Red', 'Belgium',),
                 ('Blue', 'Belgium',),
@@ -134,8 +134,6 @@ def test_no_update(session):
         ('Blue', 'Belgium'), # This is an update of Blue team
     ], update=False)
 
-    assert rowcounts == {'insert': 1}
-
     expected = [('Red', 'Belgium',),
                 ('Blue', 'Belgium',),
                 ('Blue', 'France',),
@@ -150,8 +148,6 @@ def test_purge(session):
         ('Orange', 'Holland'),
         ('Blue', 'France'),
     ], purge=True, insert=False, update=False)
-
-    assert rowcounts == {'delete': 2}
 
     expected = [('Blue', 'France',)]
     res = team_view.read()
