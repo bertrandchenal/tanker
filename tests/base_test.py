@@ -9,7 +9,7 @@ SQLITE_FILE = 'test.db'
 PG_DB = 'tanker_test'
 DB_TYPES = [
     'sqlite',
-    'pg',
+    # 'pg',
 ]
 
 logger.setLevel('ERROR')
@@ -138,6 +138,21 @@ def test_no_update(session):
                 ('Blue', 'Belgium',),
                 ('Blue', 'France',),
                 ('Orange', 'Holland',)]
+    res = team_view.read()
+    check(expected, res)
+
+
+def test_no_fields(session):
+    # No fields are provided, should fallback to table definition
+    team_view = View('country')
+    rowcounts = team_view.write([
+        ('Italy',),
+    ])
+
+    expected = [('Belgium',),
+                ('Italy',),
+                ('France',),
+                ('Holland',)]
     res = team_view.read()
     check(expected, res)
 
