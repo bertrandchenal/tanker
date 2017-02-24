@@ -952,7 +952,6 @@ class TankerCursor:
         kwargs.update(self._kwargs or {})
         cfg = ctx.cfg
         kwargs.update(cfg)
-
         expanded = (c.expand(self._args, kwargs)
                     for c in self.chunks)
         chunks_qr, chunks_args = zip(*expanded)
@@ -1252,6 +1251,8 @@ class Expression(object):
         ref_set = ReferenceSet(view.table, parent=self.ref_set)
         exp = Expression(view, ref_set, parent=self)
         exp.params = self.params
+        exp.args = self.args
+        exp.kwargs = self.kwargs
         env = exp.base_env(view.table)
         res = [exp._eval(subexp, env) for subexp in tail]
         joins = ' '.join(ref_set.get_sql_joins())
