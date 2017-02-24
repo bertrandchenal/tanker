@@ -391,6 +391,15 @@ def log_sql(query, params=None):
         logger.debug('SQL Query:\n%s\nSQL Params:\n%s%s',
                      query, indent, params)
 
+def joiner(guard, items):
+    if not items:
+        return
+    yield items[0]
+    for it in items[1:]:
+        yield guard
+        yield it
+
+
 CTX_STACK = ContextStack()
 ctx = ShallowContext()
 
@@ -553,7 +562,7 @@ class View(object):
                 ref = ref_set.add(key)
                 field = '%s.%s' % (ref.join_alias, ref.remote_field)
                 chunks.append(Chunk('%s = %%s' % field, val))
-            return chunks, ref_set
+            return list(joiner(Chunk('AND'), chunks)), ref_set
 
         # Filters can be a query string or a list of query string
         if isinstance(filters, basestring):
@@ -562,7 +571,8 @@ class View(object):
         for line in filters:
             fltr_exp = Expression(self, ref_set)
             chunks.append(Chunk(fltr_exp, line))
-        return chunks, ref_set
+
+        return list(joiner(Chunk('AND'), chunks)), ref_set
 
     def read(self, filters=None, disable_acl=False, order=None, limit=None,
              args=None):
