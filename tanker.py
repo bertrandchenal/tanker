@@ -1067,9 +1067,9 @@ class Column:
                 value = str(value)
             else:
                 if PY2 and isinstance(value, unicode):
-                    value = value.encode(encoding)
+                    value = value.encode('utf-8')
                 if not PY2 and isinstance(value, bytes):
-                    value = value.encode(encoding)
+                    value = value.encode('utf-8')
         elif astype == 'TIMESTAMP' and hasattr(value, 'timetuple'):
             value = datetime.datetime(*value.timetuple()[:6])
         elif astype == 'DATE' and hasattr(value, 'timetuple'):
