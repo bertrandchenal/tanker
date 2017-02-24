@@ -637,7 +637,7 @@ class View(object):
         if limit is not None:
             all_chunks += [Chunk('LIMIT %s' % int(limit))]
 
-        return TankerCursor(self, all_chunks)
+        return TankerCursor(self, all_chunks, args=args)
 
     def format_line(self, row):
         for col in self.field_map:
