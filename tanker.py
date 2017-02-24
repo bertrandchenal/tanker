@@ -421,7 +421,10 @@ def execute(query, params=None):
 def executemany(query, params):
     query = ctx._prepare_query(query)
     log_sql(query, params)
-    ctx.cursor.executemany(query, params)
+    try:
+        ctx.cursor.executemany(query, params)
+    except DB_EXCEPTION as e:
+        raise DBError(e)
     return ctx.cursor
 
 
