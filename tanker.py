@@ -75,7 +75,7 @@ class Pool:
 
     def __init__(self, db_uri, cfg):
         self.cfg = cfg
-        self.registry = {}
+        self.registry = OrderedDict()
         uri = urlparse(db_uri)
         dbname = uri.path[1:]
         self.flavor = uri.scheme
