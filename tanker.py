@@ -973,6 +973,11 @@ class TankerCursor:
     def all(self):
         return list(self)
 
+    def dict(self):
+        keys = [f.name for f in self.view.fields]
+        for row in self:
+            yield dict(zip(keys, row))
+
     def df(self):
         if not pandas:
             raise ImportError('The pandas module is required by Cursor.df')
