@@ -968,7 +968,7 @@ class TankerCursor:
         return next(iter(self))
 
     def next(self):
-        return next(iter(self))
+        return next(iter(self), None)
 
     def all(self):
         return list(self)
