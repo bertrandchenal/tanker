@@ -711,8 +711,11 @@ class View(object):
         if self.ctx.flavor == 'postgresql':
             buff = BuffIO()
             writer = csv.writer(buff, delimiter='\t')
+            # postgresql COPY doesn't like line feed
+            clean = lambda x: x.replace('\n', '\\n').replace('\t', '\\t') \
+                    if isinstance(x, str) else x
             for row in data:
-                line = list(self.format_line(row))
+                line = [clean(c) for c in  self.format_line(row)]
                 writer.writerow(line)
             buff.seek(0)
             copy_from(buff, 'tmp', null='')
