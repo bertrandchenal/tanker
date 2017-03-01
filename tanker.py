@@ -971,10 +971,15 @@ class TankerCursor:
         return next(iter(self))
 
     def next(self):
-        return next(iter(self))
+        return next(iter(self), None)
 
     def all(self):
         return list(self)
+
+    def dict(self):
+        keys = [f.name for f in self.view.fields]
+        for row in self:
+            yield dict(zip(keys, row))
 
     def df(self):
         if not pandas:

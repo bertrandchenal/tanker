@@ -111,64 +111,6 @@ def test_write(session):
     res = team_view.read()
     check(expected, res)
 
-
-def test_no_insert(session):
-    team_view = View('team', ['name', 'country.name'])
-    rowcounts = team_view.write([
-        ('Orange', 'Holland'), # This is an insert
-        ('Blue', 'Belgium'),
-    ], insert=False)
-
-
-    expected = [('Red', 'Belgium',),
-                ('Blue', 'Belgium',),
-                ('Blue', 'France',)]
-    res = team_view.read()
-    check(expected, res)
-
-
-def test_no_update(session):
-    team_view = View('team', ['name', 'country.name'])
-    rowcounts = team_view.write([
-        ('Orange', 'Holland'),
-        ('Blue', 'Belgium'), # This is an update of Blue team
-    ], update=False)
-
-    expected = [('Red', 'Belgium',),
-                ('Blue', 'Belgium',),
-                ('Blue', 'France',),
-                ('Orange', 'Holland',)]
-    res = team_view.read()
-    check(expected, res)
-
-
-def test_no_fields(session):
-    # No fields are provided, should fallback to table definition
-    team_view = View('country')
-    rowcounts = team_view.write([
-        ('Italy',),
-    ])
-
-    expected = [('Belgium',),
-                ('Italy',),
-                ('France',),
-                ('Holland',)]
-    res = team_view.read()
-    check(expected, res)
-
-
-def test_purge(session):
-    team_view = View('team', ['name', 'country.name'])
-    rowcounts = team_view.write([
-        ('Orange', 'Holland'),
-        ('Blue', 'France'),
-    ], purge=True, insert=False, update=False)
-
-    expected = [('Blue', 'France',)]
-    res = team_view.read()
-    check(expected, res)
-
-
 def test_fetch_save(session):
     save('member', {
         'registration_code': '007',
@@ -176,3 +118,11 @@ def test_fetch_save(session):
     })
 
     assert fetch('member', {'registration_code': '007'})['name'] == 'Bond'
+
+def test_next(session):
+    expected = ('Belgium',)
+    assert expected == View('country', ['name']).read().next()
+
+    expected = None
+    fltr = '(= name "Prussia")'
+    assert expected == View('country', ['name']).read(fltr).next()
