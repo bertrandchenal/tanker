@@ -712,8 +712,11 @@ class View(object):
             buff = BuffIO()
             writer = csv.writer(buff, delimiter='\t')
             # postgresql COPY doesn't like line feed
-            clean = lambda x: x.replace('\n', '\\n').replace('\t', '\\t') \
-                    if isinstance(x, str) else x
+            repl = lambda x: x.replace(
+                '\n', '\\n').replace(
+                '\t', '\\t').replace(
+                '\r', '\\r')
+            clean = lambda x: repl(x) if isinstance(x, str) else x
             for row in data:
                 line = [clean(c) for c in  self.format_line(row)]
                 writer.writerow(line)
