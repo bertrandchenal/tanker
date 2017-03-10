@@ -13,3 +13,9 @@ def test_read_write(session):
     updated_df = view.read().df()
     expected = db_df.append(new_df).reset_index(drop=True)
     assert all(expected == updated_df)
+
+
+def test_empty_read(session):
+    view = View('country')
+    df = view.read({'name': 'Missing'}).df()
+    assert len(df) == 0
