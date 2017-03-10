@@ -549,28 +549,30 @@ class View(object):
     def get_field(self, name):
         return self.field_dict.get(name)
 
-    def _build_filter_cond(self, filters):
+    def _build_filter_cond(self, *filters):
         chunks = []
         ref_set = ReferenceSet(self.table)
-        if not filters:
-            return chunks, ref_set
 
-        # filters can be a dict
-        if isinstance(filters, dict):
-            # Add simple equal conditions
-            for key, val in filters.items():
-                ref = ref_set.add(key)
-                field = '%s.%s' % (ref.join_alias, ref.remote_field)
-                chunks.append(Chunk('%s = %%s' % field, val))
-            return list(joiner(Chunk('AND'), chunks)), ref_set
+        for fltr in filters:
+            if not fltr:
+                continue
 
-        # Filters can be a query string or a list of query string
-        if isinstance(filters, basestring):
-            filters = [filters]
-        # Parse expression filters
-        for line in filters:
-            fltr_exp = Expression(self, ref_set)
-            chunks.append(Chunk(fltr_exp, line))
+            # filters can be a dict
+            if isinstance(fltr, dict):
+                # Add simple equal conditions
+                for key, val in fltr.items():
+                    ref = ref_set.add(key)
+                    field = '%s.%s' % (ref.join_alias, ref.remote_field)
+                    chunks.append(Chunk('%s = %%s' % field, val))
+                continue
+
+            # Filters can be a query string or a list of query string
+            if isinstance(fltr, basestring):
+                fltr = [fltr]
+            # Parse expression filters
+            for line in fltr:
+                fltr_exp = Expression(self, ref_set)
+                chunks.append(Chunk(fltr_exp, line))
 
         return list(joiner(Chunk('AND'), chunks)), ref_set
 
@@ -579,14 +581,13 @@ class View(object):
         if isinstance(filters, basestring):
             filters = [filters]
 
-        acl_rules = self.ctx.cfg.get('acl_rules')
-        if acl_rules and not disable_acl:
-            rule = acl_rules.get(self.table.name)
-            if rule:
-                filters = rule['filters'] + (filters or [])
+        acl_filters = None
+        acl = self.ctx.cfg.get('acl_rules', {}).get(self.table.name)
+        if acl and not disable_acl:
+            acl_filters = acl['filters']
 
         selects = []
-        filter_chunks, ref_set = self._build_filter_cond(filters)
+        filter_chunks, ref_set = self._build_filter_cond(filters, acl_filters)
         if filter_chunks:
             filter_chunks = [Chunk('WHERE')] + filter_chunks
 
