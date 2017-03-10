@@ -574,8 +574,8 @@ class View(object):
 
         return list(joiner(Chunk('AND'), chunks)), ref_set
 
-    def read(self, filters=None, disable_acl=False, order=None, limit=None,
-             args=None):
+    def read(self, filters=None, args=None, order=None, limit=None,
+             disable_acl=False):
         if isinstance(filters, basestring):
             filters = [filters]
 
@@ -855,26 +855,37 @@ class View(object):
         cur = TankerCursor(self, [Chunk(qr)]).execute()
         return cur.rowcount
 
+
     def _update(self, join_cond):
         update_cols = [c.name for c in self.field_map
                        if c.name not in self.table.index]
+        if not update_cols:
+            return 0
+
+        where =  ' AND '.join(join_cond)
         cur = None
-        for name in update_cols:
-            if self.ctx.flavor == 'sqlite':
+        if self.ctx.flavor == 'sqlite':
+            for name in update_cols:
                 qr = 'UPDATE "%(main)s" SET "%(name)s" = COALESCE((' \
                       'SELECT "%(name)s" FROM tmp WHERE %(where)s' \
                      '), %(name)s)'
-            elif self.ctx.flavor == 'postgresql':
-                qr = 'UPDATE "%(main)s" '\
-                     'SET "%(name)s" = tmp."%(name)s"' \
-                     'FROM tmp WHERE %(where)s'
+                qr = qr % {
+                    'main': self.table.name,
+                    'name': name,
+                    'where': where,
+                }
+                cur = TankerCursor(self, [Chunk(qr)]).execute()
 
+        elif self.ctx.flavor == 'postgresql':
+            qr = 'UPDATE "%(main)s" SET '
+            qr += ', ' .join('"%s" = tmp."%s"' % (n, n) for n in update_cols)
+            qr += 'FROM tmp WHERE %(where)s'
             qr = qr % {
                 'main': self.table.name,
-                'name': name,
-                'where': ' AND '.join(join_cond),
+                'where': where,
             }
             cur = TankerCursor(self, [Chunk(qr)]).execute()
+
         return cur and cur.rowcount or 0
 
     def _purge(self, join_cond):

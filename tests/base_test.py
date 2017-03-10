@@ -9,7 +9,7 @@ SQLITE_FILE = 'test.db'
 PG_DB = 'tanker_test'
 DB_TYPES = [
     'sqlite',
-    # 'pg',
+    'pg',
 ]
 
 logger.setLevel('ERROR')
