@@ -121,8 +121,8 @@ def test_fetch_save(session):
 
 def test_next(session):
     expected = ('Belgium',)
-    assert expected == View('country', ['name']).read().next()
+    assert expected == next(View('country', ['name']).read())
 
     expected = None
     fltr = '(= name "Prussia")'
-    assert expected == View('country', ['name']).read(fltr).next()
+    assert expected == next(View('country', ['name']).read(fltr), None)
