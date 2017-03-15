@@ -1,6 +1,4 @@
-import os
 import pytest
-import yaml
 
 from tanker import (connect, create_tables, View, logger, yaml_load, fetch,
                     save, execute)
