@@ -139,6 +139,12 @@ class Pool:
                 self.pg_pool.putconn(connection)
 
     @classmethod
+    def disconnect(cls):
+        for pool in cls._pools.values():
+            if pool.flavor == 'postgresql':
+                pool.pg_pool.closeall()
+
+    @classmethod
     def get_pool(cls, cfg):
         db_uri = cfg.get('db_uri', 'sqlite:///:memory:')
         pool = cls._pools.get(db_uri)
@@ -919,7 +925,7 @@ class Chunk:
             qr = self.query.eval(self.params[0], args, kwargs)
             return qr, tuple(self.query.params)
         elif isinstance(self.query, ReferenceSet):
-            # ref set is kept like this because other chunks evel may
+            # ref set is kept like this because other chunks eval may
             # create new reference
             return self.query, []
         else:

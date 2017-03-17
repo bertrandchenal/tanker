@@ -1,14 +1,8 @@
-from pathlib import Path
-
 import pytest
-
-from pytest_sa_pg import db
 
 from tanker import (connect, create_tables, View, logger, yaml_load, fetch,
                     save, execute)
 
-DATADIR = Path(__file__).parent / 'data'
-PGPORT = 5433
 SQLITE_FILE = 'test.db'
 DB_TYPES = [
     'sqlite',
@@ -66,7 +60,7 @@ def get_config(db_type, schema=SCHEMA):
     if db_type == 'sqlite':
         db_uri = 'sqlite:///' + SQLITE_FILE
     elif db_type == 'pg':
-        db_uri = 'postgresql://postgres@localhost:{}/postgres'.format(PGPORT)
+        db_uri = 'postgresql:///tanker_test'
 
     cfg = {
         'db_uri': db_uri,
@@ -81,12 +75,6 @@ def get_config(db_type, schema=SCHEMA):
                 qr += ' CASCADE'
             execute(qr)
     return cfg
-
-
-@pytest.fixture(scope='session', autouse=True)
-def pgdb(request):
-    db_uri = 'postgresql://postgres@localhost:{}/postgres'.format(PGPORT)
-    db.setup_local_pg_cluster(request, DATADIR, PGPORT)
 
 
 @pytest.yield_fixture(scope='function', params=DB_TYPES)
