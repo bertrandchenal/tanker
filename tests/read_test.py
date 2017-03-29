@@ -17,10 +17,10 @@ def test_subselect(session):
           '(from member (select team) '
           '(where (= name "Bob"))))'
         )
-    res = Expression(view).eval(cond)
+    ast = Expression(view).parse(cond)
     expected = ('team.id in ('
                 'SELECT member.team FROM member WHERE member.name = %s)')
-    assert res == expected
+    assert ast.eval() == expected
 
 
 def test_args(session):
@@ -94,3 +94,24 @@ def test_aliases(session):
     res = view.read(filters).all()
     assert res == [('France', 'TYPE')]
 
+def test_field_eval(session):
+    view = View('country', ['(= name "Belgium")'])
+    res = view.read(order='name').all()
+    assert res == [(True,), (False,), (False,),]
+
+def test_aggregation(session):
+    view = View('country', ['(count *)'])
+    res = view.read().all()
+    assert res == [(3,)]
+
+    view = View('team', ['name', '(count *)'])
+    res = view.read().all()
+    assert res == [('Blue', 2), ('Red', 1)]
+
+    view = View('team', ['(max name)', '(count *)'])
+    res = view.read().all()
+    assert res == [('Red', 3)]
+
+    view = View('member', ['(max team.name)'])
+    res = view.read(groupby='team.country.name').all()
+    assert res == [('Red', 2), ('Red', 2)]
