@@ -9,7 +9,7 @@ DB_TYPES = [
     'pg',
 ]
 
-logger.setLevel('DEBUG')
+logger.setLevel('WARNING')
 
 # Tables definitions can be written in yaml
 yaml_def = '''

@@ -674,10 +674,11 @@ class View(object):
         join_chunks = [exp.ref_set]
         all_chunks = (
             select_chunk
-            + join_chunks +
-            filter_chunks +
-            order_chunks +
-            groupby_chunks)
+            + join_chunks
+            + filter_chunks
+            + groupby_chunks
+            + order_chunks
+            )
 
         if limit is not None:
             all_chunks += ['LIMIT %s' % int(limit)]
@@ -949,34 +950,6 @@ class View(object):
         return cur.rowcount
 
 
-# class Chunk:
-#     '''
-#     Holds a query string or an expression object and the associated values
-#     '''
-
-#     def __init__(self, query, *params):
-#             self.query = query
-#             self.params = params
-
-#     def expand(self, args, kwargs):
-#         if isinstance(self.query, basestring):
-#             return self.query, self.params
-#         elif isinstance(self.query, Expression):
-#             qr = self.query.eval(self.params[0], args, kwargs)
-#             return qr, tuple(self.query.params)
-#         elif isinstance(self.query, ReferenceSet):
-#             # ref set is kept like this because other chunks eval may
-#             # create new reference
-#             return self.query, []
-#         else:
-#             raise ValueError('Unexpected chunk value: "%s"' % str(query))
-
-#     def __repr__(self):
-#         if isinstance(self.query, Expression):
-#             return '<Chunk:Expression "%s">' % self.params[0]
-#         return '<Chunk %s>' % self.query
-
-
 class TankerCursor:
 
     def __init__(self, view, chunks, args=None):
@@ -1016,7 +989,7 @@ class TankerCursor:
     def split(self, x):
         if isinstance(x, ReferenceSet):
             # Delay evaluation of refset
-            return x, None
+            return ' '.join(x.get_sql_joins()), None
         if isinstance(x, ExpressionSymbol):
             return x.eval(), None
         if isinstance(x, (AST)):
@@ -1033,14 +1006,9 @@ class TankerCursor:
 
         raise ValueError('Unable to stringify "%s"' % x)
 
-    def stringify(self, x):
-        if isinstance(x, ReferenceSet):
-            return ' '.join(x.get_sql_joins())
-        return x
-
     def expand(self):
         queries, args = zip(*map(self.split, self.chunks))
-        qr = ' '.join(map(self.stringify, queries))
+        qr = ' '.join(queries)
         chained_args = chain(*(a for a in args if a))
         return qr, tuple(chained_args)
 
@@ -1273,19 +1241,18 @@ class ExpressionSymbol:
 
     def __init__(self, token, exp):
         self.token = token
-        self.exp = exp
         self.params = []
+        self.ref = None
+        self.builtin = None
 
-    def eval(self):
-        # Try to resolve x wrt current view
-        if self.token.lower() in self.exp.builtins:
-            return self.exp.builtins[self.token.lower()]
+        if self.token.lower() in exp.builtins:
+            self.builtin = exp.builtins[self.token.lower()]
+            return
 
-        # TODO everything except env can be solved at parsing time
         ref = None
         if self.token.startswith('_parent.'):
             tail = self.token
-            parent = self.exp
+            parent = exp
             while tail.startswith('_parent.'):
                 head, tail = tail.split('.', 1)
                 parent = parent.parent
@@ -1293,27 +1260,73 @@ class ExpressionSymbol:
                 ref = parent.ref_set.add(tail)
             except KeyError:
                 pass
-        elif self.token in self.exp.env:
-            val = self.exp.env[self.token]
-            ref = self.exp.ref_set.add(val.desc)
+        elif self.token in exp.env:
+            val = exp.env[self.token]
+            ref = exp.ref_set.add(val.desc)
         else:
             try:
-                ref = self.exp.ref_set.add(self.token)
+                ref = exp.ref_set.add(self.token)
             except KeyError:
                 pass
 
-        if ref:
-            res = '%s.%s' % (ref.join_alias, ref.remote_field)
-            return res
-        else:
+        if not ref:
             raise ValueError('"%s" not understood' % self.token)
+        self.ref = ref
+
+    def eval(self):
+        if self.ref:
+            return '%s.%s' % (self.ref.join_alias, self.ref.remote_field)
+        return self.builtin
 
     def __repr__(self):
         return '<ExpressionSymbol "%s">' % self.token
 
 
-class ExpressionParam(str):
-    pass
+class ExpressionParam:
+
+    def __init__(self, token):
+        self.token = token
+        self.key = ''
+        self.tail = ''
+
+        self.fmt_spec = self.conversion = None
+        if ':' in token:
+            token, self.fmt_spec = token.split(':', 1)
+
+        if '!' in token:
+            token, self.conversion = token.split('!', 1)
+
+        dotted = token.split('.', 1)
+        self.key, self.tail = dotted[0], dotted[1:]
+
+    def eval(self, ast, env):
+        # Get value from env
+        try:
+            as_int = int(self.key)
+        except  ValueError:
+            as_int = None
+
+        if self.key == '':
+            value = ast.args.pop(0)
+        elif as_int is not None:
+            value = ast.args[as_int]
+        else:
+            value = ast.kwargs[self.key] \
+                    if self.key in ast.kwargs else env[self.key]
+
+        # Resolve dotted expression
+        for attr in self.tail:
+            if isinstance(value, dict):
+                value = value[attr]
+            else:
+                value = getattr(value, attr)
+
+        # Formating
+        if self.fmt_spec:
+            value = ast.formatter.format_field(value, self.fmt_spec)
+        if self.conversion:
+            value = ast.formatter.convert_field(value, self.conversion)
+        return value
 
 
 class Expression(object):
@@ -1449,7 +1462,7 @@ class AST(object):
             return atom.eval()
 
         elif isinstance(atom, ExpressionParam):
-            value = self.get_param(atom, env)
+            value = atom.eval(self, env)
             return self.emit_literal(value)
 
         elif isinstance(atom, AST):
@@ -1479,37 +1492,6 @@ class AST(object):
     def __repr__(self):
         return '<AST [%s]>' % ' '.join(map(str,self.atoms))
 
-    def get_param(self, exp, env):
-        # Formatter support
-        fmt_spec = conversion = None
-        if ':' in exp:
-            exp, fmt_spec = exp.split(':', 1)
-
-        if '!' in exp:
-            exp, conversion = exp.split('!', 1)
-
-        dotted = exp.split('.', 1)
-        key, tail = dotted[0], dotted[1:]
-        try:
-            if key == '':
-                value = self.args.pop(0)
-            else:
-                value = self.args[int(key)]
-        except ValueError:
-            # XXX raise better exception
-            value = self.kwargs[key] if key in self.kwargs else env[key]
-
-        # Resolve dotted expression
-        for attr in tail:
-            if isinstance(value, dict):
-                value = value[attr]
-            else:
-                value = getattr(value, attr)
-        if fmt_spec:
-            value = self.formatter.format_field(value, fmt_spec)
-        if conversion:
-            value = self.formatter.convert_field(value, conversion)
-        return value
 
 @contextmanager
 def connect(cfg=None):
