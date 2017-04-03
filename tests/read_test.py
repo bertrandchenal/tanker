@@ -78,7 +78,7 @@ def test_aliases(session):
         'now': now
     })
 
-    view = View('country', ['name', 'now'])
+    view = View('country', ['name', '{now}'])
     res = view.read().all()
     if ctx.flavor == 'sqlite':
         ok = lambda r: r[1] == str(now)
@@ -89,7 +89,7 @@ def test_aliases(session):
     ctx.aliases.update({
         'type': 'TYPE'
     })
-    view = View('country', ['name', 'type'])
+    view = View('country', ['name', '{type}'])
     filters = '(= name "France")'
     res = view.read(filters).all()
     assert res == [('France', 'TYPE')]
@@ -106,7 +106,7 @@ def test_aggregation(session):
 
     # Aggregates & auto-grouping
     view = View('team', ['name', '(count *)'])
-    res = view.read().all()
+    res = view.read(groupby='name').all()
     assert res == [('Blue', 2), ('Red', 1)]
 
     # Aggregates all fields

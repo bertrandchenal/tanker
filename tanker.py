@@ -497,9 +497,8 @@ class ViewField:
             ctype = remote_col.ctype
             self.col = table.get_column(desc.split('.')[0])
 
-        elif desc in self.ctx.aliases:
-            ftype = ctype = 'LITERAL'
-            self.value = self.ctx.aliases[desc]
+        elif desc.startswith('{'):
+            ftype = ctype = 'ALIAS'
             self.col = None
 
         else:
@@ -536,7 +535,7 @@ class View(object):
         elif isinstance(fields, list) and isinstance(fields[0], tuple):
             fields = fields
 
-        self.fields = [ViewField(name, desc, self.table)
+        self.fields = [ViewField(name.strip(), desc, self.table)
                        for name, desc in fields]
         self.field_dict = dict((f.name, f) for f in self.fields)
 
@@ -589,7 +588,7 @@ class View(object):
                 ast = exp.parse(line)
                 yield ast
 
-    def read(self, filters=None, args=None, order=None, groupby='auto',
+    def read(self, filters=None, args=None, order=None, groupby=None,
              limit=None, disable_acl=False):
 
         if isinstance(filters, basestring):
@@ -605,23 +604,9 @@ class View(object):
         # Add select fields
         select_cols = []
         select_args = []
-        agg_fields = []
-        for pos, f in enumerate(self.fields):
-            if f.ftype == 'LITERAL':
-                select_cols.append("%%s as %s" % f.desc)
-                select_args.append(f.value)
-            else:
-                ast = exp.parse(f.desc)
-                if isinstance(ast, AST):
-                    if ast.atoms[0].token in Expression.aggregates:
-                        agg_fields.append(pos)
-                select_cols.append(ast.eval())
-                select_args.extend(ast.params)
-
-        select_chunk = [(
-            'SELECT ' + ', '.join(select_cols) + ' FROM %s' % self.table.name,
-            select_args,
-        )]
+        select_chunk = [exp.parse(
+            '(select %s)' % ' '.join(f.desc for f in self.fields))]
+        select_chunk.append(' FROM %s' % self.table.name)
 
         # Add filters
         filter_chunks = list(self._build_filter_cond(exp, filters, acl_filters))
@@ -632,16 +617,10 @@ class View(object):
         # ADD group by
         groupby_chunks= []
         group_fields = []
-        if groupby == 'auto':
-            if agg_fields:
-                group_fields = [str(i + 1) for i in range(len(self.fields)) \
-                                if i not in agg_fields]
-        elif groupby:
+        if groupby:
             if isinstance(groupby, basestring):
                 groupby = [groupby]
             group_fields = [exp.parse(f).eval() for f in groupby]
-
-        if group_fields:
             groupby_chunks = ['GROUP BY ' + ','.join(group_fields)]
 
         if order:
@@ -994,7 +973,7 @@ class TankerCursor:
             return x.eval(), None
         if isinstance(x, (AST)):
             # TODO kwargs should be evaled earlier
-            kwargs = {}
+            kwargs = self.view.ctx.aliases.copy()
             kwargs.update(self._kwargs or {})
             cfg = ctx.cfg
             kwargs.update(cfg)
@@ -1367,6 +1346,7 @@ class Expression(object):
         self.env = self.base_env(view.table)
         self.builtins = Expression.builtins.copy()
         self.builtins['from'] = self._sub_select
+        # Inject user-defined aliases
         self.parent = parent
 
         # Add refset
