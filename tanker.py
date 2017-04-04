@@ -1,6 +1,6 @@
 from collections import OrderedDict, defaultdict
 from contextlib import contextmanager
-from itertools import chain, cycle
+from itertools import chain
 from string import Formatter
 from threading import Thread
 try:
@@ -403,14 +403,6 @@ def log_sql(query, params=None, exception=False):
     else:
         logger.debug(*args)
 
-def joiner(guard, items):
-    if not items:
-        return
-    yield items[0]
-    for it in items[1:]:
-        yield guard
-        yield it
-
 
 CTX_STACK = ContextStack()
 ctx = ShallowContext()
@@ -602,8 +594,6 @@ class View(object):
         exp = Expression(self)
 
         # Add select fields
-        select_cols = []
-        select_args = []
         select_chunk = [exp.parse(
             '(select %s)' % ' '.join(f.desc for f in self.fields))]
         select_chunk.append(' FROM %s' % self.table.name)
@@ -613,9 +603,8 @@ class View(object):
         if filter_chunks:
             filter_chunks = ['WHERE'] + filter_chunks
 
-
         # ADD group by
-        groupby_chunks= []
+        groupby_chunks = []
         group_fields = []
         if groupby:
             if isinstance(groupby, basestring):
@@ -651,13 +640,8 @@ class View(object):
             order_chunks = []
 
         join_chunks = [exp.ref_set]
-        all_chunks = (
-            select_chunk
-            + join_chunks
-            + filter_chunks
-            + groupby_chunks
-            + order_chunks
-            )
+        all_chunks = (select_chunk + join_chunks + filter_chunks
+                      + groupby_chunks + order_chunks)
 
         if limit is not None:
             all_chunks += ['LIMIT %s' % int(limit)]
@@ -745,7 +729,7 @@ class View(object):
                 '\r', '\\r')
             clean = lambda x: repl(x) if isinstance(x, str) else x
             for row in data:
-                line = [clean(c) for c in  self.format_line(row)]
+                line = [clean(c) for c in self.format_line(row)]
                 writer.writerow(line)
             buff.seek(0)
             copy_from(buff, 'tmp', null='')
@@ -830,9 +814,9 @@ class View(object):
         main_fields = ', '.join('"%s"' % f.name for f in self.field_map)
         upd_fields = []
         for f in self.field_map:
-             if f.name in self.index_cols:
-                 continue
-             upd_fields.append('"%s" = EXCLUDED."%s"' % (f.name, f.name))
+            if f.name in self.index_cols:
+                continue
+            upd_fields.append('"%s" = EXCLUDED."%s"' % (f.name, f.name))
 
         qr = (
             'INSERT INTO %(main)s (%(main_fields)s) '
@@ -882,14 +866,13 @@ class View(object):
         cur = TankerCursor(self, qr).execute()
         return cur.rowcount
 
-
     def _update(self, join_cond):
         update_cols = [c.name for c in self.field_map
                        if c.name not in self.table.index]
         if not update_cols:
             return 0
 
-        where =  ' AND '.join(join_cond)
+        where = ' AND '.join(join_cond)
         cur = None
         if self.ctx.flavor == 'sqlite':
             for name in update_cols:
@@ -1282,7 +1265,7 @@ class ExpressionParam:
         # Get value from env
         try:
             as_int = int(self.key)
-        except  ValueError:
+        except ValueError:
             as_int = None
 
         if self.key == '':
@@ -1384,7 +1367,7 @@ class Expression(object):
             L = []
             exp = self
             if tokens[0].upper() == 'FROM':
-                from_ = tokens.pop(0) # pop off 'from'
+                from_ = tokens.pop(0)  # pop off 'from'
                 table = tokens.pop(0)
                 exp = Expression(View(table), parent=self)
                 L.append(ExpressionSymbol(from_, exp))
@@ -1470,7 +1453,7 @@ class AST(object):
         return '%s'
 
     def __repr__(self):
-        return '<AST [%s]>' % ' '.join(map(str,self.atoms))
+        return '<AST [%s]>' % ' '.join(map(str, self.atoms))
 
 
 @contextmanager
