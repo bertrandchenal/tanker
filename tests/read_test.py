@@ -118,3 +118,6 @@ def test_aggregation(session):
     view = View('team', ['(max name)'])
     res = view.read(groupby='country.name', order='country.name').all()
     assert res == [('Red',), ('Blue',)]
+
+def test_m2o(session):
+    pass # TODO

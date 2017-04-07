@@ -1,5 +1,5 @@
 from tanker import View, Expression, ctx
-from .base_test import session, check
+from .base_test import session, check, members
 
 def test_no_insert(session):
     team_view = View('team', ['name', 'country.name'])
@@ -56,3 +56,22 @@ def test_purge(session):
     expected = [('Blue', 'France',)]
     res = team_view.read()
     check(expected, res)
+
+def test_partial_write(session):
+    '''
+    We want to update only some columns
+    '''
+
+    # member table is empty by default
+    full_view = View('member', [
+        'name',
+        'team.country.name',
+        'team.name',
+        'registration_code'])
+    full_view.write(members)
+
+    partial_view = View('member', ['name', 'registration_code'])
+    partial_view.write([['Bob', '001']])
+
+    res = full_view.read('(= name "Bob")').next()
+    assert all(res)

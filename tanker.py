@@ -41,7 +41,7 @@ else:
 if not PY2:
     basestring = (str, bytes)
 
-__version__ = '0.3'
+__version__ = '0.4'
 
 COLUMN_TYPE = ('TIMESTAMP', 'DATE', 'FLOAT', 'INTEGER', 'M2O', 'O2M',
                'VARCHAR', 'BOOL')
@@ -790,11 +790,23 @@ class View(object):
         return rowcounts
 
     def _sqlite_upsert(self, join_cond, insert, update):
+        # As sqlite cannot update only some columns whe have to also
+        # update fields not in the query
+        qr_cols = [f.name for f in self.field_map]
+        other_cols = [col.name for col in self.table.own_columns \
+                      if col.name not in qr_cols]
+
         qr = 'INSERT OR REPLACE INTO %(main)s (%(fields)s) %(select)s'
         select = 'SELECT %(tmp_fields)s FROM tmp '\
                  '%(join_type)s  JOIN %(main_table)s ON ( %(join_cond)s)'
 
-        tmp_fields = ', '.join('tmp."%s"' % f.name for f in self.field_map)
+        tmp_fields = ', '.join('tmp."%s"' % c for c in qr_cols)
+        if other_cols:
+            tmp_fields += ', '
+            tmp_fields += ', '.join('%s.%s' % (self.table.name, f)\
+                                    for f in other_cols)
+        all_fields = qr_cols + other_cols
+
         select = select % {
             'tmp_fields': tmp_fields,
             'main_table': self.table.name,
@@ -1006,6 +1018,8 @@ class Table:
         # Add implicit id column
         if 'id' not in [c.name for c in self.columns]:
             self.columns.append(Column('id', 'INTEGER'))
+        self.own_columns = [c for c in self.columns \
+                            if c.name != 'id' and c.ctype != 'O2M']
 
         if index is None:
             if len(self.columns) == 2:
