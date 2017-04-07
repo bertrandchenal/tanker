@@ -790,12 +790,15 @@ class View(object):
         return rowcounts
 
     def _sqlite_upsert(self, join_cond, insert, update):
+        # FIXME: tmp table create too much issues with sqlite, and
+        # executemany is good enough for the usecases it is used
+        # FTR: the replace statement creates new lines with new ids
+
         # As sqlite cannot update only some columns whe have to also
         # update fields not in the query
         qr_cols = [f.name for f in self.field_map]
         other_cols = [col.name for col in self.table.own_columns \
                       if col.name not in qr_cols]
-        # FIXME 'id' should be also kept !
         qr = 'INSERT OR REPLACE INTO %(main)s (%(fields)s) %(select)s'
         select = 'SELECT %(tmp_fields)s FROM tmp '\
                  '%(join_type)s  JOIN %(main_table)s ON ( %(join_cond)s)'
