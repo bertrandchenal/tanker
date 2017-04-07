@@ -795,7 +795,7 @@ class View(object):
         qr_cols = [f.name for f in self.field_map]
         other_cols = [col.name for col in self.table.own_columns \
                       if col.name not in qr_cols]
-
+        # FIXME 'id' should be also kept !
         qr = 'INSERT OR REPLACE INTO %(main)s (%(fields)s) %(select)s'
         select = 'SELECT %(tmp_fields)s FROM tmp '\
                  '%(join_type)s  JOIN %(main_table)s ON ( %(join_cond)s)'
@@ -805,7 +805,6 @@ class View(object):
             tmp_fields += ', '
             tmp_fields += ', '.join('%s.%s' % (self.table.name, f)\
                                     for f in other_cols)
-        all_fields = qr_cols + other_cols
 
         select = select % {
             'tmp_fields': tmp_fields,
@@ -815,7 +814,7 @@ class View(object):
         }
         qr = qr % {
             'main': self.table.name,
-            'fields': ', '.join('"%s"' % f.name for f in self.field_map),
+            'fields': ', '.join('"%s"' % c for c in qr_cols + other_cols),
             'select': select,
         }
         cur = TankerCursor(self, [qr]).execute()
