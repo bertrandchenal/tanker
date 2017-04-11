@@ -16,15 +16,14 @@ def session(request):
     cfg = get_config(request.param)
     with connect(cfg):
         create_tables()
-    yield
+    yield request.param
 
 def test_read_thread(session):
     '''
     Test a situation where threads are created outside of any active
     context (hence dry).
     '''
-
-    cfg = get_config('sqlite')
+    cfg = get_config(session)
     with connect(cfg):
         create_tables()
         countries = View('country').read().all()
