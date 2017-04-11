@@ -57,6 +57,7 @@ def test_purge(session):
     res = team_view.read()
     check(expected, res)
 
+
 def test_partial_write(session):
     '''
     We want to update only some columns
@@ -70,8 +71,17 @@ def test_partial_write(session):
         'registration_code'])
     full_view.write(members)
 
+    # Collect ids and name
+    name_view = View('member', ['id', 'name'])
+    id2name = dict(name_view.read().all())
+
     partial_view = View('member', ['name', 'registration_code'])
     partial_view.write([['Bob', '001']])
 
+    # Makes sur no other column is set to null
     res = full_view.read('(= name "Bob")').next()
     assert all(res)
+
+    # compare ids
+    for member_id, name in name_view.read():
+        assert id2name[member_id] == name

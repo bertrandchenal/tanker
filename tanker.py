@@ -251,8 +251,9 @@ class Context:
         if table is None:
             self._fk_cache = {}
         else:
-            if table in self._fk_cache:
-                del self._fk_cache[table]
+            for key in list(self._fk_cache):
+                if key[0] == table:
+                    del self._fk_cache[key]
 
     def resolve_fk(self, fields, values):
         remote_table = fields[0].col.get_foreign_table().name
@@ -551,7 +552,7 @@ class View(object):
         # Index fields identify each line in the data
         self.index_fields = [f for f in self.fields
                              if f.col and f.col.name in self.table.index]
-        # Index fields identify each row in the table
+        # Index cols identify each row in the table
         self.index_cols = [c.name for c in self.field_map
                            if c.name in self.table.index]
 
@@ -592,6 +593,7 @@ class View(object):
             acl_filters = acl['filters']
 
         exp = Expression(self)
+
 
         # Add select fields
         select_chunk = [exp.parse(
@@ -710,14 +712,6 @@ class View(object):
             for col, fields in self.field_map.items())
         execute(qr)
 
-        # Handle list of dict and dataframes
-        if isinstance(data, list) and isinstance(data[0], dict):
-            data = [[record.get(f.name) for f in self.fields]
-                    for record in data]
-        elif pandas and isinstance(data, pandas.DataFrame):
-            fields = [f.name for f in self.fields]
-            data = data[fields].values
-
         # Fill tmp
         if self.ctx.flavor == 'postgresql':
             buff = BuffIO()
@@ -729,7 +723,7 @@ class View(object):
                 '\r', '\\r')
             clean = lambda x: repl(x) if isinstance(x, str) else x
             for row in data:
-                line = [clean(c) for c in self.format_line(row)]
+                line = [clean(c) for c in row]
                 writer.writerow(line)
             buff.seek(0)
             copy_from(buff, 'tmp', null='')
@@ -739,7 +733,6 @@ class View(object):
                 'fields': ', '.join('"%s"' % c.name for c in self.field_map),
                 'values': ', '.join('%s' for _ in self.field_map),
             }
-            data = [list(self.format_line(row)) for row in data]
             executemany(qr, data)
 
         # Create join conditions
@@ -752,8 +745,6 @@ class View(object):
 
         # Clean tmp table
         execute('DROP TABLE tmp')
-        # Clean cache for current table
-        self.ctx.reset_cache(self.table.name)
 
     def write(self, data, purge=False, insert=True, update=True):
         '''
@@ -762,66 +753,101 @@ class View(object):
         updated. If purge is true existing line that are not present
         in data will be deleted.
         '''
-        with self._prepare_write(data) as join_cond:
-            rowcounts = {}
-            # Upsert step
-            if self.ctx.flavor == 'sqlite':
-                cnt = self._sqlite_upsert(
-                    join_cond, insert=insert, update=update)
-                rowcounts['upsert'] = cnt
-            elif ctx.legacy_pg:
-                if insert:
-                    cnt = self._insert(join_cond)
-                    rowcounts['insert'] = cnt
-                if update:
-                    cnt = self._update(join_cond)
-                    rowcounts['update'] = cnt
-            else:
-                # ON-CONFLICT is available since postgres 9.5
-                cnt = self._pg_upsert(join_cond, insert=insert, update=update)
-                rowcounts['upsert'] = cnt
 
-            if purge:
-                cnt = self._purge(join_cond)
-                rowcounts['delete'] = cnt
+        # Handle list of dict and dataframes
+        if isinstance(data, list) and isinstance(data[0], dict):
+            data = [[record.get(f.name) for f in self.fields]
+                    for record in data]
+        elif pandas and isinstance(data, pandas.DataFrame):
+            fields = [f.name for f in self.fields]
+            data = data[fields].values
+        # Format line (and resolve fk)
+        data = [list(self.format_line(row)) for row in data]
+
+        if self.ctx.flavor == 'sqlite':
+            rowcounts = self._sqlite_upsert(data, purge=purge, insert=insert,
+                                            update=update)
+        else:
+            with self._prepare_write(data) as join_cond:
+                rowcounts = {}
+                if ctx.legacy_pg:
+                    if insert:
+                        cnt = self._insert(join_cond)
+                        rowcounts['insert'] = cnt
+                    if update:
+                        cnt = self._update(join_cond)
+                        rowcounts['update'] = cnt
+                else:
+                    # ON-CONFLICT is available since postgres 9.5
+                    cnt = self._pg_upsert(join_cond, insert=insert, update=update)
+                    rowcounts['upsert'] = cnt
+
+                if purge:
+                    cnt = self._purge(join_cond)
+                    rowcounts['delete'] = cnt
 
         # Clean cache for current table
-        ctx.reset_cache(self.table.name)
+        self.ctx.reset_cache(self.table.name)
         return rowcounts
 
-    def _sqlite_upsert(self, join_cond, insert, update):
-        # FIXME: tmp table create too much issues with sqlite, and
-        # executemany is good enough for the usecases it is used
-        # FTR: the replace statement creates new lines with new ids
+    def _sqlite_upsert(self, data, purge, insert, update):
+        # Identify position and name of index fields
+        key_pos = []
+        key_cols = []
+        upd_pos = []
+        upd_fields = []
+        for pos, col in enumerate(self.field_map):
+            if col.name in self.index_cols:
+                key_pos.append(pos)
+                key_cols.append(col.name)
+            else:
+                upd_pos.append(pos)
+                upd_fields.append(col.name)
 
-        # As sqlite cannot update only some columns whe have to also
-        # update fields not in the query
-        qr_cols = [f.name for f in self.field_map]
-        other_cols = [col.name for col in self.table.own_columns \
-                      if col.name not in qr_cols]
-        qr = 'INSERT OR REPLACE INTO %(main)s (%(fields)s) %(select)s'
-        select = 'SELECT %(tmp_fields)s FROM tmp '\
-                 '%(join_type)s  JOIN %(main_table)s ON ( %(join_cond)s)'
+        # Read existing data from table
+        view = View(self.table.name, key_cols)
+        db_keys = set(view.read())
+        key_vals = lambda row: tuple(row[i] for i in key_pos)
+        upd_vals = lambda row: tuple(row[i] for i in upd_pos)
 
-        tmp_fields = ', '.join('tmp."%s"' % c for c in qr_cols)
-        if other_cols:
-            tmp_fields += ', '
-            tmp_fields += ', '.join('%s.%s' % (self.table.name, f)\
-                                    for f in other_cols)
-
-        select = select % {
-            'tmp_fields': tmp_fields,
-            'main_table': self.table.name,
-            'join_cond': ' AND '.join(join_cond),
-            'join_type': 'LEFT' if insert else 'INNER',
+        # Build sql statements
+        insert_qr = 'INSERT INTO %(table)s (%(fields)s) VALUES (%(values)s)'
+        insert_qr = insert_qr % {
+            'table': self.table.name,
+            'fields': ', '.join('"%s"' % c.name for c in self.field_map),
+            'values': ', '.join('%s' for _ in self.field_map),
         }
-        qr = qr % {
-            'main': self.table.name,
-            'fields': ', '.join('"%s"' % c for c in qr_cols + other_cols),
-            'select': select,
+        update_qr = 'UPDATE %(table)s SET %(upd_stm)s WHERE %(cond)s'
+        update_qr = update_qr % {
+            'table': self.table.name,
+            'upd_stm': ', '.join('%s = %%s' % c for c in upd_fields),
+            'cond': ' AND '.join('%s = %%s' % c for c in key_cols),
         }
-        cur = TankerCursor(self, [qr]).execute()
-        return cur.rowcount
+        delete_qr = 'DELETE FROM %(table)s WHERE %(cond)s'
+        delete_qr = delete_qr % {
+            'table': self.table.name,
+            'cond': ' AND '.join('%s = %%s' % c for c in key_cols),
+        }
+
+        # Run queris
+        cnt = {'insert': 0, 'update': 0, 'deleted': 0}
+        data_keys = [key_vals(line) for line in data]
+        for key, line in zip(data_keys, data):
+            if insert and key not in db_keys:
+                cur = execute(insert_qr, line)
+                cnt['insert'] +=  cur.rowcount
+            if update and key in db_keys:
+                vals = upd_vals(line)
+                if vals:
+                    cur = execute(update_qr, vals + key)
+                    cnt['update'] +=  cur.rowcount
+        if purge:
+            to_delete = db_keys - set(data_keys)
+            if to_delete:
+                cnt['deleted'] = len(to_delete)
+                executemany(delete_qr, to_delete)
+
+        return cnt
 
     def _pg_upsert(self, join_cond, insert, update):
         tmp_fields = ', '.join('tmp."%s"' % f.name for f in self.field_map)
@@ -887,28 +913,14 @@ class View(object):
             return 0
 
         where = ' AND '.join(join_cond)
-        cur = None
-        if self.ctx.flavor == 'sqlite':
-            for name in update_cols:
-                qr = 'UPDATE "%(main)s" SET "%(name)s" = COALESCE((' \
-                      'SELECT "%(name)s" FROM tmp WHERE %(where)s' \
-                     '), %(name)s)'
-                qr = qr % {
-                    'main': self.table.name,
-                    'name': name,
-                    'where': where,
-                }
-                cur = TankerCursor(self, qr).execute()
-
-        elif self.ctx.flavor == 'postgresql':
-            qr = 'UPDATE "%(main)s" SET '
-            qr += ', ' .join('"%s" = tmp."%s"' % (n, n) for n in update_cols)
-            qr += 'FROM tmp WHERE %(where)s'
-            qr = qr % {
-                'main': self.table.name,
-                'where': where,
-            }
-            cur = TankerCursor(self, qr).execute()
+        qr = 'UPDATE "%(main)s" SET '
+        qr += ', ' .join('"%s" = tmp."%s"' % (n, n) for n in update_cols)
+        qr += 'FROM tmp WHERE %(where)s'
+        qr = qr % {
+            'main': self.table.name,
+            'where': where,
+        }
+        cur = TankerCursor(self, qr).execute()
 
         return cur and cur.rowcount or 0
 
@@ -957,6 +969,14 @@ class TankerCursor:
 
         qr, args = self.expand()
         self.db_cursor = execute(qr, args)
+        return self.db_cursor
+
+    def executemany(self):
+        if self.db_cursor is not None:
+            return self.db_cursor
+
+        qr, args = self.expand()
+        self.db_cursor = executemany(qr, args)
         return self.db_cursor
 
     def __iter__(self):

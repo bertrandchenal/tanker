@@ -69,11 +69,12 @@ def test_read_thread(session):
 
 
 def test_nested_read(session):
-    cursor = View('country').read()
-    first = next(cursor)
-
     # Needed because table creation and content is not committed yet
     ctx.connection.commit()
+
+    # Start read from parent ctx
+    cursor = View('country').read()
+    first = next(cursor)
 
     # We re-use the current config to create a nested context
     with connect(ctx.cfg):
