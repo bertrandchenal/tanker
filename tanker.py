@@ -280,8 +280,9 @@ class Context:
         if self.flavor == 'sqlite':
             qr = "SELECT name FROM sqlite_master WHERE type = 'table'"
         elif self.flavor == 'postgresql':
+            schema = ctx.cfg.get('pg_schema', 'public')
             qr = "SELECT table_name FROM information_schema.tables " \
-                 "WHERE table_schema = 'public'"
+                 "WHERE table_schema = '%s'" % schema
         self.db_tables.update(name for name, in execute(qr))
 
         # Create tables and simple columns
@@ -342,7 +343,9 @@ class Context:
         if self.flavor == 'sqlite':
             qr = "SELECT name FROM sqlite_master WHERE type = 'index'"
         elif self.flavor == 'postgresql':
-            qr = "SELECT indexname FROM pg_indexes WHERE schemaname = 'public'"
+            schema = ctx.cfg.get('pg_schema', 'public')
+            qr = "SELECT indexname FROM pg_indexes " \
+                 "WHERE schemaname = '%s'" % schema
 
         indexes = set(name for name, in execute(qr))
 
