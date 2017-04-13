@@ -1333,7 +1333,13 @@ class ExpressionParam:
 class Expression(object):
     # Inspired by http://norvig.com/lispy.html
 
-    aggregates = ('count', 'sum', 'max')
+    aggregates = (
+        'avg',
+        'count',
+        'max',
+        'min',
+        'sum',
+    )
 
     builtins = {
         'and': lambda *xs: '(%s)' % ' AND '.join(xs),
