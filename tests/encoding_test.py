@@ -1,8 +1,11 @@
 #coding: utf-8
+import sys
+
 from tanker import View
 
 from .base_test import session
 
+PY2 = sys.version_info[0] == 2
 
 def test_str(session):
     japan = '日本'
@@ -19,13 +22,15 @@ def test_str(session):
 
 def test_unicode(session):
     korea = u'Corée'
-    korea_str = korea.encode('utf-8')
+    if PY2:
+        korea = korea.encode('utf-8')
+
     team_view = View('country', ['name'])
     team_view.write([(korea,)])
 
     row = team_view.read(filters={'name': korea}).next()
-    assert row[0] == korea_str
+    assert row[0] == korea
 
-    fltr = '(= name "%s")' % korea_str
+    fltr = '(= name "%s")' % korea
     row = team_view.read(fltr).next()
-    assert row[0] == korea_str
+    assert row[0] == korea
