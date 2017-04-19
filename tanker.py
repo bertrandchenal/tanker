@@ -1,5 +1,6 @@
 from collections import OrderedDict, defaultdict
 from contextlib import contextmanager
+from datetime import datetime, date
 from itertools import chain
 from string import Formatter
 from threading import Thread
@@ -10,7 +11,6 @@ except ImportError:
     # PY3
     from urllib.parse import urlparse
 import csv
-import datetime
 import io
 import logging
 import re
@@ -120,8 +120,11 @@ class Pool:
 
         new_ctx = CTX_STACK.push(connection, self)
 
-        # Makes new_ctx init the pool registry if still empty
+        # Load schema as yaml if a string is given
         schema = self.cfg and self.cfg.get('schema')
+        if isinstance(schema, basestring):
+            schema = yaml_load(schema)
+        # Makes new_ctx init the pool registry if still empty
         if not self.registry and schema:
             for table_def in schema:
                 new_ctx.register(table_def)
@@ -269,11 +272,12 @@ class Context:
                        for val in view.read(disable_acl=True))
             self._fk_cache[key] = res
 
-        res = self._fk_cache[key].get(values)
-        if res is None:
-            raise ValueError('Values (%s) are not known in table "%s"' % (
-                ', '.join(map(repr, values)), remote_table))
-        return res
+        for val in zip(*values):
+            res = self._fk_cache[key].get(val)
+            if res is None:
+                raise ValueError('Values (%s) are not known in table "%s"' % (
+                    ', '.join(map(repr, val)), remote_table))
+            yield res
 
     def create_tables(self):
         # Collect table info
@@ -653,23 +657,24 @@ class View(object):
 
         return TankerCursor(self, all_chunks, args=args)
 
-    def format_line(self, row):
+    def format(self, data):
         for col in self.field_map:
             idx = self.field_idx[col]
             if col.ctype == 'M2O':
                 fields = tuple(f for f in self.field_map[col])
-                values = tuple(row[i] for i in idx)
+                values = tuple(data[i] for i in idx)
                 if len(fields) == 1 and fields[0].ctype == 'INTEGER':
                     # Handle update of fk by id
-                    yield int(row[idx[0]])
+                    yield map(int, data[idx[0]])
                 else:
                     # Resole foreign key reference
-                    values = tuple(
-                        f.col.format(v, astype=f.ctype)
-                        for f, v in zip(fields, values))
+                    values = map(
+                        lambda a: tuple(a[0].col.format(a[1], astype=a[0].ctype)),
+                        zip(fields, values)
+                        )
                     yield ctx.resolve_fk(fields, values)
             else:
-                yield col.format(row[idx[0]])
+                yield col.format(data[idx[0]])
 
     def delete(self, filters=None, data=None, args=None):
         if not any((data, filters)):
@@ -725,11 +730,17 @@ class View(object):
                 '\t', '\\t').replace(
                 '\r', '\\r')
             clean = lambda x: repl(x) if isinstance(x, str) else x
-            for row in data:
-                line = [clean(c) for c in row]
-                writer.writerow(line)
+            # Clean by column
+            for pos, c in enumerate(self.field_map):
+                if c.ctype != 'VARCHAR':
+                    continue
+                data[pos] = [clean(v) for v in data[pos]]
+            # Append to writer by row
+            for row in zip(*data):
+                writer.writerow(row)
             buff.seek(0)
             copy_from(buff, 'tmp', null='')
+
         else:
             qr = 'INSERT INTO tmp (%(fields)s) VALUES (%(values)s)'
             qr = qr % {
@@ -759,15 +770,20 @@ class View(object):
 
         # Handle list of dict and dataframes
         if isinstance(data, list) and isinstance(data[0], dict):
-            data = [[record.get(f.name) for f in self.fields]
-                    for record in data]
+            data = [[record.get(f.name) for record in data]
+                    for f in self.fields]
         elif pandas and isinstance(data, pandas.DataFrame):
             fields = [f.name for f in self.fields]
-            data = data[fields].values
-        # Format line (and resolve fk)
-        data = [list(self.format_line(row)) for row in data]
+            data = [data[f].values for f in fields]
+        else:
+            # Transform rows into columns
+            data = list(zip(*data))
 
+        # Format values
+        data = list(self.format(data))
         if self.ctx.flavor == 'sqlite':
+            # Convert back to lines:
+            data = list(zip(*data))
             rowcounts = self._sqlite_upsert(data, purge=purge, insert=insert,
                                             update=update)
         else:
@@ -1114,31 +1130,48 @@ class Column:
     def get_foreign_table(self):
         return Table.get(self.foreign_table)
 
-    def format(self, value, astype=None):
+    def format(self, values, astype=None):
         '''
         Sanitize value wrt the column type of the current field.
         '''
-        if value is None:
-            return None
-        elif pandas and pandas.isnull(value):
-            return None
+        is_none = lambda x:  x is None or (pandas and pandas.isnull(x))
+        skip_none = lambda fn: lambda x: None if is_none(x) else fn(x)
         astype = astype or self.ctype
-        if astype == 'INTEGER' and not isinstance(value, int):
-            value = int(value)
-        elif astype == 'VARCHAR':
-            if not isinstance(value, basestring):
-                value = str(value)
-            else:
-                if PY2 and isinstance(value, unicode):
-                    value = value.encode(ctx.encoding)
-                if not PY2 and isinstance(value, bytes):
-                    value = value.encode(ctx.encoding)
-        elif astype == 'TIMESTAMP' and hasattr(value, 'timetuple'):
-            value = datetime.datetime(*value.timetuple()[:6])
-        elif astype == 'DATE' and hasattr(value, 'timetuple'):
-            value = datetime.date(*value.timetuple()[:3])
 
-        return value
+        if astype == 'INTEGER':
+            return map(skip_none(int), values)
+
+        elif astype == 'VARCHAR':
+            for value in values:
+                if value is None:
+                    yield None
+                elif not isinstance(value, basestring):
+                    yield str(value)
+                else:
+                    if PY2 and isinstance(value, unicode):
+                        yield value.encode(ctx.encoding)
+                    elif not PY2 and isinstance(value, bytes):
+                        yield value.encode(ctx.encoding)
+                    else:
+                        yield value
+
+        elif astype == 'TIMESTAMP':
+            for value in values:
+                if value is None:
+                    yield None
+                elif isinstance(value, datetime):
+                    yield value
+                else:
+                    yield datetime(*value.timetuple()[:6])
+        elif astype == 'DATE':
+            for value in values:
+                if value is None:
+                    yield None
+                elif isinstance(value, date):
+                    yield value
+                else:
+                    yield date(*value.timetuple()[:3])
+        return values
 
     def __repr__(self):
         return '<Column %s %s>' % (self.name, self.ctype)
