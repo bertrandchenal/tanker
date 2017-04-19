@@ -1134,8 +1134,10 @@ class Column:
         '''
         Sanitize value wrt the column type of the current field.
         '''
-        is_none = lambda x:  x is None or (pandas and pandas.isnull(x))
-        skip_none = lambda fn: lambda x: None if is_none(x) else fn(x)
+        skip_none = (lambda fn: (
+            lambda x: None
+            if x is None or (pandas and pandas.isnull(x))
+            else fn(x)))
         astype = astype or self.ctype
 
         if astype == 'INTEGER':
