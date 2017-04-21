@@ -1139,46 +1139,39 @@ class Column:
             if x is None or (pandas and pandas.isnull(x))
             else fn(x)))
         astype = astype or self.ctype
+        res = []
 
         if astype == 'INTEGER':
-            for v in map(skip_none(int), values):
-                yield v
-            return
+            res = map(skip_none(int), values)
 
         elif astype == 'VARCHAR':
             for value in values:
                 if value is None:
-                    yield None
+                    pass
                 elif not isinstance(value, basestring):
-                    yield str(value)
+                    value = str(value)
                 else:
                     if PY2 and isinstance(value, unicode):
-                        yield value.encode(ctx.encoding)
+                        value =  value.encode(ctx.encoding)
                     elif not PY2 and isinstance(value, bytes):
-                        yield value.encode(ctx.encoding)
-                    else:
-                        yield value
+                        value = value.encode(ctx.encoding)
+                res.append(value)
 
         elif astype == 'TIMESTAMP':
             for value in values:
-                if value is None:
-                    yield None
-                elif isinstance(value, datetime):
-                    yield value
-                else:
-                    yield datetime(*value.timetuple()[:6])
+                if not isinstance(value, datetime):
+                    value = datetime(*value.timetuple()[:6])
+                res.append(value)
+
         elif astype == 'DATE':
             for value in values:
-                if value is None:
-                    yield None
-                elif isinstance(value, date):
-                    yield value
-                else:
-                    yield date(*value.timetuple()[:3])
+                if not isinstance(value, date):
+                    value = datetime(*value.timetuple()[:3])
+                res.append(value)
+        else:
+            res = values
 
-        for v in values:
-            yield v
-        return
+        return res
 
     def __repr__(self):
         return '<Column %s %s>' % (self.name, self.ctype)
