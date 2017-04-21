@@ -1141,7 +1141,9 @@ class Column:
         astype = astype or self.ctype
 
         if astype == 'INTEGER':
-            return map(skip_none(int), values)
+            for v in map(skip_none(int), values):
+                yield v
+            return
 
         elif astype == 'VARCHAR':
             for value in values:
@@ -1173,7 +1175,10 @@ class Column:
                     yield value
                 else:
                     yield date(*value.timetuple()[:3])
-        return values
+
+        for v in values:
+            yield v
+        return
 
     def __repr__(self):
         return '<Column %s %s>' % (self.name, self.ctype)
