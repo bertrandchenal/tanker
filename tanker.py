@@ -1159,13 +1159,14 @@ class Column:
 
         elif astype == 'TIMESTAMP':
             for value in values:
-                if not isinstance(value, datetime):
+                if not isinstance(value, datetime) \
+                   and hasattr(value, 'timetuple'):
                     value = datetime(*value.timetuple()[:6])
                 res.append(value)
 
         elif astype == 'DATE':
             for value in values:
-                if not isinstance(value, date):
+                if not isinstance(value, date) and hasattr(value, 'timetuple'):
                     value = datetime(*value.timetuple()[:3])
                 res.append(value)
         else:
