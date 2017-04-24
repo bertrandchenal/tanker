@@ -270,6 +270,11 @@ dictionary to map dataframe columns to database columns.
 
 Some ideas, in no particular order:
 
+  - Rename `index` with `pk` in schema
+  - Allow to manipulate rows by their `id`
+  - Add support for other 'ON CONFLICT' action (mainly update a given
+    field, like validity date)
+  - Support for version column (probably a write timestamp)
   - Support for table constraints
   - Allow to excute complete queries with s-expressions (select,
     update, insert and delete).
