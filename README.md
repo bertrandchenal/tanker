@@ -270,6 +270,7 @@ dictionary to map dataframe columns to database columns.
 
 Some ideas, in no particular order:
 
+  - Be able to introspect existing db (without yaml schema then)
   - Rename `index` with `pk` in schema
   - Allow to manipulate rows by their `id`
   - Add support for other 'ON CONFLICT' action (mainly update a given
@@ -278,5 +279,3 @@ Some ideas, in no particular order:
   - Support for table constraints
   - Allow to excute complete queries with s-expressions (select,
     update, insert and delete).
-  - Add support for
-    [PostgreSQL UPSERT](https://www.postgresql.org/docs/9.5/static/sql-insert.html#SQL-ON-CONFLICT)
