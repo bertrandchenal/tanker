@@ -1171,13 +1171,19 @@ class Column:
 
         elif astype == 'TIMESTAMP':
             for value in values:
-                if not isinstance(value, datetime):
+                if value is None:
+                    pass
+                elif not isinstance(value, datetime):
                     if hasattr(value, 'timetuple'):
                         value = datetime(*value.timetuple()[:6])
                     elif hasattr(value, 'tolist'):
                         # tolist is a numpy.datetime64 method that
                         # returns nanosecond from 1970
-                        value = datetime.utcfromtimestamp(value.tolist() / 1e9)
+                        ts = value.tolist()
+                        if ts is None:
+                            value = None
+                        else:
+                            value = datetime.utcfromtimestamp(ts / 1e9)
                     else:
                         raise ValueError(
                             'Unexpected value "%s" for type "%s"' % (
@@ -1186,12 +1192,18 @@ class Column:
 
         elif astype == 'DATE':
             for value in values:
-                if not isinstance(value, date):
+                if value is None:
+                    pass
+                elif not isinstance(value, date):
                     if hasattr(value, 'timetuple'):
                         value = date(*value.timetuple()[:3])
                     elif hasattr(value, 'tolist'):
-                        dt = datetime.utcfromtimestamp(value.tolist() / 1e9)
-                        value = date(*dt.timetuple()[:3])
+                        ts = value.tolist()
+                        if ts is None:
+                            value = None
+                        else:
+                            dt = datetime.utcfromtimestamp(ts / 1e9)
+                            value = date(*dt.timetuple()[:3])
                     else:
                         raise ValueError(
                             'Unexpected value "%s" for type "%s"' % (
