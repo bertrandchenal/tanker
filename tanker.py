@@ -374,7 +374,8 @@ class Context:
                 continue
 
             cols = ', '.join('"%s"' % c for c in table.index)
-            qr = 'CREATE UNIQUE INDEX %s ON %s (%s)' % (idx, table.name, cols)
+            qr = 'CREATE UNIQUE INDEX "%s" ON "%s" (%s)' % (
+                idx, table.name, cols)
             execute(qr)
 
         # Add unique constrains (not supported by sqlite)
