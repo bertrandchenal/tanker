@@ -10,6 +10,13 @@ def test_filters(session):
     res = view.read(filters).all()
     assert res == [('Blue',)]
 
+    filters = [
+        '(= country.name "France")',
+        '(= country.name "Belgium")',
+    ]
+    res = view.read(filters).all()
+    assert res == []
+
 def test_subselect(session):
     view = View('team')
     cond = (

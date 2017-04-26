@@ -54,6 +54,18 @@ logger = logging.getLogger('tanker')
 logger.setLevel(logging.INFO)
 
 
+def join(value, items):
+    '''
+    like str.join but for lists
+    '''
+    if not items:
+        return
+    it = iter(items)
+    yield next(it)
+    for item in it:
+        yield value
+        yield item
+
 class TankerThread(Thread):
 
     def __init__(self, *args, **kwargs):
@@ -610,7 +622,7 @@ class View(object):
         # Add filters
         filter_chunks = list(self._build_filter_cond(exp, filters, acl_filters))
         if filter_chunks:
-            filter_chunks = ['WHERE'] + filter_chunks
+            filter_chunks = ['WHERE'] + list(join(' AND ', filter_chunks))
 
         # ADD group by
         groupby_chunks = []
