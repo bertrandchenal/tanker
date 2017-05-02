@@ -861,7 +861,7 @@ class View(object):
             'cond': ' AND '.join('%s = %%s' % c for c in key_cols),
         }
 
-        # Run queris
+        # Run queries
         cnt = {'insert': 0, 'update': 0, 'deleted': 0}
         data_keys = [key_vals(line) for line in data]
         for key, line in zip(data_keys, data):
