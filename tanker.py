@@ -1566,7 +1566,7 @@ class AST(object):
 
     def emit_literal(self, x):
         # Collect literal and return placeholder
-        if isinstance(x, (tuple, list)):
+        if isinstance(x, (tuple, list, set)):
             self.params.extend(x)
             return ', '.join('%s' for _ in x)
         self.params.append(x)
