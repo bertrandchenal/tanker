@@ -17,18 +17,18 @@ def test_filters(session):
     res = view.read(filters).all()
     assert res == []
 
-def test_subselect(session):
+def test_no_fields(session):
     view = View('team')
-    cond = (
-        '(in id '
-          '(from member (select team) '
-          '(where (= name "Bob"))))'
-        )
-    ast = Expression(view).parse(cond)
-    expected = ('team.id in ('
-                'SELECT member.team FROM member WHERE member.name = %s)')
-    assert ast.eval() == expected
+    res = view.read().all()
+    expected = [('Blue', 1), ('Red', 1), ('Blue', 2)]
+    assert res == expected
 
+def test_o2m(session):
+    view = View('country', ['name', 'teams.name'])
+    res = view.read().all()
+    expected = [('Belgium', 'Blue'), ('Belgium', 'Red'),
+                ('France', 'Blue'), ('Holland', None)]
+    assert res == expected
 
 def test_args(session):
     # Add config value, to use it later

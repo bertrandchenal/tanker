@@ -539,7 +539,7 @@ class View(object):
         self.ctx = ctx
         self.table = Table.get(table)
         if fields is None:
-            fields = [(f.name, f.name) for f in self.table.columns
+            fields = [(f.name, f.name) for f in self.table.own_columns
                       if f.name != 'id']
         elif isinstance(fields, basestring):
             fields = [[fields, fields]]

@@ -124,6 +124,18 @@ def test_subexpression_join(session):
         'AND country_2.name = %s)')
     assert ast.params == [1, 'BE', 'BE']
 
+def test_subselect(session):
+    view = View('team')
+    cond = (
+        '(in id '
+          '(from member (select team) '
+          '(where (= name "Bob"))))'
+        )
+    ast = Expression(view).parse(cond)
+    expected = ('team.id in ('
+                'SELECT member.team FROM member WHERE member.name = %s)')
+    assert ast.eval() == expected
+
 def test_field(session):
     exp = Expression(View('team'))
     assert exp.parse('name').eval() == 'team.name'

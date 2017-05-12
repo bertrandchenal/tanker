@@ -24,6 +24,7 @@ yaml_def = '''
 - table: country
   columns:
     name: varchar
+    teams: o2m team.country
   index:
     - name
   values:
