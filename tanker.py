@@ -1,6 +1,6 @@
 from collections import OrderedDict, defaultdict
 from contextlib import contextmanager
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 from itertools import chain
 from string import Formatter
 from threading import Thread
@@ -47,6 +47,8 @@ COLUMN_TYPE = ('TIMESTAMP', 'DATE', 'FLOAT', 'INTEGER', 'M2O', 'O2M',
                'VARCHAR', 'BOOL')
 QUOTE_SEPARATION = re.compile(r"(.*?)('.*?')", re.DOTALL)
 NAMED_RE = re.compile(r"%\(([^\)]+)\)s")
+EPOCH = datetime(1970, 1, 1)
+
 
 fmt = '%(levelname)s:%(asctime).19s: %(message)s'
 logging.basicConfig(format=fmt)
@@ -1159,8 +1161,8 @@ class Column:
 
         elif astype == 'VARCHAR':
             for value in values:
-                if value is None:
-                    pass
+                if not value:
+                    value = None
                 elif not isinstance(value, basestring):
                     value = str(value)
                 else:
@@ -1172,19 +1174,20 @@ class Column:
 
         elif astype == 'TIMESTAMP':
             for value in values:
-                if value is None:
-                    pass
+                if not value:
+                    value = None
                 elif not isinstance(value, datetime):
                     if hasattr(value, 'timetuple'):
                         value = datetime(*value.timetuple()[:6])
                     elif hasattr(value, 'tolist'):
                         # tolist is a numpy.datetime64 method that
-                        # returns nanosecond from 1970
+                        # returns nanosecond from 1970. EPOCH + delta(val)
+                        # suppors values far in the past (or future)
                         ts = value.tolist()
                         if ts is None:
                             value = None
                         else:
-                            value = datetime.utcfromtimestamp(ts / 1e9)
+                            value = EPOCH + timedelta(seconds=ts/1e9)
                     else:
                         raise ValueError(
                             'Unexpected value "%s" for type "%s"' % (
@@ -1203,7 +1206,7 @@ class Column:
                         if ts is None:
                             value = None
                         else:
-                            dt = datetime.utcfromtimestamp(ts / 1e9)
+                            dt = EPOCH + timedelta(seconds=ts/1e9)
                             value = date(*dt.timetuple()[:3])
                     else:
                         raise ValueError(
