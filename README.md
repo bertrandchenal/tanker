@@ -270,6 +270,8 @@ dictionary to map dataframe columns to database columns.
 
 Some ideas, in no particular order:
 
+  - Allow to define default config (that will be used by views to
+    create a context automatically, outside of any with block)
   - Be able to introspect existing db (without yaml schema then)
   - Rename `index` with `pk` in schema
   - Allow to manipulate rows by their `id`
