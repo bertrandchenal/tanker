@@ -41,7 +41,7 @@ else:
 if not PY2:
     basestring = (str, bytes)
 
-__version__ = '0.4.3'
+__version__ = '0.4.4'
 
 COLUMN_TYPE = ('TIMESTAMP', 'DATE', 'FLOAT', 'INTEGER', 'M2O', 'O2M',
                'VARCHAR', 'BOOL')
