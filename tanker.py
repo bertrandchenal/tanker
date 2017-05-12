@@ -793,6 +793,10 @@ class View(object):
         else:
             # Transform rows into columns
             data = list(zip(*data))
+            # Zip wont create a list of empty list if given data is
+            # empty:
+            if not data:
+                data = [[] for _ in self.fields]
 
         # Format values
         data = list(self.format(data))
