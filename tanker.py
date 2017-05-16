@@ -230,6 +230,7 @@ class Context:
         new_ctx.db_fields = self.db_fields
         new_ctx.db_tables = self.db_tables
         new_ctx.registry = self.registry
+        new_ctx.cfg = self.cfg.copy()
         return new_ctx
 
     def _prepare_query(self, query):
