@@ -1044,7 +1044,7 @@ class TankerCursor:
     def expand(self):
         queries, args = zip(*map(self.split, self.chunks))
         qr = ' '.join(queries)
-        chained_args = chain(*(a for a in args if a))
+        chained_args = chain.from_iterable(a for a in args if a)
         return qr, tuple(chained_args)
 
     def __next__(self):
