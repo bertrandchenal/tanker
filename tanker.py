@@ -1334,7 +1334,7 @@ class ExpressionSymbol:
             return
 
         ref = None
-        if self.token.startswith('_parent.'):
+        if self.token.startswith('_parent.'): # XXX replace with '_.' ?
             tail = self.token
             parent = exp
             while tail.startswith('_parent.'):

@@ -169,3 +169,13 @@ def test_cast(session):
     view = View('member', ['(cast "1970-01-01" timestamp)'])
     for x, in view.read():
         assert isinstance(x, datetime)
+
+def test_like_ilike(session):
+    view = View('country', ['name'])
+    fltr = '(like name "%e%")'
+    res = view.read(fltr).all()
+    assert res == [('Belgium',), ('France',)]
+
+    fltr = '(ilike name "H%")'
+    res = view.read(fltr).all()
+    assert res == [('Holland',)]
