@@ -179,3 +179,7 @@ def test_like_ilike(session):
     fltr = '(ilike name "H%")'
     res = view.read(fltr).all()
     assert res == [('Holland',)]
+
+    fltr = '(ilike name {prefix})'
+    res = view.read(fltr, args={'prefix': 'H%'}).all()
+    assert res == [('Holland',)]
