@@ -1443,12 +1443,19 @@ class Expression(object):
         'isnot': lambda x, y: '%s is not %s' % (x, y),
         'null': 'null',
         '*': '*',
+        'date': 'date',
+        'varchar': 'varchar',
+        'integer': 'integer',
+        'timestamp': 'timestamp',
+        'bool': 'bool',
+        'float': 'float',
         'not': lambda x: 'not %s' % x,
         'exists': lambda x: 'EXISTS (%s)' % x,
         'where': lambda *x: 'WHERE ' + ' AND '.join(x),
         'select': lambda *x: 'SELECT ' + ', '.join(x),
         'count': lambda *x: 'count(%s)' % ', '.join(x),
         'max': lambda *x: 'max(%s)' % x,
+        'cast': lambda x, y: 'CAST (%s AS %s)' % (x, y),
     }
 
     def __init__(self, view, ref_set=None, parent=None):

@@ -1,7 +1,7 @@
-from datetime import datetime
+from datetime import datetime, date
 
 from tanker import View, Expression, ctx, Expression
-from .base_test import session
+from .base_test import session, members
 
 
 def test_filters(session):
@@ -128,3 +128,44 @@ def test_aggregation(session):
 
 def test_m2o(session):
     pass # TODO
+
+def test_cast(session):
+    # Test int -> char conversion
+    view = View('country', ['(cast id varchar)'])
+    for i, in view.read():
+        assert isinstance(i, str)
+
+    # Test int -> float conversion
+    view = View('country', ['(cast id float)'])
+    for i, in view.read():
+        assert isinstance(i, float)
+
+    # created_at in member is a timestamp
+    View('member', [
+        'name',
+        'team.country.name',
+        'team.name',
+        'registration_code']).write(members)
+
+    view = View('member', ['(cast "1" integer)'])
+    for x, in view.read():
+        assert isinstance(x, int)
+
+    # (Sqlite doesn't know other conversions and fallback to numeric)
+    if session == 'sqlite':
+        return
+
+    # Test int -> bool conversion
+    view = View('country', ['(cast id bool)'])
+    for i, in view.read():
+        assert isinstance(i, bool)
+
+    # Test timestamp -> date conversion
+    view = View('member', ['(cast created_at date)'])
+    for x, in view.read():
+        assert isinstance(x, date)
+
+    # Test str -> timestamp conversion
+    view = View('member', ['(cast "1970-01-01" timestamp)'])
+    for x, in view.read():
+        assert isinstance(x, datetime)

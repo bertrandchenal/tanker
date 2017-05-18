@@ -14,6 +14,12 @@ def test_bitwise_operator(session):
         assert res == 'member.name %s %%s' % op
         assert ast.params == ['foo']
 
+def test_cast(session):
+    exp = Expression(View('member'))
+    ast = exp.parse('(cast id varchar)')
+    res = ast.eval()
+    assert res == 'CAST (member.id AS varchar)'
+    assert ast.params == []
 
 def test_and_or(session):
     exp = Expression(View('member'))

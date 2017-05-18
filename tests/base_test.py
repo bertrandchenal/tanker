@@ -84,7 +84,7 @@ def session(request):
     with connect(cfg):
         create_tables()
         View('team', ['name', 'country.name']).write(teams)
-        yield
+        yield request.param
 
 
 def check(expected, result, check_order=False):
