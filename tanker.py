@@ -1591,11 +1591,9 @@ class AST(object):
         return '<AST [%s]>' % ' '.join(map(str, self.atoms))
 
 
-@contextmanager
 def connect(cfg=None):
     pool = Pool.get_pool(cfg or {})
-    with pool.get_context() as ctx:
-        yield ctx
+    return pool.get_context()
 
 
 def yaml_load(stream):
