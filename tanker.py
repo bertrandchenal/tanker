@@ -1124,23 +1124,22 @@ class Table:
         '''
         wave = [self]
         paths = defaultdict(list)
-        visited = set()
         weight = 0
 
         while True:
             new_wave = []
             for tbl in wave:
+                visited = set(chain.from_iterable(paths[tbl]))
                 for col in tbl.columns:
                     # Follow non-visited relations
                     if col.ctype not in ('M2O', 'O2M'):
                         continue
                     if col in visited:
                         continue
-                    visited.add(col)
 
                     # Add column to ancestor paths
                     foreign_table = col.get_foreign_table()
-                    if tbl in paths:
+                    if paths[tbl]:
                         foreign_paths = [p + [col] for p in paths[tbl]]
                         paths[foreign_table].extend(foreign_paths)
                     else:
@@ -1150,7 +1149,7 @@ class Table:
                 # No table to visit anymore
                 break
             wave = new_wave
-        return paths[dest]
+        return sorted(paths[dest], key=len)
 
 
 class Column:
