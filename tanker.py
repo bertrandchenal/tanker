@@ -1118,6 +1118,40 @@ class Table:
     def __repr__(self):
         return '<Table %s>' % self.name
 
+    def link(self, dest):
+        '''
+        Returns all the possible set of relations between self and dest
+        '''
+        wave = [self]
+        paths = defaultdict(list)
+        visited = set()
+        weight = 0
+
+        while True:
+            new_wave = []
+            for tbl in wave:
+                for col in tbl.columns:
+                    # Follow non-visited relations
+                    if col.ctype not in ('M2O', 'O2M'):
+                        continue
+                    if col in visited:
+                        continue
+                    visited.add(col)
+
+                    # Add column to ancestor paths
+                    foreign_table = col.get_foreign_table()
+                    if tbl in paths:
+                        foreign_paths = [p + [col] for p in paths[tbl]]
+                        paths[foreign_table].extend(foreign_paths)
+                    else:
+                        paths[foreign_table] = [[col]]
+                    new_wave.append(foreign_table)
+            if not new_wave:
+                # No table to visit anymore
+                break
+            wave = new_wave
+        return paths[dest]
+
 
 class Column:
 

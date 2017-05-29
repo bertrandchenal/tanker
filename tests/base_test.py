@@ -1,7 +1,7 @@
 import pytest
 
 from tanker import (connect, create_tables, View, logger, yaml_load, fetch,
-                    save, execute)
+                    save, execute, Table)
 
 SQLITE_FILE = 'test.db'
 DB_TYPES = [
@@ -125,3 +125,13 @@ def test_next(session):
     expected = None
     fltr = '(= name "Prussia")'
     assert expected == next(View('country', ['name']).read(fltr), None)
+
+def test_link(session):
+    member, country = Table.get('member'), Table.get('country')
+    expected = '[[<Column team M2O>, <Column country M2O>]]'
+    assert str(member.link(country)) == expected
+
+    team = Table.get('team')
+    expected = '[[<Column country M2O>, <Column teams O2M>],'\
+               ' [<Column members O2M>, <Column team M2O>]]'
+    assert str(team.link(team)) == expected
