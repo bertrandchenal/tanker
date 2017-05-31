@@ -43,7 +43,7 @@ if not PY2:
 
 __version__ = '0.5'
 
-COLUMN_TYPE = ('TIMESTAMP', 'DATE', 'FLOAT', 'INTEGER', 'M2O', 'O2M',
+COLUMN_TYPE = ('TIMESTAMP', 'DATE', 'FLOAT', 'INTEGER', 'BIGINT', 'M2O', 'O2M',
                'VARCHAR', 'BOOL')
 QUOTE_SEPARATION = re.compile(r"(.*?)('.*?')", re.DOTALL)
 NAMED_RE = re.compile(r"%\(([^\)]+)\)s")
@@ -1193,7 +1193,7 @@ class Column:
         astype = astype or self.ctype
         res = []
 
-        if astype == 'INTEGER':
+        if astype in ('INTEGER', 'BIGINT'):
             res = map(skip_none(int), values)
 
         elif astype == 'VARCHAR':
@@ -1478,6 +1478,7 @@ class Expression(object):
         'date': 'date',
         'varchar': 'varchar',
         'integer': 'integer',
+        'bigint': 'bigint',
         'timestamp': 'timestamp',
         'bool': 'bool',
         'float': 'float',
