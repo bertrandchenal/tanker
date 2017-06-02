@@ -75,8 +75,13 @@ def test_limit_order(session):
     res = view.read(limit=1, order='name').all()
     assert res == [('Belgium',)]
 
+    # Provide direction
     res = view.read(limit=1, order=('name', 'DESC')).all()
     assert res == [('Holland',)]
+
+    # Sort on several columns
+    res = view.read(limit=1, order=['name', 'name']).all()
+    assert res == [('Belgium',)]
 
 def test_aliases(session):
     # Add alias

@@ -634,10 +634,10 @@ class View(object):
             if isinstance(groupby, basestring):
                 groupby = [groupby]
             group_fields = [exp.parse(f).eval() for f in groupby]
-            groupby_chunks = ['GROUP BY ' + ','.join(group_fields)]
+            groupby_chunks = ['GROUP BY ', ','.join(group_fields)]
 
         if order:
-            order_chunks = ['ORDER BY']
+            order_chunks = []
             if isinstance(order, (str, tuple)):
                 order = [order]
             for item in order:
@@ -660,6 +660,7 @@ class View(object):
                     ref = exp.ref_set.add(field.desc)
                 order_chunks += [
                     ptrn % (ref.join_alias, ref.remote_field)]
+            order_chunks = ['ORDER BY', ', '.join(order_chunks)]
         else:
             order_chunks = []
 
