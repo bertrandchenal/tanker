@@ -1449,15 +1449,12 @@ class ExpressionParam:
 class Expression(object):
     # Inspired by http://norvig.com/lispy.html
 
-    aggregates = (
-        'avg',
-        'count',
-        'max',
-        'min',
-        'sum',
-    )
 
     builtins = {
+        '+': lambda *xs: '(%s)' % ' + '.join(xs),
+        '-': lambda *xs: '(%s)' % ' - '.join(xs),
+        'x': lambda *xs: '(%s)' % ' * '.join(xs),
+        '/': lambda *xs: '(%s)' % ' / '.join(xs),
         'and': lambda *xs: '(%s)' % ' AND '.join(xs),
         'or': lambda *xs: '(%s)' % ' OR '.join(xs),
         '>=': lambda x, y: '%s >= %s' % (x, y),
@@ -1487,8 +1484,11 @@ class Expression(object):
         'exists': lambda x: 'EXISTS (%s)' % x,
         'where': lambda *x: 'WHERE ' + ' AND '.join(x),
         'select': lambda *x: 'SELECT ' + ', '.join(x),
+        'avg': lambda *x: 'avg(%s)' % x,
         'count': lambda *x: 'count(%s)' % ', '.join(x),
         'max': lambda *x: 'max(%s)' % x,
+        'min': lambda *x: 'min(%s)' % x,
+        'sum': lambda *x: 'sum(%s)' % x,
         'cast': lambda x, y: 'CAST (%s AS %s)' % (x, y),
     }
 

@@ -112,9 +112,30 @@ def test_field_eval(session):
     assert res == [(True,), (False,), (False,),]
 
 def test_aggregation(session):
+    # Count
     view = View('country', ['(count *)'])
     res = view.read().all()
     assert res == [(3,)]
+
+    # Sum
+    view = View('country', ['(sum 1)'])
+    res = view.read().all()
+    assert res == [(3,)]
+
+    # Min
+    view = View('country', ['(min 1)'])
+    res = view.read().all()
+    assert res == [(1,)]
+
+    # Max
+    view = View('country', ['(max 1)'])
+    res = view.read().all()
+    assert res == [(1,)]
+
+    # Aggregates on expression
+    view = View('country', ['(max (+ 1 1))'])
+    res = view.read().all()
+    assert res == [(2,)]
 
     # Aggregates & auto-grouping
     view = View('team', ['name', '(count *)'])
