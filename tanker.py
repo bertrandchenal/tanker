@@ -299,9 +299,9 @@ class Context:
         if self.flavor == 'sqlite':
             qr = "SELECT name FROM sqlite_master WHERE type = 'table'"
         elif self.flavor == 'postgresql':
-            schema = ctx.cfg.get('pg_schema', 'public')
+            pg_schema = ctx.cfg.get('pg_schema', 'public')
             qr = "SELECT table_name FROM information_schema.tables " \
-                 "WHERE table_schema = '%s'" % schema
+                 "WHERE table_schema = '%s'" % pg_schema
         self.db_tables.update(name for name, in execute(qr))
 
         # Create tables and simple columns
@@ -1144,8 +1144,9 @@ class Column:
         if self.ctype == 'O2M':
             return None
         # M2O
-        return 'INTEGER REFERENCES "%s" (%s) ON DELETE CASCADE' % (
-            self.foreign_table, self.foreign_col)
+        pg_schema = ctx.cfg.get('pg_schema', 'public')
+        return 'INTEGER REFERENCES "%s"."%s" (%s) ON DELETE CASCADE' % (
+            pg_schema, self.foreign_table, self.foreign_col)
 
     def get_foreign_table(self):
         return Table.get(self.foreign_table)
