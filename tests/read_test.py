@@ -1,7 +1,7 @@
-from datetime import datetime
+from datetime import datetime, date
 
 from tanker import View, Expression, ctx, Expression
-from .base_test import session
+from .base_test import session, members
 
 
 def test_filters(session):
@@ -75,8 +75,13 @@ def test_limit_order(session):
     res = view.read(limit=1, order='name').all()
     assert res == [('Belgium',)]
 
+    # Provide direction
     res = view.read(limit=1, order=('name', 'DESC')).all()
     assert res == [('Holland',)]
+
+    # Sort on several columns
+    res = view.read(limit=1, order=['name', 'name']).all()
+    assert res == [('Belgium',)]
 
 def test_aliases(session):
     # Add alias
@@ -107,9 +112,30 @@ def test_field_eval(session):
     assert res == [(True,), (False,), (False,),]
 
 def test_aggregation(session):
+    # Count
     view = View('country', ['(count *)'])
     res = view.read().all()
     assert res == [(3,)]
+
+    # Sum
+    view = View('country', ['(sum 1)'])
+    res = view.read().all()
+    assert res == [(3,)]
+
+    # Min
+    view = View('country', ['(min 1)'])
+    res = view.read().all()
+    assert res == [(1,)]
+
+    # Max
+    view = View('country', ['(max 1)'])
+    res = view.read().all()
+    assert res == [(1,)]
+
+    # Aggregates on expression
+    view = View('country', ['(max (+ 1 1))'])
+    res = view.read().all()
+    assert res == [(2,)]
 
     # Aggregates & auto-grouping
     view = View('team', ['name', '(count *)'])
@@ -128,3 +154,58 @@ def test_aggregation(session):
 
 def test_m2o(session):
     pass # TODO
+
+def test_cast(session):
+    # Test int -> char conversion
+    view = View('country', ['(cast id varchar)'])
+    for i, in view.read():
+        assert isinstance(i, str)
+
+    # Test int -> float conversion
+    view = View('country', ['(cast id float)'])
+    for i, in view.read():
+        assert isinstance(i, float)
+
+    # created_at in member is a timestamp
+    View('member', [
+        'name',
+        'team.country.name',
+        'team.name',
+        'registration_code']).write(members)
+
+    view = View('member', ['(cast "1" integer)'])
+    for x, in view.read():
+        assert isinstance(x, int)
+
+    # (Sqlite doesn't know other conversions and fallback to numeric)
+    if session == 'sqlite':
+        return
+
+    # Test int -> bool conversion
+    view = View('country', ['(cast id bool)'])
+    for i, in view.read():
+        assert isinstance(i, bool)
+
+    # Test timestamp -> date conversion
+    view = View('member', ['(cast created_at date)'])
+    for x, in view.read():
+        assert isinstance(x, date)
+
+    # Test str -> timestamp conversion
+    view = View('member', ['(cast "1970-01-01" timestamp)'])
+    for x, in view.read():
+        assert isinstance(x, datetime)
+
+def test_like_ilike(session):
+    view = View('country', ['name'])
+    fltr = '(like name "%e%")'
+    res = view.read(fltr).all()
+    assert res == [('Belgium',), ('France',)]
+
+    fltr = '(ilike name "H%")'
+    res = view.read(fltr).all()
+    assert res == [('Holland',)]
+
+    fltr = '(ilike name {prefix})'
+    res = view.read(fltr, args={'prefix': 'H%'}).all()
+    assert res == [('Holland',)]

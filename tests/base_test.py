@@ -1,7 +1,9 @@
+import os
+
 import pytest
 
 from tanker import (connect, create_tables, View, logger, yaml_load, fetch,
-                    save, execute)
+                    save, execute, Table)
 
 SQLITE_FILE = 'test.db'
 DB_TYPES = [
@@ -25,6 +27,7 @@ yaml_def = '''
   columns:
     name: varchar
     teams: o2m team.country
+    licensees: o2m licensee.country
   index:
     - name
   values:
@@ -42,6 +45,14 @@ yaml_def = '''
     - registration_code
   defaults:
     created_at: current_timestamp
+
+- table: licensee
+  columns:
+    country: m2o country.id
+    member: m2o member.id
+  index:
+    - country
+    - member
 '''
 
 SCHEMA = yaml_load(yaml_def)
@@ -68,6 +79,10 @@ def get_config(db_type, schema=SCHEMA):
         'schema': schema,
     }
 
+    if db_type == 'sqlite':
+        os.unlink(SQLITE_FILE)
+        return cfg
+
     with connect(cfg):
         to_clean = [t['table'] for t in schema]
         for table in to_clean:
@@ -84,7 +99,7 @@ def session(request):
     with connect(cfg):
         create_tables()
         View('team', ['name', 'country.name']).write(teams)
-        yield
+        yield request.param
 
 
 def check(expected, result, check_order=False):
@@ -125,3 +140,33 @@ def test_next(session):
     expected = None
     fltr = '(= name "Prussia")'
     assert expected == next(View('country', ['name']).read(fltr), None)
+
+def test_link(session):
+    member = Table.get('member')
+    country = Table.get('country')
+    team = Table.get('team')
+
+    expected = (
+        '[[<Column team M2O>, <Column country M2O>], '
+        '[<Column team M2O>, <Column country M2O>, '
+         '<Column licensees O2M>, <Column country M2O>]]'
+    )
+    assert str(member.link(country)) == expected
+
+    expected = (
+        '[[<Column country M2O>, <Column teams O2M>], '
+        '[<Column members O2M>, <Column team M2O>], '
+        '[<Column country M2O>, <Column teams O2M>], '
+        '[<Column members O2M>, <Column team M2O>], '
+        '[<Column country M2O>, <Column licensees O2M>, <Column country M2O>, '
+          '<Column teams O2M>], '
+        '[<Column country M2O>, <Column licensees O2M>, '
+          '<Column member M2O>, <Column team M2O>]]'
+    )
+    assert str(team.link(team)) == expected
+
+    expected = (
+        '[[<Column teams O2M>, <Column members O2M>], '
+        '[<Column licensees O2M>, <Column member M2O>]]'
+    )
+    assert str(country.link(member)) == expected

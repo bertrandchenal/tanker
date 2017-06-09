@@ -41,9 +41,9 @@ else:
 if not PY2:
     basestring = (str, bytes)
 
-__version__ = '0.4.5'
+__version__ = '0.5'
 
-COLUMN_TYPE = ('TIMESTAMP', 'DATE', 'FLOAT', 'INTEGER', 'M2O', 'O2M',
+COLUMN_TYPE = ('TIMESTAMP', 'DATE', 'FLOAT', 'INTEGER', 'BIGINT', 'M2O', 'O2M',
                'VARCHAR', 'BOOL')
 QUOTE_SEPARATION = re.compile(r"(.*?)('.*?')", re.DOTALL)
 NAMED_RE = re.compile(r"%\(([^\)]+)\)s")
@@ -540,8 +540,7 @@ class View(object):
         self.ctx = ctx
         self.table = Table.get(table)
         if fields is None:
-            fields = [(f.name, f.name) for f in self.table.own_columns
-                      if f.name != 'id']
+            fields = [(f.name, f.name) for f in self.table.own_columns]
         elif isinstance(fields, basestring):
             fields = [[fields, fields]]
         elif isinstance(fields, dict):
@@ -635,10 +634,10 @@ class View(object):
             if isinstance(groupby, basestring):
                 groupby = [groupby]
             group_fields = [exp.parse(f).eval() for f in groupby]
-            groupby_chunks = ['GROUP BY ' + ','.join(group_fields)]
+            groupby_chunks = ['GROUP BY ', ','.join(group_fields)]
 
         if order:
-            order_chunks = ['ORDER BY']
+            order_chunks = []
             if isinstance(order, (str, tuple)):
                 order = [order]
             for item in order:
@@ -661,6 +660,7 @@ class View(object):
                     ref = exp.ref_set.add(field.desc)
                 order_chunks += [
                     ptrn % (ref.join_alias, ref.remote_field)]
+            order_chunks = ['ORDER BY', ', '.join(order_chunks)]
         else:
             order_chunks = []
 
@@ -1044,14 +1044,14 @@ class TankerCursor:
     def expand(self):
         queries, args = zip(*map(self.split, self.chunks))
         qr = ' '.join(queries)
-        chained_args = chain(*(a for a in args if a))
+        chained_args = chain.from_iterable(a for a in args if a)
         return qr, tuple(chained_args)
 
     def __next__(self):
         return next(iter(self))
 
-    def next(self):
-        return next(iter(self))
+    def one(self):
+        return next(iter(self), None)
 
     def all(self):
         return list(self)
@@ -1118,6 +1118,39 @@ class Table:
     def __repr__(self):
         return '<Table %s>' % self.name
 
+    def link(self, dest):
+        '''
+        Returns all the possible set of relations between self and dest
+        '''
+        wave = [self]
+        paths = defaultdict(list)
+        weight = 0
+
+        while True:
+            new_wave = []
+            for tbl in wave:
+                visited = set(chain.from_iterable(paths[tbl]))
+                for col in tbl.columns:
+                    # Follow non-visited relations
+                    if col.ctype not in ('M2O', 'O2M'):
+                        continue
+                    if col in visited:
+                        continue
+
+                    # Add column to ancestor paths
+                    foreign_table = col.get_foreign_table()
+                    if paths[tbl]:
+                        foreign_paths = [p + [col] for p in paths[tbl]]
+                        paths[foreign_table].extend(foreign_paths)
+                    else:
+                        paths[foreign_table] = [[col]]
+                    new_wave.append(foreign_table)
+            if not new_wave:
+                # No table to visit anymore
+                break
+            wave = new_wave
+        return sorted(paths[dest], key=len)
+
 
 class Column:
 
@@ -1162,7 +1195,7 @@ class Column:
         astype = astype or self.ctype
         res = []
 
-        if astype == 'INTEGER':
+        if astype in ('INTEGER', 'BIGINT'):
             res = map(skip_none(int), values)
 
         elif astype == 'VARCHAR':
@@ -1335,7 +1368,7 @@ class ExpressionSymbol:
             return
 
         ref = None
-        if self.token.startswith('_parent.'):
+        if self.token.startswith('_parent.'): # XXX replace with '_.' ?
             tail = self.token
             parent = exp
             while tail.startswith('_parent.'):
@@ -1417,15 +1450,12 @@ class ExpressionParam:
 class Expression(object):
     # Inspired by http://norvig.com/lispy.html
 
-    aggregates = (
-        'avg',
-        'count',
-        'max',
-        'min',
-        'sum',
-    )
 
     builtins = {
+        '+': lambda *xs: '(%s)' % ' + '.join(xs),
+        '-': lambda *xs: '(%s)' % ' - '.join(xs),
+        'x': lambda *xs: '(%s)' % ' * '.join(xs),
+        '/': lambda *xs: '(%s)' % ' / '.join(xs),
         'and': lambda *xs: '(%s)' % ' AND '.join(xs),
         'or': lambda *xs: '(%s)' % ' OR '.join(xs),
         '>=': lambda x, y: '%s >= %s' % (x, y),
@@ -1444,12 +1474,23 @@ class Expression(object):
         'isnot': lambda x, y: '%s is not %s' % (x, y),
         'null': 'null',
         '*': '*',
+        'date': 'date',
+        'varchar': 'varchar',
+        'integer': 'integer',
+        'bigint': 'bigint',
+        'timestamp': 'timestamp',
+        'bool': 'bool',
+        'float': 'float',
         'not': lambda x: 'not %s' % x,
         'exists': lambda x: 'EXISTS (%s)' % x,
         'where': lambda *x: 'WHERE ' + ' AND '.join(x),
         'select': lambda *x: 'SELECT ' + ', '.join(x),
+        'avg': lambda *x: 'avg(%s)' % x,
         'count': lambda *x: 'count(%s)' % ', '.join(x),
         'max': lambda *x: 'max(%s)' % x,
+        'min': lambda *x: 'min(%s)' % x,
+        'sum': lambda *x: 'sum(%s)' % x,
+        'cast': lambda x, y: 'CAST (%s AS %s)' % (x, y),
     }
 
     def __init__(self, view, ref_set=None, parent=None):
@@ -1585,11 +1626,9 @@ class AST(object):
         return '<AST [%s]>' % ' '.join(map(str, self.atoms))
 
 
-@contextmanager
 def connect(cfg=None):
     pool = Pool.get_pool(cfg or {})
-    with pool.get_context() as ctx:
-        yield ctx
+    return pool.get_context()
 
 
 def yaml_load(stream):

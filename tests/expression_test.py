@@ -3,9 +3,10 @@ from tanker import Table, View, Column, Expression, ctx
 from .base_test import session
 
 
-def test_bitwise_operator(session):
+def test_bitwise_operators(session):
     exp = Expression(View('member'))
-    for op in ('<', '>', '<=', '>=', '!=', 'like', 'ilike', 'is', 'isnot'):
+    ops =  ('<', '>', '<=', '>=', '!=', 'like', 'ilike', 'is', 'isnot')
+    for op in ops:
         ast = exp.parse('(%s name "foo")' % op)
         res = ast.eval()
 
@@ -14,18 +15,32 @@ def test_bitwise_operator(session):
         assert res == 'member.name %s %%s' % op
         assert ast.params == ['foo']
 
-
-def test_and_or(session):
+def test_cast(session):
     exp = Expression(View('member'))
-    for op in ('and', 'or'):
+    ast = exp.parse('(cast id varchar)')
+    res = ast.eval()
+    assert res == 'CAST (member.id AS varchar)'
+    assert ast.params == []
+
+def test_other_operators(session):
+    exp = Expression(View('member'))
+    ops = {
+        'and': 'AND',
+        'or': 'OR',
+        '+': '+',
+        '-': '-',
+        '/': '/',
+        'x': '*',
+    }
+    for op in ops:
         ast = exp.parse('(%s 1 2)' % op)
         res = ast.eval()
-        assert res == '(%%s %s %%s)' % op.upper()
+        assert res == '(%%s %s %%s)' % ops[op]
         assert ast.params == [1, 2]
 
         ast = exp.parse('(%s 1 2 3)' % op)
         res = ast.eval()
-        sep = ' %s ' % op.upper()
+        sep = ' %s ' % ops[op]
         assert res == '(%s)' % sep.join(['%s']*3)
         assert ast.params == [1, 2, 3]
 
