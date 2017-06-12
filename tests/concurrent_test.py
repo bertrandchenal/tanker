@@ -24,7 +24,7 @@ def read(in_q, out_q):
     while True:
         in_q.get()
         in_q.task_done()
-        c = next(countries, None)
+        c = countries.one()
         if c is None:
             break
         out_q.put((t_id, c[0]))
@@ -74,7 +74,7 @@ def test_nested_read(session):
 
     # Start read from parent ctx
     cursor = View('country').read()
-    first = next(cursor)
+    first = cursor.one()
 
     # We re-use the current config to create a nested context
     with connect(ctx.cfg):

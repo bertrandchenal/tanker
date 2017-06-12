@@ -79,9 +79,22 @@ def test_partial_write(session):
     partial_view.write([['Bob', '001']])
 
     # Makes sur no other column is set to null
-    res = full_view.read('(= name "Bob")').next()
+    res = full_view.read('(= name "Bob")').one()
     assert all(res)
 
     # compare ids
     for member_id, name in name_view.read():
         assert id2name[member_id] == name
+
+
+def test_write_by_id(session):
+    team_view = View('country', ['id', 'name'])
+    res = team_view.read('(= name "Belgium")').one()
+    record_id = res[0]
+    res = team_view.write([(record_id, 'BELGIUM')])
+
+    res = team_view.read('(= name "Belgium")').one()
+    assert res is None
+
+    res = team_view.read('(= name "BELGIUM")').one()
+    assert res[0] == record_id

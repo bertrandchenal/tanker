@@ -65,7 +65,7 @@ def read(in_q, out_q, cfg):
         while True:
             in_q.get()
             in_q.task_done()
-            c = next(countries, None)
+            c = countries.one()
             if c is None:
                 break
             out_q.put((t_id, c[0]))

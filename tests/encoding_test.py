@@ -12,11 +12,11 @@ def test_str(session):
     team_view = View('country', ['name'])
     team_view.write([(japan,)])
 
-    row = team_view.read(filters={'name': japan}).next()
+    row = team_view.read(filters={'name': japan}).one()
     assert row[0] == japan
 
     fltr = '(= name "%s")' % japan
-    row = team_view.read(fltr).next()
+    row = team_view.read(fltr).one()
     assert row[0] == japan
 
 
@@ -28,9 +28,9 @@ def test_unicode(session):
     team_view = View('country', ['name'])
     team_view.write([(korea,)])
 
-    row = team_view.read(filters={'name': korea}).next()
+    row = team_view.read(filters={'name': korea}).one()
     assert row[0] == korea
 
     fltr = '(= name "%s")' % korea
-    row = team_view.read(fltr).next()
+    row = team_view.read(fltr).one()
     assert row[0] == korea

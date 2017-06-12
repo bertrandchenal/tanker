@@ -479,8 +479,9 @@ def create_tables():
 
 
 def fetch(tablename, filter_by):
-    view = View(tablename)
-    values = next(view.read(filters=filter_by), None)
+    columns = [c.name for c in Table.get(tablename).own_columns]
+    view = View(tablename, ['id'] + columns)
+    values = view.read(filters=filter_by).one()
     if values is None:
         return
     keys = (f.name for f in view.fields)
@@ -575,8 +576,14 @@ class View(object):
         self.index_fields = [f for f in self.fields
                              if f.col and f.col.name in self.table.index]
         # Index cols identify each row in the table
-        self.index_cols = [c.name for c in self.field_map
-                           if c.name in self.table.index]
+        id_col = self.table.get_column('id')
+        if id_col in self.field_map:
+            # Use id if present
+            self.index_cols = [id_col.name]
+        else:
+            # Use natural index if not
+            self.index_cols = [c.name for c in self.field_map
+                               if c.name in self.table.index]
 
     def get_field(self, name):
         return self.field_dict.get(name)
@@ -798,9 +805,10 @@ class View(object):
             # empty:
             if not data:
                 data = [[] for _ in self.fields]
-
         # Format values
         data = list(self.format(data))
+
+        # Launch upsert
         if self.ctx.flavor == 'sqlite':
             # Convert back to lines:
             data = list(zip(*data))
@@ -835,6 +843,7 @@ class View(object):
         key_cols = []
         upd_pos = []
         upd_fields = []
+
         for pos, col in enumerate(self.field_map):
             if col.name in self.index_cols:
                 key_pos.append(pos)
@@ -1052,6 +1061,9 @@ class TankerCursor:
 
     def one(self):
         return next(iter(self), None)
+
+    def next(self):
+        return next(iter(self))
 
     def all(self):
         return list(self)

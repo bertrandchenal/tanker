@@ -133,13 +133,13 @@ def test_fetch_save(session):
 
     assert fetch('member', {'registration_code': '007'})['name'] == 'Bond'
 
-def test_next(session):
+def test_one(session):
     expected = ('Belgium',)
-    assert expected == next(View('country', ['name']).read())
+    assert expected == View('country', ['name']).read().one()
 
     expected = None
     fltr = '(= name "Prussia")'
-    assert expected == next(View('country', ['name']).read(fltr), None)
+    assert expected == View('country', ['name']).read(fltr).one()
 
 def test_link(session):
     member = Table.get('member')
