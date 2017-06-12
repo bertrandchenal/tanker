@@ -1177,9 +1177,13 @@ class Column:
         if self.ctype == 'O2M':
             return None
         # M2O
-        pg_schema = ctx.cfg.get('pg_schema', 'public')
-        return 'INTEGER REFERENCES "%s"."%s" (%s) ON DELETE CASCADE' % (
-            pg_schema, self.foreign_table, self.foreign_col)
+        if ctx.flavor == 'sqlite':
+            table = '"%s"' % self.foreign_table
+        elif ctx.flavor == 'postgresql':
+            pg_schema = ctx.cfg.get('pg_schema', 'public')
+            table = '"%s"."%s"' % (pg_schema, self.foreign_table)
+        return 'INTEGER REFERENCES %s ("%s") ON DELETE CASCADE' % (
+            table, self.foreign_col)
 
     def get_foreign_table(self):
         return Table.get(self.foreign_table)
