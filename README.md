@@ -274,7 +274,6 @@ Some ideas, in no particular order:
     create a context automatically, outside of any with block)
   - Be able to introspect existing db (without yaml schema then)
   - Rename `index` with `pk` in schema
-  - Allow to manipulate rows by their `id`
   - Add support for other 'ON CONFLICT' action (mainly update a given
     field, like validity date)
   - Support for version column (probably a write timestamp)
