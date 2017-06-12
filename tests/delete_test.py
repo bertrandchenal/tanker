@@ -22,3 +22,11 @@ def test_delete_filter_dict(session):
 
     res = view.read().all()
     assert res == [('Belgium',), ('Holland',)]
+
+def test_delete_by_id(session):
+    view = View('country', ['id'])
+    data = view.read('(= name "France")').all()
+    view.delete(data=data)
+
+    res = View('country', ['name']).read().all()
+    assert res == [('Belgium',), ('Holland',)]
