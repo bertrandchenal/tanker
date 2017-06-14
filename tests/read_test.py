@@ -17,6 +17,15 @@ def test_filters(session):
     res = view.read(filters).all()
     assert res == []
 
+    fltr = '(0)' if ctx.flavor == 'sqlite' else '(false)'
+    res = view.read(fltr).all()
+    assert res == []
+
+    fltr = '(1)' if ctx.flavor == 'sqlite' else '(true)'
+    res = view.read(fltr).all()
+    assert len(res) == 3
+
+
 def test_no_fields(session):
     view = View('team')
     res = view.read().all()

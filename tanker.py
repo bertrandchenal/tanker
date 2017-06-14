@@ -4,6 +4,7 @@ from datetime import datetime, date, timedelta
 from itertools import chain
 from string import Formatter
 from threading import Thread
+from types import FunctionType
 try:
     # PY2
     from urlparse import urlparse
@@ -1466,7 +1467,6 @@ class ExpressionParam:
 class Expression(object):
     # Inspired by http://norvig.com/lispy.html
 
-
     builtins = {
         '+': lambda *xs: '(%s)' % ' + '.join(xs),
         '-': lambda *xs: '(%s)' % ' - '.join(xs),
@@ -1489,6 +1489,8 @@ class Expression(object):
         'is': lambda x, y: '%s is %s' % (x, y),
         'isnot': lambda x, y: '%s is not %s' % (x, y),
         'null': 'null',
+        'true': 'true',
+        'false': 'false',
         '*': '*',
         'date': 'date',
         'varchar': 'varchar',
@@ -1622,13 +1624,14 @@ class AST(object):
 
         else:
             head = atom.pop(0)
-            proc = self._eval(head, env)
+            head = self._eval(head, env)
             params = []
             for x in atom:
                 val = self._eval(x, env)
                 params.append(val)
-            res = proc(*params)
-            return res
+            if isinstance(head, FunctionType):
+                head = head(*params)
+            return head
 
     def emit_literal(self, x):
         # Collect literal and return placeholder

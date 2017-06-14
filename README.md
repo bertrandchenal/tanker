@@ -273,7 +273,6 @@ Some ideas, in no particular order:
   - Allow to define default config (that will be used by views to
     create a context automatically, outside of any with block)
   - Be able to introspect existing db (without yaml schema then)
-  - Rename `index` with `pk` in schema
   - Add support for other 'ON CONFLICT' action (mainly update a given
     field, like validity date)
   - Support for version column (probably a write timestamp)
