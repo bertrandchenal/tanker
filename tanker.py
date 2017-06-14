@@ -4,7 +4,6 @@ from datetime import datetime, date, timedelta
 from itertools import chain
 from string import Formatter
 from threading import Thread
-from types import FunctionType
 try:
     # PY2
     from urlparse import urlparse
@@ -1629,7 +1628,7 @@ class AST(object):
             for x in atom:
                 val = self._eval(x, env)
                 params.append(val)
-            if isinstance(head, FunctionType):
+            if callable(head):
                 head = head(*params)
             return head
 
