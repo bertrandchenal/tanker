@@ -157,3 +157,12 @@ def test_field(session):
     assert exp.parse('country.name').eval() == 'country_0.name'
     assert exp.parse('members.team.name').eval() == 'team_2.name'
     assert exp.parse('members.name').eval() == 'member_1.name'
+
+def test_env(session):
+    view = View('member', {
+        'created_date': '(cast created_at date)',
+    })
+    exp = Expression(view)
+    expected = 'CAST (member.created_at AS date)'
+    assert exp.parse('(cast created_at date)').eval() == expected
+    assert exp.parse('created_date').eval() == expected

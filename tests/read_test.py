@@ -92,6 +92,10 @@ def test_limit_order(session):
     res = view.read(limit=1, order=['name', 'name']).all()
     assert res == [('Belgium',)]
 
+    # Sort on expression
+    res = view.read(limit=1, order=['(!= name "Belgium")']).all()
+    assert res == [('Belgium',)]
+
 def test_aliases(session):
     # Add alias
     now = datetime.now()
@@ -161,6 +165,25 @@ def test_aggregation(session):
     res = view.read(groupby='country.name', order='country.name').all()
     assert res == [('Red',), ('Blue',)]
 
+    # Group on expression
+    view = View('team', {
+        'cnt': '(count *)',
+        'country_match': '(in country 1 2)',
+    })
+
+    for c, _ in view.read(groupby='country_match'):
+        assert c == 3
+
+    for c, _ in view.read(groupby='(in country 1 2)'):
+        assert c == 3
+
+    # Group on several fields
+    view = View('team', '(count *)')
+    res = view.read(groupby=['name', 'country']).all()
+    for c, in res:
+        assert c == 1
+
+
 def test_m2o(session):
     pass # TODO
 
@@ -204,6 +227,7 @@ def test_cast(session):
     view = View('member', ['(cast "1970-01-01" timestamp)'])
     for x, in view.read():
         assert isinstance(x, datetime)
+
 
 def test_like_ilike(session):
     view = View('country', ['name'])

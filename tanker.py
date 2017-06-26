@@ -56,17 +56,29 @@ logger = logging.getLogger('tanker')
 logger.setLevel(logging.INFO)
 
 
-def join(value, items):
+def interleave(value, items):
     '''
-    like str.join but for lists
+    like str.join but for lists, automatically chain list of lists
     '''
     if not items:
         return
     it = iter(items)
-    yield next(it)
-    for item in it:
-        yield value
-        yield item
+    looping = False
+    while True:
+        try:
+            head = next(it)
+        except StopIteration:
+            break
+
+        if looping:
+            yield value
+        else:
+            looping = True
+        if isinstance(head, (list, tuple)):
+            for i in head:
+                yield i
+        else:
+            yield head
 
 class TankerThread(Thread):
 
@@ -632,7 +644,7 @@ class View(object):
         # Add filters
         filter_chunks = list(self._build_filter_cond(exp, filters, acl_filters))
         if filter_chunks:
-            filter_chunks = ['WHERE'] + list(join(' AND ', filter_chunks))
+            filter_chunks = ['WHERE'] + list(interleave(' AND ', filter_chunks))
 
         # ADD group by
         groupby_chunks = []
@@ -640,8 +652,8 @@ class View(object):
         if groupby:
             if isinstance(groupby, basestring):
                 groupby = [groupby]
-            group_fields = [exp.parse(f).eval() for f in groupby]
-            groupby_chunks = ['GROUP BY ', ','.join(group_fields)]
+            group_fields = [exp.parse(f) for f in groupby]
+            groupby_chunks = ['GROUP BY'] + list(interleave(',', group_fields))
 
         if order:
             order_chunks = []
@@ -652,22 +664,15 @@ class View(object):
                     item, how = item
                 else:
                     how = None
+                chunk = [exp.parse(item)]
+
                 if how:
                     if how.upper() not in ('ASC', 'DESC'):
                         msg = 'Unexpected value "%s" for sort direction' % how
                         raise ValueError(msg)
-                    ptrn = '%%s.%%s %s' % how
-                else:
-                    ptrn = '%s.%s'
-
-                field = self.get_field(item)
-                if field is None:
-                    ref = exp.ref_set.add(item)
-                else:
-                    ref = exp.ref_set.add(field.desc)
-                order_chunks += [
-                    ptrn % (ref.join_alias, ref.remote_field)]
-            order_chunks = ['ORDER BY', ', '.join(order_chunks)]
+                    chunk.append(how)
+                order_chunks += [chunk]
+            order_chunks = ['ORDER BY'] + list(interleave(',', order_chunks))
         else:
             order_chunks = []
 
@@ -955,15 +960,15 @@ class View(object):
         return cur.rowcount
 
     def _update(self, join_cond):
-        update_cols = [c.name for c in self.field_map
-                       if c.name not in self.table.index]
+        update_cols = [f.name for f in self.field_map
+                       if f.name not in self.index_cols]
         if not update_cols:
             return 0
 
         where = ' AND '.join(join_cond)
         qr = 'UPDATE "%(main)s" SET '
         qr += ', ' .join('"%s" = tmp."%s"' % (n, n) for n in update_cols)
-        qr += 'FROM tmp WHERE %(where)s'
+        qr += ' FROM tmp WHERE %(where)s'
         qr = qr % {
             'main': self.table.name,
             'where': where,
@@ -1566,8 +1571,12 @@ class Expression(object):
             return AST(L, exp)
         elif token == ')':
             raise SyntaxError('unexpected )')
-        else:
-            return self.atom(token)
+        elif token in self.env:
+            desc = self.env[token].desc
+            if desc != token and desc[0] == '(':
+                return self.parse(desc)
+
+        return self.atom(token)
 
     def atom(self, token):
         for q in ('"', "'"):
@@ -1604,7 +1613,6 @@ class AST(object):
         self.kwargs = kwargs or self.kwargs
         # Eval ast wrt to env
         res = self._eval(self.atoms, self.exp.env)
-        # res = ' '.join(self._eval(atom, self.exp.env) for atom in self.atoms)
         return res
 
     def _eval(self, atom, env):
