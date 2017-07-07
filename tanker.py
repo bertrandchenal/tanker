@@ -637,21 +637,38 @@ class View(object):
 
 
         # Add select fields
-        select_chunk = [exp.parse(
-            '(select %s)' % ' '.join(f.desc for f in self.fields))]
-        select_chunk.append(' FROM %s' % self.table.name)
+        select_ast = exp.parse('(select %s)' % ' '.join(
+            f.desc for f in self.fields))
+        select_chunk = [select_ast]
+        select_chunk.append('FROM %s' % self.table.name)
+
+        # Identify aggregates
+        aggregates = []
+        for pos, atom in enumerate(select_ast.atoms[1:]):
+            if not isinstance(atom, AST):
+                continue
+            head = atom.atoms[0]
+            if head.token in Expression.aggregates:
+                aggregates.append(pos)
 
         # Add filters
         filter_chunks = list(self._build_filter_cond(exp, filters, acl_filters))
         if filter_chunks:
             filter_chunks = ['WHERE'] + list(interleave(' AND ', filter_chunks))
 
-        # ADD group by
+        # Add group by
         groupby_chunks = []
         group_fields = []
-        if groupby:
-            if isinstance(groupby, basestring):
+        if groupby and isinstance(groupby, basestring):
                 groupby = [groupby]
+        elif aggregates and not groupby:
+            groupby = []
+            for pos, field in enumerate(self.fields):
+                if pos in aggregates:
+                    continue
+                groupby.append(field.desc)
+
+        if groupby:
             group_fields = [exp.parse(f) for f in groupby]
             groupby_chunks = ['GROUP BY'] + list(interleave(',', group_fields))
 
@@ -1093,12 +1110,18 @@ class Table:
         self.columns = columns[:]
         self.unique = unique or []
         self.values = values
+
         # Add implicit id column
         if 'id' not in [c.name for c in self.columns]:
             self.columns.append(Column('id', 'INTEGER'))
         self.own_columns = [c for c in self.columns \
                             if c.name != 'id' and c.ctype != 'O2M']
 
+        # Set table attribute on columns object
+        for col in self.columns:
+            col.table = self
+
+        # set index
         if index is None:
             if len(self.columns) == 2:
                 # If there is only one column (other then id), use it
@@ -1108,11 +1131,11 @@ class Table:
                 raise ValueError('No index defined on %s' % name)
         self.index = [index] if isinstance(index, basestring) else index
         self._column_dict = dict((col.name, col) for col in self.columns)
-        ctx.registry[name] = self
 
         for col in self.index:
             if col not in self._column_dict:
                 raise ValueError('Index column "%s" does not exist' % col)
+        ctx.registry[name] = self
 
     def get_column(self, name):
         try:
@@ -1376,6 +1399,139 @@ class ReferenceSet:
         return '<ReferenceSet [%s]>' % ', '.join(map(str, self.references))
 
 
+class Expression(object):
+    # Inspired by http://norvig.com/lispy.html
+
+    builtins = {
+        '+': lambda *xs: '(%s)' % ' + '.join(xs),
+        '-': lambda *xs: '(%s)' % ' - '.join(xs),
+        'x': lambda *xs: '(%s)' % ' * '.join(xs),
+        '/': lambda *xs: '(%s)' % ' / '.join(xs),
+        'and': lambda *xs: '(%s)' % ' AND '.join(xs),
+        'or': lambda *xs: '(%s)' % ' OR '.join(xs),
+        '>=': lambda x, y: '%s >= %s' % (x, y),
+        '<=': lambda x, y: '%s <= %s' % (x, y),
+        '=': lambda x, y: '%s = %s' % (x, y),
+        '>': lambda x, y: '%s > %s' % (x, y),
+        '<': lambda x, y: '%s < %s' % (x, y),
+        '!=': lambda x, y: '%s != %s' % (x, y),
+        'like': lambda x, y: '%s like %s' % (x, y),
+        'ilike': lambda x, y: '%s ilike %s' % (x, y),
+        'in': lambda *xs: ('%%s in (%s)' % (
+            ', '.join('%s' for _ in xs[1:]))) % xs,
+        'notin': lambda *xs: ('%%s not in (%s)' % (
+            ', '.join('%s' for _ in xs[1:]))) % xs,
+        'is': lambda x, y: '%s is %s' % (x, y),
+        'isnot': lambda x, y: '%s is not %s' % (x, y),
+        'null': 'null',
+        'true': 'true',
+        'false': 'false',
+        '*': '*',
+        'date': 'date',
+        'varchar': 'varchar',
+        'integer': 'integer',
+        'bigint': 'bigint',
+        'timestamp': 'timestamp',
+        'bool': 'bool',
+        'float': 'float',
+        'not': lambda x: 'not %s' % x,
+        'exists': lambda x: 'EXISTS (%s)' % x,
+        'where': lambda *x: 'WHERE ' + ' AND '.join(x),
+        'select': lambda *x: 'SELECT ' + ', '.join(x),
+    }
+
+    aggregates = {
+        'avg': lambda *x: 'avg(%s)' % x,
+        'count': lambda *x: 'count(%s)' % ', '.join(x),
+        'max': lambda *x: 'max(%s)' % x,
+        'min': lambda *x: 'min(%s)' % x,
+        'sum': lambda *x: 'sum(%s)' % x,
+        'cast': lambda x, y: 'CAST (%s AS %s)' % (x, y),
+    }
+
+    def __init__(self, view, ref_set=None, parent=None):
+        self.view = view
+        # Populate env with view fields
+        self.env = self.base_env(view.table)
+        self.builtins = Expression.builtins.copy()
+        self.builtins.update(Expression.aggregates)
+        self.builtins['from'] = self._sub_select
+        # Inject user-defined aliases
+        self.parent = parent
+
+        # Add refset
+        if not ref_set:
+            parent_rs = parent and parent.ref_set
+            ref_set = ReferenceSet(view.table, parent=parent_rs)
+        self.ref_set = ref_set
+
+    def _sub_select(self, *items):
+        select = items[0]
+        tail = ' '.join(items[1:])
+        from_ = 'FROM %s' % (self.ref_set.table_alias)
+        joins = ' '.join(self.ref_set.get_sql_joins())
+
+        items = (select, from_, joins, tail)
+        return ' '.join(it for it in items if it)
+
+    def base_env(self, table, ref_set=None):
+        env = {}
+        for field in self.view.fields:
+            env[field.name] = field
+        return env
+
+    def parse(self, exp):
+        lexer = shlex.shlex(exp)
+        lexer.wordchars += '.!=<>:{}'
+        ast = self.read(list(lexer))
+        return ast
+
+    def read(self, tokens, top_level=True):
+        if len(tokens) == 0:
+            raise SyntaxError('unexpected EOF while reading')
+        token = tokens.pop(0)
+        if token == '(':
+            L = []
+            exp = self
+            if tokens[0].upper() == 'FROM':
+                from_ = tokens.pop(0)  # pop off 'from'
+                table = tokens.pop(0)
+                exp = Expression(View(table), parent=self)
+                L.append(ExpressionSymbol(from_, exp))
+            while tokens[0] != ')':
+                L.append(exp.read(tokens, top_level=False))
+            tokens.pop(0)  # pop off ')'
+            if tokens and top_level:
+                raise ValueError('Unexpected tokens after ending ")"')
+            return AST(L, exp)
+        elif token == ')':
+            raise SyntaxError('unexpected )')
+        elif token in self.env:
+            desc = self.env[token].desc
+            if desc != token and desc[0] == '(':
+                return self.parse(desc)
+
+        return self.atom(token)
+
+    def atom(self, token):
+        for q in ('"', "'"):
+            if token[0] == q and token[-1] == q:
+                return token[1:-1]
+
+        if len(token) > 1 and token[0] == '{' and token[-1] == '}':
+            return ExpressionParam(token[1:-1])
+
+        try:
+            return int(token)
+        except ValueError:
+            pass
+        try:
+            return float(token)
+        except ValueError:
+            return ExpressionSymbol(token, self)
+
+
+
 class ExpressionSymbol:
 
     def __init__(self, token, exp):
@@ -1466,134 +1622,6 @@ class ExpressionParam:
         if self.conversion:
             value = ast.formatter.convert_field(value, self.conversion)
         return value
-
-
-class Expression(object):
-    # Inspired by http://norvig.com/lispy.html
-
-    builtins = {
-        '+': lambda *xs: '(%s)' % ' + '.join(xs),
-        '-': lambda *xs: '(%s)' % ' - '.join(xs),
-        'x': lambda *xs: '(%s)' % ' * '.join(xs),
-        '/': lambda *xs: '(%s)' % ' / '.join(xs),
-        'and': lambda *xs: '(%s)' % ' AND '.join(xs),
-        'or': lambda *xs: '(%s)' % ' OR '.join(xs),
-        '>=': lambda x, y: '%s >= %s' % (x, y),
-        '<=': lambda x, y: '%s <= %s' % (x, y),
-        '=': lambda x, y: '%s = %s' % (x, y),
-        '>': lambda x, y: '%s > %s' % (x, y),
-        '<': lambda x, y: '%s < %s' % (x, y),
-        '!=': lambda x, y: '%s != %s' % (x, y),
-        'like': lambda x, y: '%s like %s' % (x, y),
-        'ilike': lambda x, y: '%s ilike %s' % (x, y),
-        'in': lambda *xs: ('%%s in (%s)' % (
-            ', '.join('%s' for _ in xs[1:]))) % xs,
-        'notin': lambda *xs: ('%%s not in (%s)' % (
-            ', '.join('%s' for _ in xs[1:]))) % xs,
-        'is': lambda x, y: '%s is %s' % (x, y),
-        'isnot': lambda x, y: '%s is not %s' % (x, y),
-        'null': 'null',
-        'true': 'true',
-        'false': 'false',
-        '*': '*',
-        'date': 'date',
-        'varchar': 'varchar',
-        'integer': 'integer',
-        'bigint': 'bigint',
-        'timestamp': 'timestamp',
-        'bool': 'bool',
-        'float': 'float',
-        'not': lambda x: 'not %s' % x,
-        'exists': lambda x: 'EXISTS (%s)' % x,
-        'where': lambda *x: 'WHERE ' + ' AND '.join(x),
-        'select': lambda *x: 'SELECT ' + ', '.join(x),
-        'avg': lambda *x: 'avg(%s)' % x,
-        'count': lambda *x: 'count(%s)' % ', '.join(x),
-        'max': lambda *x: 'max(%s)' % x,
-        'min': lambda *x: 'min(%s)' % x,
-        'sum': lambda *x: 'sum(%s)' % x,
-        'cast': lambda x, y: 'CAST (%s AS %s)' % (x, y),
-    }
-
-    def __init__(self, view, ref_set=None, parent=None):
-        self.view = view
-        # Populate env with view fields
-        self.env = self.base_env(view.table)
-        self.builtins = Expression.builtins.copy()
-        self.builtins['from'] = self._sub_select
-        # Inject user-defined aliases
-        self.parent = parent
-
-        # Add refset
-        if not ref_set:
-            parent_rs = parent and parent.ref_set
-            ref_set = ReferenceSet(view.table, parent=parent_rs)
-        self.ref_set = ref_set
-
-    def _sub_select(self, *items):
-        select = items[0]
-        tail = ' '.join(items[1:])
-        from_ = 'FROM %s' % (self.ref_set.table_alias)
-        joins = ' '.join(self.ref_set.get_sql_joins())
-
-        items = (select, from_, joins, tail)
-        return ' '.join(it for it in items if it)
-
-    def base_env(self, table, ref_set=None):
-        env = {}
-        for field in self.view.fields:
-            env[field.name] = field
-        return env
-
-    def parse(self, exp):
-        lexer = shlex.shlex(exp)
-        lexer.wordchars += '.!=<>:{}'
-        ast = self.read(list(lexer))
-        return ast
-
-    def read(self, tokens, top_level=True):
-        if len(tokens) == 0:
-            raise SyntaxError('unexpected EOF while reading')
-        token = tokens.pop(0)
-        if token == '(':
-            L = []
-            exp = self
-            if tokens[0].upper() == 'FROM':
-                from_ = tokens.pop(0)  # pop off 'from'
-                table = tokens.pop(0)
-                exp = Expression(View(table), parent=self)
-                L.append(ExpressionSymbol(from_, exp))
-            while tokens[0] != ')':
-                L.append(exp.read(tokens, top_level=False))
-            tokens.pop(0)  # pop off ')'
-            if tokens and top_level:
-                raise ValueError('Unexpected tokens after ending ")"')
-            return AST(L, exp)
-        elif token == ')':
-            raise SyntaxError('unexpected )')
-        elif token in self.env:
-            desc = self.env[token].desc
-            if desc != token and desc[0] == '(':
-                return self.parse(desc)
-
-        return self.atom(token)
-
-    def atom(self, token):
-        for q in ('"', "'"):
-            if token[0] == q and token[-1] == q:
-                return token[1:-1]
-
-        if len(token) > 1 and token[0] == '{' and token[-1] == '}':
-            return ExpressionParam(token[1:-1])
-
-        try:
-            return int(token)
-        except ValueError:
-            pass
-        try:
-            return float(token)
-        except ValueError:
-            return ExpressionSymbol(token, self)
 
 
 class AST(object):

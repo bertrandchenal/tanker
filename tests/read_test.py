@@ -150,7 +150,7 @@ def test_aggregation(session):
     res = view.read().all()
     assert res == [(2,)]
 
-    # Aggregates & auto-grouping
+    # Aggregates & grouping
     view = View('team', ['name', '(count *)'])
     res = view.read(groupby='name').all()
     assert res == [('Blue', 2), ('Red', 1)]
@@ -164,6 +164,11 @@ def test_aggregation(session):
     view = View('team', ['(max name)'])
     res = view.read(groupby='country.name', order='country.name').all()
     assert res == [('Red',), ('Blue',)]
+
+    # Aggregates & auto-grouping
+    view = View('team', ['name', '(count *)'])
+    res = view.read().all()
+    assert res == [('Blue', 2), ('Red', 1)]
 
     # Group on expression
     view = View('team', {
