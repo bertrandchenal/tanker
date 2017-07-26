@@ -29,8 +29,8 @@ def test_filters(session):
 def test_no_fields(session):
     view = View('team')
     res = view.read().all()
-    expected = [('Blue', 1), ('Red', 1), ('Blue', 2)]
-    assert res == expected
+    expected = [('Blue', 1), ('Blue', 2), ('Red', 1)]
+    assert sorted(res) == expected
 
 def test_o2m(session):
     view = View('country', ['name', 'teams.name'])

@@ -88,13 +88,30 @@ def test_partial_write(session):
 
 
 def test_write_by_id(session):
-    team_view = View('country', ['id', 'name'])
-    res = team_view.read('(= name "Belgium")').one()
+    country_view = View('country', ['id', 'name'])
+    res = country_view.read('(= name "Belgium")').one()
     record_id = res[0]
-    res = team_view.write([(record_id, 'BELGIUM')])
+    res = country_view.write([(record_id, 'BELGIUM')])
 
-    res = team_view.read('(= name "Belgium")').one()
+    res = country_view.read('(= name "Belgium")').one()
     assert res is None
 
-    res = team_view.read('(= name "BELGIUM")').one()
+    res = country_view.read('(= name "BELGIUM")').one()
     assert res[0] == record_id
+
+
+def test_nullable_fk(session):
+    '''
+    If we pass None value in m2o field(s),
+    we should put null in the fk col
+    '''
+    member_view = View('member', [
+        'registration_code',
+        'team.name',
+        'team.country.name',
+    ])
+    res = member_view.write([('test', None, None)])
+
+    member_view = View('member', ['team'])
+    res = member_view.read('(= registration_code "test")').one()
+    assert res == (None,)
