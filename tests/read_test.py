@@ -29,7 +29,7 @@ def test_filters(session):
 def test_no_fields(session):
     view = View('team')
     res = view.read().all()
-    expected = [('Blue', 1), ('Blue', 2), ('Red', 1)]
+    expected = [('Blue', 'Belgium'), ('Blue', 'France'), ('Red', 'Belgium')]
     assert sorted(res) == expected
 
 def test_o2m(session):

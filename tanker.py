@@ -556,8 +556,14 @@ class View(object):
         self.ctx = ctx
         self.table = Table.get(table)
         if fields is None:
-            fields = [(f.name, f.name) for f in self.table.own_columns]
-        elif isinstance(fields, basestring):
+            fields = []
+            for col in self.table.own_columns:
+                if col.ctype ==  'M2O':
+                    ft = col.get_foreign_table()
+                    fields.extend('.'.join((col.name, i)) for i in ft.index)
+                else:
+                    fields.append(col.name)
+        if isinstance(fields, basestring):
             fields = [[fields, fields]]
         elif isinstance(fields, dict):
             fields = fields.items()
