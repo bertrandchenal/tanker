@@ -32,12 +32,14 @@ def test_no_fields(session):
     expected = [('Blue', 'Belgium'), ('Blue', 'France'), ('Red', 'Belgium')]
     assert sorted(res) == expected
 
+
 def test_o2m(session):
     view = View('country', ['name', 'teams.name'])
     res = view.read().all()
     expected = [('Belgium', 'Blue'), ('Belgium', 'Red'),
                 ('France', 'Blue'), ('Holland', None)]
     assert res == expected
+
 
 def test_args(session):
     # Add config value, to use it later
@@ -96,6 +98,7 @@ def test_limit_order(session):
     res = view.read(limit=1, order=['(!= name "Belgium")']).all()
     assert res == [('Belgium',)]
 
+
 def test_aliases(session):
     # Add alias
     now = datetime.now()
@@ -119,10 +122,12 @@ def test_aliases(session):
     res = view.read(filters).all()
     assert res == [('France', 'TYPE')]
 
+
 def test_field_eval(session):
     view = View('country', ['(= name "Belgium")'])
     res = view.read(order='name').all()
     assert res == [(True,), (False,), (False,),]
+
 
 def test_aggregation(session):
     # Count
@@ -191,6 +196,7 @@ def test_aggregation(session):
 
 def test_m2o(session):
     pass # TODO
+
 
 def test_cast(session):
     # Test int -> char conversion
