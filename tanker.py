@@ -302,6 +302,7 @@ class Context:
         for val in zip(*values):
             if all(v is None for v in val):
                 yield None
+                continue
             res = self._fk_cache[key].get(val)
             if res is None:
                 raise ValueError('Values (%s) are not known in table "%s"' % (
