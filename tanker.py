@@ -10,9 +10,11 @@ try:
 except ImportError:
     # PY3
     from urllib.parse import urlparse
+import argparse
 import csv
 import io
 import logging
+import os
 import re
 import shlex
 import sqlite3
@@ -632,7 +634,7 @@ class View(object):
                 yield ast
 
     def read(self, filters=None, args=None, order=None, groupby=None,
-             limit=None, disable_acl=False):
+             limit=None, offset=None, disable_acl=False):
 
         if isinstance(filters, basestring):
             filters = [filters]
@@ -708,6 +710,8 @@ class View(object):
 
         if limit is not None:
             all_chunks += ['LIMIT %s' % int(limit)]
+        if offset is not None:
+            all_chunks += ['OFFSET %s' % int(limit)]
 
         return TankerCursor(self, all_chunks, args=args)
 
@@ -1707,3 +1711,73 @@ def yaml_load(stream):
         yaml.resolver.BaseResolver.DEFAULT_MAPPING_TAG,
         construct_mapping)
     return yaml.load(stream, OrderedLoader)
+
+
+def cli():
+    parser = argparse.ArgumentParser(description='Tanker CLI')
+    parser.add_argument('action', help='read or info',
+                        nargs=1)
+    parser.add_argument('table', help='Table to query',
+                        nargs='*')
+    parser.add_argument('--config', help='Config file (defaults to ".tk.yaml")',
+                        default='.tk.yaml')
+    parser.add_argument('-l', '--limit', help='Limit number of results',
+                        type=int)
+    parser.add_argument('-o', '--offset', help='Offset results',
+                        type=int)
+    parser.add_argument('-f', '--filter', action='append', help='Add filter',
+                        default=[])
+    parser.add_argument('-s', '--sort', action='append', help='Sort results',
+                        default=[])
+    parser.add_argument('--yaml', help='Enable YAML input / ouput '
+                        '(defaults to csv)', action='store_true')
+    parser.add_argument('-d', '--debug', help='Enable debugging',
+                        action='store_true')
+
+    args = parser.parse_args()
+    if args.debug:
+        logger.setLevel('DEBUG')
+    cfg = yaml_load(open(args.config))
+    cfg['schema'] = yaml_load(open(os.path.expanduser(cfg['schema'])))
+    action = args.action[0]
+    table = args.table[0] if args.table else None
+    fields = args.table[1:] or None
+    order = map(lambda x: x.split(':') if ':' in x else x, args.sort)
+
+    with connect(cfg):
+        if action == 'read':
+            view = View(table, fields)
+            res = view.read(
+                args.filter,
+                order=order,
+                limit=args.limit,
+                offset=args.offset,
+            )
+            if args.yaml:
+                import yaml
+                print(yaml.dump(
+                    list(res.dict()),
+                    default_flow_style=False)
+                )
+            else:
+                writer = csv.writer(sys.stdout)
+                writer.writerow([f.name for f in view.fields])
+                writer.writerows(res)
+        elif action == 'info':
+            if table:
+                columns = sorted(Table.get(table).columns, key=lambda x: x.name)
+                for col in columns:
+                    if col.ctype in ('M2O', 'O2M'):
+                        details = '%s -> %s' % (col.ctype, col.fk)
+                    else:
+                        details = col.ctype
+                    print('%s (%s)' % (col.name, details) + '\n')
+            else:
+                for name in sorted(ctx.registry):
+                    print(name + '\n')
+        else:
+            print('Action "%s" not supported' % action)
+
+
+if __name__ == '__main__':
+    cli()

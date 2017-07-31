@@ -79,7 +79,7 @@ def get_config(db_type, schema=SCHEMA):
         'schema': schema,
     }
 
-    if db_type == 'sqlite':
+    if db_type == 'sqlite' and os.path.isfile(SQLITE_FILE):
         os.unlink(SQLITE_FILE)
         return cfg
 

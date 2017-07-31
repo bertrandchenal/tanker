@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-from distutils.core import setup
+from setuptools import setup
 import os
 
 import tanker
@@ -18,4 +18,9 @@ setup(name='Tanker',
       url='https://bitbucket.org/bertrandchenal/tanker',
       license='MIT',
       py_modules=['tanker'],
+      entry_points={
+          'console_scripts': [
+              'tk = tanker:cli',
+          ],
+      },
   )
