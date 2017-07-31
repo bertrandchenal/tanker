@@ -1447,6 +1447,7 @@ class Expression(object):
         'exists': lambda x: 'EXISTS (%s)' % x,
         'where': lambda *x: 'WHERE ' + ' AND '.join(x),
         'select': lambda *x: 'SELECT ' + ', '.join(x),
+        'cast': lambda x, y: 'CAST (%s AS %s)' % (x, y),
     }
 
     aggregates = {
@@ -1455,7 +1456,6 @@ class Expression(object):
         'max': lambda *x: 'max(%s)' % x,
         'min': lambda *x: 'min(%s)' % x,
         'sum': lambda *x: 'sum(%s)' % x,
-        'cast': lambda x, y: 'CAST (%s AS %s)' % (x, y),
     }
 
     def __init__(self, view, ref_set=None, parent=None):
