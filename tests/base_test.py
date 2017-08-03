@@ -1,9 +1,10 @@
+from datetime import datetime, date
 import os
 
 import pytest
 
 from tanker import (connect, create_tables, View, logger, yaml_load, fetch,
-                    save, execute, Table)
+                    save, execute, Table, LRU)
 
 SQLITE_FILE = 'test.db'
 DB_TYPES = [
@@ -53,6 +54,17 @@ yaml_def = '''
   index:
     - country
     - member
+- table: kitchensink
+  columns:
+    integer: integer
+    bigint: bigint
+    float: float
+    bool: bool
+    timestamp: timestamp
+    date: date
+    varchar: varchar
+  index:
+    - varchar
 '''
 
 SCHEMA = yaml_load(yaml_def)
@@ -170,3 +182,40 @@ def test_link(session):
         '[<Column licensees O2M>, <Column member M2O>]]'
     )
     assert str(country.link(member)) == expected
+
+def test_kitchensink(session):
+    record = {
+        'integer': 1,
+        'bigint': 1L,
+        'float': 1.0,
+        'bool': True,
+        'timestamp': datetime(1970, 1, 1),
+        'date': date(1970, 1, 1),
+        'varchar': 'varchar',
+    }
+
+    ks_view = View('kitchensink')
+    ks_view.write([record])
+    res = list(ks_view.read().dict())[0]
+
+    for k, v in record.items():
+        assert res[k] == v
+
+def test_lru():
+    lru = LRU(size=10)
+
+    # Add 20 items
+    for i in range(20):
+        lru.set(i, i)
+    # Access only new keys
+    for i in range(10, 20):
+        assert lru.get(i) == i
+
+    # This other insert will push older items out
+    for i in range(20, 30):
+        lru.set(i, i)
+    for i in range(10):
+        assert i not in lru
+    # But less older are still there
+    for i in range(10, 20):
+        assert lru.get(i) == i

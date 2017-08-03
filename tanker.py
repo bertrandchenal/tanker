@@ -1,7 +1,7 @@
 from collections import OrderedDict, defaultdict
 from contextlib import contextmanager
 from datetime import datetime, date, timedelta
-from itertools import chain
+from itertools import chain, islice
 from string import Formatter
 from threading import Thread
 try:
@@ -50,7 +50,7 @@ COLUMN_TYPE = ('TIMESTAMP', 'DATE', 'FLOAT', 'INTEGER', 'BIGINT', 'M2O', 'O2M',
 QUOTE_SEPARATION = re.compile(r"(.*?)('.*?')", re.DOTALL)
 NAMED_RE = re.compile(r"%\(([^\)]+)\)s")
 EPOCH = datetime(1970, 1, 1)
-
+LRU_SIZE = 1000
 
 fmt = '%(levelname)s:%(asctime).19s: %(message)s'
 logging.basicConfig(format=fmt)
@@ -81,6 +81,13 @@ def interleave(value, items):
                 yield i
         else:
             yield head
+
+def paginate(it, size):
+    while True:
+        page = list(islice(it, size))
+        if not page:
+            raise StopIteration
+        yield page
 
 class TankerThread(Thread):
 
@@ -288,28 +295,51 @@ class Context:
                     del self._fk_cache[key]
 
     def resolve_fk(self, fields, values):
+        # Create or identify lru object
         remote_table = fields[0].col.get_foreign_table().name
-        key = (remote_table,) + fields
-        if key not in self._fk_cache:
-            read_fields = []
-            for field in fields:
-                _, desc = field.desc.split('.', 1)
-                read_fields.append(desc)
+        lru_id = (remote_table,) + fields
+        if lru_id not in self._fk_cache:
+            self._fk_cache[lru_id] = LRU(LRU_SIZE)
+        lru = self._fk_cache[lru_id]
 
-            view = View(remote_table, read_fields + ['id'])
-            res = dict((val[:-1], val[-1])
-                       for val in view.read(disable_acl=True))
-            self._fk_cache[key] = res
+        # Construct view
+        read_fields = []
+        for field in fields:
+            _, desc = field.desc.split('.', 1)
+            read_fields.append(desc)
+        fk_view = View(remote_table, read_fields + ['id'])
 
-        for val in zip(*values):
-            if all(v is None for v in val):
-                yield None
-                continue
-            res = self._fk_cache[key].get(val)
-            if res is None:
-                raise ValueError('Values (%s) are not known in table "%s"' % (
-                    ', '.join(map(repr, val)), remote_table))
-            yield res
+        # Prime lru cache (usefull for small to medium table)
+        if len(lru) == 0:
+            res = dict(
+                (val[:-1], val[-1])
+                for val in fk_view.read(disable_acl=True, limit=LRU_SIZE//2)
+            )
+            lru.update(res)
+
+        # Resolve each value
+        all_none = lambda xs: all(x is None for x in xs)
+        base_filter = '(AND %s)' % ' '.join(
+            '(= %s {})' % f for f in read_fields)
+        for page in paginate(values, LRU_SIZE // 10):
+            missing = set(
+                val for val in zip(*page)
+                if not all_none(val) and val not in lru)
+            if missing:
+                fltr = '(OR %s)' % ' '.join(base_filter for _ in missing)
+                for row in fk_view.read(fltr, args=list(chain(*missing))):
+                    # row[-1] is id
+                    lru.set(row[:-1], row[-1])
+            for val in zip(*page):
+                if all_none(val):
+                    yield None
+                    continue
+                res = lru.get(val)
+                if res is None:
+                    print(lru.recent)
+                    raise ValueError('Values (%s) are not known in table "%s"' % (
+                        ', '.join(map(repr, val)), remote_table))
+                yield res
 
     def create_tables(self):
         # Collect table info
@@ -550,6 +580,44 @@ class ViewField:
         if self.name != self.desc:
             return '<ViewField %s (%s)>' % (self.desc, self.name)
         return '<ViewField %s>' % self.desc
+
+
+class LRU:
+
+    def __init__(self, size=1000):
+        self.size = size
+        self.recent = {}
+        self.least_recent = {}
+
+    def set(self, key, value):
+        self.recent[key] = value
+        self.vaccum()
+
+    def update(self, values):
+        self.recent.update(values)
+        self.vaccum()
+
+    def get(self, key, default=None):
+        if key in self.recent:
+            return self.recent[key]
+
+        if key in self.least_recent:
+            value = self.least_recent[key]
+            self.recent[key] = value
+            return value
+
+        return default
+
+    def vaccum(self):
+        if len(self.recent) > self.size:
+            self.least_recent = self.recent
+            self.recent = {}
+
+    def __contains__(self, key):
+        return key in self.recent or key in self.least_recent
+
+    def __len__(self):
+        return len(self.recent) + len(self.least_recent)
 
 
 class View(object):
@@ -1650,8 +1718,9 @@ class AST(object):
 
     def eval(self, args=None, kwargs=None, params=None):
         self.params = params if params is not None else self.params
-        self.args = args[:] if args else self.args
+        self.args = args if args else self.args
         self.kwargs = kwargs or self.kwargs
+
         # Eval ast wrt to env
         res = self._eval(self.atoms, self.exp.env)
         return res
