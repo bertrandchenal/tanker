@@ -50,8 +50,9 @@ COLUMN_TYPE = ('TIMESTAMP', 'DATE', 'FLOAT', 'INTEGER', 'BIGINT', 'M2O', 'O2M',
 QUOTE_SEPARATION = re.compile(r"(.*?)('.*?')", re.DOTALL)
 NAMED_RE = re.compile(r"%\(([^\)]+)\)s")
 EPOCH = datetime(1970, 1, 1)
-LRU_SIZE = 1000
+LRU_SIZE = 10000
 
+all_none = lambda xs: all(x is None for x in xs)
 fmt = '%(levelname)s:%(asctime).19s: %(message)s'
 logging.basicConfig(format=fmt)
 logger = logging.getLogger('tanker')
@@ -295,51 +296,55 @@ class Context:
                     del self._fk_cache[key]
 
     def resolve_fk(self, fields, values):
-        # Create or identify lru object
         remote_table = fields[0].col.get_foreign_table().name
-        lru_id = (remote_table,) + fields
-        if lru_id not in self._fk_cache:
-            self._fk_cache[lru_id] = LRU(LRU_SIZE)
-        lru = self._fk_cache[lru_id]
+        key = (remote_table,) + fields
+        mapping = self._fk_cache.get(key)
+        if mapping is None:
+            read_fields = list(self._fk_fields(fields))
+            view = View(remote_table, read_fields + ['id'])
+            mapping = dict((val[:-1], val[-1])
+                       for val in view.read(disable_acl=True, limit=LRU_SIZE))
 
-        # Construct view
-        read_fields = []
+            # Enable lru if fk mapping reach LRU_SIZE
+            if len(mapping) == LRU_SIZE:
+                mapping = LRU(mapping)
+            self._fk_cache[key] = mapping
+
+        if isinstance(mapping, LRU):
+            read_fields = list(self._fk_fields(fields))
+            view = View(remote_table, read_fields + ['id'])
+            base_filter = '(AND %s)' % ' '.join(
+                '(= %s {})' % f for f in read_fields)
+            for page in paginate(values, 100):
+                missing = set(
+                    val for val in zip(*page)
+                    if not all_none(val) and val not in mapping)
+                if missing:
+                    fltr = '(OR %s)' % ' '.join(base_filter for _ in missing)
+                    for row in view.read(fltr, args=list(chain(*missing))):
+                        # row[-1] is id
+                        mapping.set(row[:-1], row[-1])
+                for val in self._emit_fk(page, mapping, remote_table):
+                    yield val
+
+        else:
+            for val in self._emit_fk(values, mapping, remote_table):
+                yield val
+
+    def _fk_fields(self, fields):
         for field in fields:
-            _, desc = field.desc.split('.', 1)
-            read_fields.append(desc)
-        fk_view = View(remote_table, read_fields + ['id'])
+            yield field.desc.split('.', 1)[1]
 
-        # Prime lru cache (usefull for small to medium table)
-        if len(lru) == 0:
-            res = dict(
-                (val[:-1], val[-1])
-                for val in fk_view.read(disable_acl=True, limit=LRU_SIZE//2)
-            )
-            lru.update(res)
-
-        # Resolve each value
-        all_none = lambda xs: all(x is None for x in xs)
-        base_filter = '(AND %s)' % ' '.join(
-            '(= %s {})' % f for f in read_fields)
-        for page in paginate(values, LRU_SIZE // 10):
-            missing = set(
-                val for val in zip(*page)
-                if not all_none(val) and val not in lru)
-            if missing:
-                fltr = '(OR %s)' % ' '.join(base_filter for _ in missing)
-                for row in fk_view.read(fltr, args=list(chain(*missing))):
-                    # row[-1] is id
-                    lru.set(row[:-1], row[-1])
-            for val in zip(*page):
-                if all_none(val):
-                    yield None
-                    continue
-                res = lru.get(val)
-                if res is None:
-                    print(lru.recent)
-                    raise ValueError('Values (%s) are not known in table "%s"' % (
-                        ', '.join(map(repr, val)), remote_table))
-                yield res
+    def _emit_fk(self, values, mapping, remote_table):
+        for val in zip(*values):
+            if all_none(val):
+                yield None
+                continue
+            res = mapping.get(val)
+            if res is None:
+                raise ValueError('Values (%s) are not known in table "%s"' % (
+                    ', '.join(map(repr, val)), remote_table))
+            yield res
 
     def create_tables(self):
         # Collect table info
@@ -584,9 +589,9 @@ class ViewField:
 
 class LRU:
 
-    def __init__(self, size=1000):
+    def __init__(self, init_data=None, size=LRU_SIZE):
         self.size = size
-        self.recent = {}
+        self.recent = init_data or {}
         self.least_recent = {}
 
     def set(self, key, value):
@@ -1245,7 +1250,6 @@ class Table:
         '''
         wave = [self]
         paths = defaultdict(list)
-        weight = 0
 
         while True:
             new_wave = []
