@@ -232,7 +232,6 @@ class Context:
         self.connection = connection
         if self.flavor == 'postgresql':
             self.legacy_pg = connection.server_version < 90500
-        self.cursor = connection.cursor()
         self.cfg = pool.cfg
         self.aliases = {'null': None}
         self._fk_cache = {}
@@ -380,13 +379,13 @@ class Context:
         for table_name in self.db_tables:
             if self.flavor == 'sqlite':
                 qr = 'PRAGMA table_info("%s")' % table_name
-                execute(qr)
-                current_cols = [x[1] for x in self.cursor]
+                cursor = execute(qr)
+                current_cols = [x[1] for x in cursor]
             elif self.flavor == 'postgresql':
                 qr = "SELECT column_name FROM information_schema.columns "\
                      "WHERE table_name = '%s' " % table_name
-                execute(qr)
-                current_cols = [x[0] for x in self.cursor]
+                cursor = execute(qr)
+                current_cols = [x[0] for x in cursor]
 
             self.db_fields.update(
                 '%s.%s' % (table_name, c) for c in current_cols)
@@ -497,31 +496,33 @@ class DBError(Exception):
 def execute(query, params=None):
     log_sql(query, params)
     query = ctx._prepare_query(query)
+    cursor = ctx.connection.cursor()
     try:
         if params:
-            ctx.cursor.execute(query, params)
+            cursor.execute(query, params)
         else:
-            ctx.cursor.execute(query)
+            cursor.execute(query)
     except DB_EXCEPTION as e:
         log_sql(query, params, exception=True)
         raise DBError(e)
-    return ctx.cursor
+    return cursor
 
 
 def executemany(query, params):
     query = ctx._prepare_query(query)
     log_sql(query, params)
+    cursor = ctx.connection.cursor()
     try:
-        ctx.cursor.executemany(query, params)
+        cursor.executemany(query, params)
     except DB_EXCEPTION as e:
         log_sql(query, params, exception=True)
         raise DBError(e)
-    return ctx.cursor
+    return cursor
 
 
 def copy_from(buff, table, **kwargs):
     log_sql('"COPY FROM" called on table %s' % table)
-    cursor = ctx.cursor
+    cursor = ctx.connection.cursor()
     cursor.copy_from(buff, table, **kwargs)
     return cursor
 
@@ -642,9 +643,9 @@ class View(object):
             fields = [[fields, fields]]
         elif isinstance(fields, dict):
             fields = fields.items()
-        elif isinstance(fields, list) and isinstance(fields[0], basestring):
+        elif isinstance(fields, (list, tuple)) and isinstance(fields[0], basestring):
             fields = zip(fields, fields)
-        elif isinstance(fields, list) and isinstance(fields[0], tuple):
+        elif isinstance(fields, (list, tuple)) and isinstance(fields[0], tuple):
             fields = fields
 
         self.fields = [ViewField(name.strip(), desc, self.table)
@@ -1346,7 +1347,7 @@ class Column:
                     value = None
                 elif not isinstance(value, datetime):
                     if hasattr(value, 'timetuple'):
-                        value = datetime(*value.timetuple()[:6])
+                        value = datetime(*value.timetuple()[:7])
                     elif hasattr(value, 'tolist'):
                         # tolist is a numpy.datetime64 method that
                         # returns nanosecond from 1970. EPOCH + delta(val)
