@@ -186,7 +186,7 @@ def test_link(session):
 def test_kitchensink(session):
     record = {
         'integer': 1,
-        'bigint': 1L,
+        'bigint': 10000000000,
         'float': 1.0,
         'bool': True,
         'timestamp': datetime(1970, 1, 1),
