@@ -1,4 +1,2 @@
 psycopg2
 pytest
-pathlib
-hg+https://bitbucket.org/pythonian/pytest_sa_pg
