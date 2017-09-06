@@ -21,7 +21,6 @@ import sqlite3
 import sys
 import textwrap
 import threading
-
 try:
     import pandas
 except ImportError:
@@ -45,14 +44,27 @@ if not PY2:
 
 __version__ = '0.5.3'
 
-COLUMN_TYPE = ('TIMESTAMP', 'DATE', 'FLOAT', 'INTEGER', 'BIGINT', 'M2O', 'O2M',
-               'VARCHAR', 'BOOL')
+COLUMN_TYPE = (
+    'BIGINT',
+    'BOOL',
+    'DATE',
+    'FLOAT',
+    'INTEGER',
+    'M2O',
+    'O2M',
+    'TIMESTAMP',
+    'VARCHAR',
+)
 QUOTE_SEPARATION = re.compile(r"(.*?)('.*?')", re.DOTALL)
 NAMED_RE = re.compile(r"%\(([^\)]+)\)s")
 EPOCH = datetime(1970, 1, 1)
 LRU_SIZE = 10000
 
 all_none = lambda xs: all(x is None for x in xs)
+skip_none = (lambda fn: (
+    lambda x: None
+    if x is None or (pandas and pandas.isnull(x))
+    else fn(x)))
 fmt = '%(levelname)s:%(asctime).19s: %(message)s'
 logging.basicConfig(format=fmt)
 logger = logging.getLogger('tanker')
@@ -368,7 +380,7 @@ class Context:
             for col in table.columns:
                 if col.ctype in ('M2O', 'O2M') or col.name == 'id':
                     continue
-                col_defs.append('%s %s' % (col.name, col.sql_definition()))
+                col_defs.append('"%s" %s' % (col.name, col.sql_definition()))
 
             qr = 'CREATE TABLE "%s" (%s)' % (table.name, ', '.join(col_defs))
             execute(qr)
@@ -393,11 +405,9 @@ class Context:
             if table_name not in self.registry:
                 continue
 
-            # Add M2O columns
+            # Execute alter table queries
             table = self.registry[table_name]
-            for col in table.columns:
-                if col.ctype != 'M2O':
-                    continue
+            for col in table.own_columns:
                 if col.name in current_cols:
                     continue
                 qr = 'ALTER TABLE %(table)s '\
@@ -977,8 +987,8 @@ class View(object):
         update_qr = 'UPDATE %(table)s SET %(upd_stm)s WHERE %(cond)s'
         update_qr = update_qr % {
             'table': self.table.name,
-            'upd_stm': ', '.join('%s = %%s' % c for c in upd_fields),
-            'cond': ' AND '.join('%s = %%s' % c for c in key_cols),
+            'upd_stm': ', '.join('"%s" = %%s' % c for c in upd_fields),
+            'cond': ' AND '.join('"%s" = %%s' % c for c in key_cols),
         }
         delete_qr = 'DELETE FROM %(table)s WHERE %(cond)s'
         delete_qr = delete_qr % {
@@ -1217,11 +1227,18 @@ class Table:
             else:
                 raise ValueError('No index defined on %s' % name)
         self.index = [index] if isinstance(index, basestring) else index
+        # Test index columns are members of the table
         self._column_dict = dict((col.name, col) for col in self.columns)
-
         for col in self.index:
             if col not in self._column_dict:
                 raise ValueError('Index column "%s" does not exist' % col)
+        # # Forbid array types in index
+        # for col in self.index:
+        #     if col.array_dim:
+        #         msg = 'Array type is not allowed on index column '\
+        #               '("%s" in table "%s")'
+        #         raise ValueError(msg % (col, self.name))
+
         ctx.registry[name] = self
 
     def get_column(self, name):
@@ -1282,15 +1299,31 @@ class Column:
 
     def __init__(self, name, ctype, default=None):
         if ' ' in ctype:
+            full_ctype = ctype
             ctype, self.fk = ctype.split()
+            if '.' not in self.fk:
+                msg = 'Malformed column definition "%s" for %s'
+                raise ValueError(msg % (full_ctype, name))
             self.foreign_table, self.foreign_col = self.fk.split('.')
         else:
             self.fk = None
             self.foreign_table = self.foreign_col = None
         self.name = name
-        self.ctype = ctype.upper()
         self.default = default
-        if self.ctype not in COLUMN_TYPE:
+
+        # Build ctype, array_dim and base_type
+        self.ctype = ctype.upper()
+        self.base_type = self.ctype
+        self.array_dim = 0
+        while self.base_type.endswith('[]'):
+            self.base_type = self.base_type[:-2]
+            self.array_dim += 1
+        if self.array_dim and ctx.flavor == 'sqlite':
+            self.ctype = 'BLOB'
+        if self.array_dim and self.base_type in ('O2M', 'M2O'):
+            msg = 'Array type is not supported on "%s" (for column "%s")'
+            raise ValueError(msg  % (self.base_type, name))
+        if self.base_type not in COLUMN_TYPE:
             raise ValueError('Unexpected type %s for column %s' % (ctype, name))
 
     def sql_definition(self):
@@ -1314,19 +1347,34 @@ class Column:
     def get_foreign_table(self):
         return Table.get(self.foreign_table)
 
-    def format(self, values, astype=None):
-        '''
-        Sanitize value wrt the column type of the current field.
-        '''
-        skip_none = (lambda fn: (
-            lambda x: None
-            if x is None or (pandas and pandas.isnull(x))
-            else fn(x)))
-        astype = astype or self.ctype
-        res = []
+    def format_array(self, array, astype, array_dim):
+        if array is None:
+            return None
+        if array_dim == 1:
+            items = self.format(array, astype=astype, array_dim=0)
+            items = map(lambda x: 'null' if x is None else str(x), items)
+        else:
+            items = (
+                self.format_array(v, astype=astype, array_dim=array_dim-1)
+                for v in array)
+        items = ','.join(items)
+        return '{%s}' % items
 
-        if astype in ('INTEGER', 'BIGINT'):
-            res = map(skip_none(int), values)
+    def format(self, values, astype=None, array_dim=None):
+        '''
+        Sanitize a column of values wrt the column type of the current
+        field.
+        '''
+        astype = astype or self.base_type
+        array_dim = self.array_dim if array_dim is None else array_dim
+
+        if array_dim:
+            for array in values:
+                yield self.format_array(array, astype, array_dim)
+
+        elif astype in ('INTEGER', 'BIGINT'):
+            for v in map(skip_none(int), values):
+                yield v
 
         elif astype == 'VARCHAR':
             for value in values:
@@ -1339,7 +1387,7 @@ class Column:
                         value =  value.encode(ctx.encoding)
                     elif not PY2 and isinstance(value, bytes):
                         value = value.encode(ctx.encoding)
-                res.append(value)
+                yield value
 
         elif astype == 'TIMESTAMP':
             for value in values:
@@ -1361,7 +1409,7 @@ class Column:
                         raise ValueError(
                             'Unexpected value "%s" for type "%s"' % (
                                 value, astype))
-                res.append(value)
+                yield value
 
         elif astype == 'DATE':
             for value in values:
@@ -1381,11 +1429,11 @@ class Column:
                         raise ValueError(
                             'Unexpected value "%s" for type "%s"' % (
                                 value, astype))
-                res.append(value)
+                yield value
         else:
-            res = values
+            for v in values:
+                yield v
 
-        return res
 
     def __repr__(self):
         return '<Column %s %s>' % (self.name, self.ctype)
@@ -1431,7 +1479,7 @@ class ReferenceSet:
     def get_sql_joins(self):
         for key, alias in self.joins.items():
             left_table, right_table, left_col, right_col = key
-            yield 'LEFT JOIN %s AS %s ON (%s.%s = %s.%s)' % (
+            yield 'LEFT JOIN %s AS %s ON ("%s"."%s" = "%s"."%s")' % (
                 right_table, alias, left_table, left_col, alias, right_col
             )
 
@@ -1507,6 +1555,9 @@ class Expression(object):
             ', '.join('%s' for _ in xs[1:]))) % xs,
         'notin': lambda *xs: ('%%s not in (%s)' % (
             ', '.join('%s' for _ in xs[1:]))) % xs,
+        'any': lambda x : 'any(%s)' % x,
+        'all': lambda x : 'all(%s)' % x,
+        'unnest': lambda x : 'unnest(%s)' % x,
         'is': lambda x, y: '%s is %s' % (x, y),
         'isnot': lambda x, y: '%s is not %s' % (x, y),
         'null': 'null',
@@ -1656,7 +1707,7 @@ class ExpressionSymbol:
 
     def eval(self):
         if self.ref:
-            return '%s.%s' % (self.ref.join_alias, self.ref.remote_field)
+            return '"%s"."%s"' % (self.ref.join_alias, self.ref.remote_field)
         return self.builtin
 
     def __repr__(self):

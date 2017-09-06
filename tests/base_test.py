@@ -4,7 +4,7 @@ import os
 import pytest
 
 from tanker import (connect, create_tables, View, logger, yaml_load, fetch,
-                    save, execute, Table, LRU)
+                    save, execute, Table, LRU, ctx)
 
 SQLITE_FILE = 'test.db'
 DB_TYPES = [
@@ -56,6 +56,7 @@ yaml_def = '''
     - member
 - table: kitchensink
   columns:
+    index: integer
     integer: integer
     bigint: bigint
     float: float
@@ -63,9 +64,14 @@ yaml_def = '''
     timestamp: timestamp
     date: date
     varchar: varchar
+    int_array: integer[]
+    bool_array: bool[]
+    ts_array: timestamp[][]
+    char_array: varchar[][][]
   index:
-    - varchar
+    - index
 '''
+
 
 SCHEMA = yaml_load(yaml_def)
 teams = [
@@ -185,6 +191,7 @@ def test_link(session):
 
 def test_kitchensink(session):
     record = {
+        'index': 1,
         'integer': 1,
         'bigint': 10000000000,
         'float': 1.0,
@@ -192,14 +199,39 @@ def test_kitchensink(session):
         'timestamp': datetime(1970, 1, 1),
         'date': date(1970, 1, 1),
         'varchar': 'varchar',
+        'int_array': [1,2],
+        'bool_array': [True, False],
+        'ts_array': [
+            [datetime(1970, 1, 1), datetime(1970, 1, 2)],
+            [datetime(1970, 1, 3), datetime(1970, 1, 4)],
+        ],
+        'char_array': [
+            [['ham', 'spam'], ['foo', 'bar']],
+            [['foo', 'bar'], [None, None]],
+        ],
     }
 
+
+    # Write actual values
     ks_view = View('kitchensink')
     ks_view.write([record])
     res = list(ks_view.read().dict())[0]
+    for k, v in record.items():
+        if ctx.flavor == 'sqlite' and k.endswith('array'):
+            # Array support with sqlite is incomplete
+            continue
+        assert res[k] == v
 
+    # Write nulls
+    for k in record:
+        if k == 'index':
+            continue
+        record[k] = None
+    ks_view.write([record])
+    res = list(ks_view.read().dict())[0]
     for k, v in record.items():
         assert res[k] == v
+
 
 def test_lru():
     lru = LRU(size=10)

@@ -12,14 +12,14 @@ def test_bitwise_operators(session):
 
         if op == 'isnot':
             op = 'is not'
-        assert res == 'member.name %s %%s' % op
+        assert res == '"member"."name" %s %%s' % op
         assert ast.params == ['foo']
 
 def test_cast(session):
     exp = Expression(View('member'))
     ast = exp.parse('(cast id varchar)')
     res = ast.eval()
-    assert res == 'CAST (member.id AS varchar)'
+    assert res == 'CAST ("member"."id" AS varchar)'
     assert ast.params == []
 
 def test_other_operators(session):
@@ -52,7 +52,7 @@ def test_in_notin(session):
 def test_not(session):
     exp = Expression(View('member'))
     res = exp.parse('(not (= name 1))').eval()
-    assert res == 'not member.name = %s'
+    assert res == 'not "member"."name" = %s'
 
 def test_select(session):
     exp = Expression(View('member'))
@@ -65,22 +65,22 @@ def test_from(session):
     exp = Expression(View('team'))
     ast = exp.parse('(FROM member (SELECT id name _parent.name))')
     res = ast.eval()
-    assert res == 'SELECT member.id, member.name, team.name FROM member'
+    assert res == 'SELECT "member"."id", "member"."name", "team"."name" FROM member'
     assert ast.params == []
 
 def test_join(session):
     exp = Expression(View('member'))
     ast = exp.parse('(= team.name "spam-team")')
-    assert ast.eval() == 'team_0.name = %s'
+    assert ast.eval() == '"team_0"."name" = %s'
     assert ast.params == ['spam-team']
 
     ast = exp.parse('(= team.country.name "BE")')
-    assert ast.eval() == 'country_1.name = %s'
+    assert ast.eval() == '"country_1"."name" = %s'
     assert ast.params == ['BE']
 
     ast = exp.parse('(and (= team.country.name "BE") '
                    '(= team.country.name "BE"))')
-    assert ast.eval() == '(country_1.name = %s AND country_1.name = %s)'
+    assert ast.eval() == '("country_1"."name" = %s AND "country_1"."name" = %s)'
     assert ast.params == ['BE', 'BE']
 
 
@@ -98,8 +98,8 @@ def test_exists(session):
                     '(= members.name "Bob")'
                    ')')
     assert ast.eval() == (
-        '(EXISTS (SELECT %s FROM member WHERE member.team = team.id) '
-        'AND team.name = %s AND member_0.name = %s)')
+        '(EXISTS (SELECT %s FROM member WHERE "member"."team" = "team"."id") '
+        'AND "team"."name" = %s AND "member_0"."name" = %s)')
     assert ast.params == [1, 'spam-team', 'Bob']
 
 
@@ -112,9 +112,10 @@ def test_multi_parent(session):
        )
      ))))''')
     assert ast.eval() == (
-        'SELECT team.country FROM team WHERE team.id in ('
-          'SELECT member.team FROM member '
-          'WHERE member.team = team.id AND member.name = country.name'
+        'SELECT "team"."country" FROM team WHERE "team"."id" in ('
+          'SELECT "member"."team" FROM member '
+          'WHERE "member"."team" = "team"."id" '
+            'AND "member"."name" = "country"."name"'
           ')')
     assert ast.params == []
 
@@ -133,10 +134,11 @@ def test_subexpression_join(session):
 
     assert ast.eval() == (
         '(EXISTS (SELECT %s FROM member '
-        'LEFT JOIN team AS team_0 ON (member.team = team_0.id) '
-        'LEFT JOIN country AS country_1 ON (team_0.country = country_1.id) '
-        'WHERE member.team = team.id AND country_1.name = %s) '
-        'AND country_2.name = %s)')
+        'LEFT JOIN team AS team_0 ON ("member"."team" = "team_0"."id") '
+        'LEFT JOIN country AS country_1 '
+          'ON ("team_0"."country" = "country_1"."id") '
+        'WHERE "member"."team" = "team"."id" AND "country_1"."name" = %s) '
+        'AND "country_2"."name" = %s)')
     assert ast.params == [1, 'BE', 'BE']
 
 def test_subselect(session):
@@ -147,22 +149,22 @@ def test_subselect(session):
           '(where (= name "Bob"))))'
         )
     ast = Expression(view).parse(cond)
-    expected = ('team.id in ('
-                'SELECT member.team FROM member WHERE member.name = %s)')
+    expected = ('"team"."id" in ('
+                'SELECT "member"."team" FROM member WHERE "member"."name" = %s)')
     assert ast.eval() == expected
 
 def test_field(session):
     exp = Expression(View('team'))
-    assert exp.parse('name').eval() == 'team.name'
-    assert exp.parse('country.name').eval() == 'country_0.name'
-    assert exp.parse('members.team.name').eval() == 'team_2.name'
-    assert exp.parse('members.name').eval() == 'member_1.name'
+    assert exp.parse('name').eval() == '"team"."name"'
+    assert exp.parse('country.name').eval() == '"country_0"."name"'
+    assert exp.parse('members.team.name').eval() == '"team_2"."name"'
+    assert exp.parse('members.name').eval() == '"member_1"."name"'
 
 def test_env(session):
     view = View('member', {
         'created_date': '(cast created_at date)',
     })
     exp = Expression(view)
-    expected = 'CAST (member.created_at AS date)'
+    expected = 'CAST ("member"."created_at" AS date)'
     assert exp.parse('(cast created_at date)').eval() == expected
     assert exp.parse('created_date').eval() == expected
