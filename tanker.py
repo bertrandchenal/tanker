@@ -59,6 +59,7 @@ QUOTE_SEPARATION = re.compile(r"(.*?)('.*?')", re.DOTALL)
 NAMED_RE = re.compile(r"%\(([^\)]+)\)s")
 EPOCH = datetime(1970, 1, 1)
 LRU_SIZE = 10000
+LRU_PAGE_SIZE = 100
 
 all_none = lambda xs: all(x is None for x in xs)
 skip_none = (lambda fn: (
@@ -95,9 +96,10 @@ def interleave(value, items):
         else:
             yield head
 
-def paginate(it, size):
+def paginate(iterators, size=LRU_PAGE_SIZE):
+    rows = zip(*iterators)
     while True:
-        page = list(islice(it, size))
+        page = list(islice(rows, size))
         if not page:
             raise StopIteration
         yield page
@@ -313,8 +315,10 @@ class Context:
         if mapping is None:
             read_fields = list(self._fk_fields(fields))
             view = View(remote_table, read_fields + ['id'])
+            db_values = view.read(disable_acl=True, limit=LRU_SIZE,
+                               order=('id', 'desc'))
             mapping = dict((val[:-1], val[-1])
-                       for val in view.read(disable_acl=True, limit=LRU_SIZE))
+                           for val in db_values)
 
             # Enable lru if fk mapping reach LRU_SIZE
             if len(mapping) == LRU_SIZE:
@@ -326,9 +330,12 @@ class Context:
             view = View(remote_table, read_fields + ['id'])
             base_filter = '(AND %s)' % ' '.join(
                 '(= %s {})' % f for f in read_fields)
-            for page in paginate(values, 100):
+
+            # Value is a list of column, paginate yield page that is a
+            # small chunk of rows
+            for page in paginate(values):
                 missing = set(
-                    val for val in zip(*page)
+                    val for val in page
                     if not all_none(val) and val not in mapping)
                 if missing:
                     fltr = '(OR %s)' % ' '.join(base_filter for _ in missing)
@@ -339,7 +346,7 @@ class Context:
                     yield val
 
         else:
-            for val in self._emit_fk(values, mapping, remote_table):
+            for val in self._emit_fk(zip(*values), mapping, remote_table):
                 yield val
 
     def _fk_fields(self, fields):
@@ -347,7 +354,7 @@ class Context:
             yield field.desc.split('.', 1)[1]
 
     def _emit_fk(self, values, mapping, remote_table):
-        for val in zip(*values):
+        for val in values:
             if all_none(val):
                 yield None
                 continue
@@ -912,7 +919,7 @@ class View(object):
         '''
 
         # Handle list of dict and dataframes
-        if isinstance(data, list) and isinstance(data[0], dict):
+        if isinstance(data, list) and data and isinstance(data[0], dict):
             data = [[record.get(f.name) for record in data]
                     for f in self.fields]
         elif pandas and isinstance(data, pandas.DataFrame):
