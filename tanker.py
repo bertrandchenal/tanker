@@ -820,7 +820,8 @@ class View(object):
 
     def delete(self, filters=None, data=None, args=None):
         if not any((data, filters)):
-            raise ValueError('No deletion criteria given')
+            qr = 'DELETE FROM %s' % self.table.name
+            return execute(qr)
 
         if data and filters:
             raise ValueError('Deletion by both data and filter not supported')
