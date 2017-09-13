@@ -91,29 +91,34 @@ def get_config(db_type, schema=SCHEMA):
         db_uri = 'sqlite:///' + SQLITE_FILE
     elif db_type == 'pg':
         db_uri = 'postgresql:///tanker_test'
+    else:
+        raise ValueError('Unsupported db type "%s"' % db_type)
 
     cfg = {
         'db_uri': db_uri,
         'schema': schema,
     }
 
-    if db_type == 'sqlite' and os.path.isfile(SQLITE_FILE):
-        os.unlink(SQLITE_FILE)
-        return cfg
-
-    with connect(cfg):
-        to_clean = [t['table'] for t in schema]
-        for table in to_clean:
-            qr = 'DROP TABLE IF EXISTS %s' % table
-            if db_type == 'pg':
-                qr += ' CASCADE'
-            execute(qr)
     return cfg
 
 
 @pytest.yield_fixture(scope='function', params=DB_TYPES)
 def session(request):
-    cfg = get_config(request.param)
+    db_type = request.param
+    cfg = get_config(db_type)
+
+    # DB cleanup
+    if db_type == 'sqlite' and os.path.isfile(SQLITE_FILE):
+        os.unlink(SQLITE_FILE)
+    else:
+        with connect(cfg):
+            to_clean = [t['table'] for t in SCHEMA]
+            for table in to_clean:
+                qr = 'DROP TABLE IF EXISTS %s' % table
+                if db_type == 'pg':
+                    qr += ' CASCADE'
+                execute(qr)
+
     with connect(cfg):
         create_tables()
         View('team', ['name', 'country.name']).write(teams)

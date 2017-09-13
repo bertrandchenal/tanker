@@ -157,8 +157,7 @@ class Pool:
             raise ValueError('Unsupported scheme "%s" in uri "%s"' % (
                 uri.scheme, uri))
 
-    @contextmanager
-    def get_context(self):
+    def __enter__(self):
         if self.flavor == 'sqlite':
             connection = sqlite3.connect(*self.conn_args, **self.conn_kwargs)
             connection.text_factory = str
@@ -179,16 +178,16 @@ class Pool:
             for table_def in schema:
                 new_ctx.register(table_def)
 
-        try:
-            yield new_ctx
-            connection.commit()
-        except:
+        return new_ctx
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        connection = CTX_STACK.pop()
+        if exc_value:
             connection.rollback()
-            raise
-        finally:
-            CTX_STACK.pop()
-            if self.flavor == 'postgresql':
-                self.pg_pool.putconn(connection)
+        else:
+            connection.commit()
+        if self.flavor == 'postgresql':
+            self.pg_pool.putconn(connection)
 
     @classmethod
     def disconnect(cls):
@@ -226,7 +225,8 @@ class ContextStack:
         return new_ctx
 
     def pop(self):
-        self._local.contexts.pop()
+        popped_ctx = self._local.contexts.pop()
+        return popped_ctx.connection
 
     def active_context(self):
         return self._local.contexts[-1]
@@ -1826,10 +1826,16 @@ class AST(object):
         return '<AST [%s]>' % ' '.join(map(str, self.atoms))
 
 
-def connect(cfg=None):
+def connect(cfg=None, action=None):
     pool = Pool.get_pool(cfg or {})
-    return pool.get_context()
-
+    if not action:
+        return pool
+    if action == 'enter':
+        return pool.__enter__()
+    elif action == 'exit':
+        return pool.__exit__(None, None, None)
+    else:
+        ValueError('Unexpected value "%s" for action parameter' % action)
 
 def yaml_load(stream):
     import yaml
