@@ -739,7 +739,6 @@ class View(object):
 
         exp = Expression(self)
 
-
         # Add select fields
         select_ast = exp.parse('(select %s)' % ' '.join(
             f.desc for f in self.fields))
@@ -1221,7 +1220,7 @@ class Table:
         # Add implicit id column
         if 'id' not in [c.name for c in self.columns]:
             self.columns.append(Column('id', 'INTEGER'))
-        self.own_columns = [c for c in self.columns \
+        self.own_columns = [c for c in self.columns
                             if c.name != 'id' and c.ctype != 'O2M']
 
         # Set table attribute on columns object
@@ -1443,7 +1442,6 @@ class Column:
         else:
             for v in values:
                 yield v
-
 
     def __repr__(self):
         return '<Column %s %s>' % (self.name, self.ctype)
@@ -1676,7 +1674,6 @@ class Expression(object):
             return float(token)
         except ValueError:
             return ExpressionSymbol(token, self)
-
 
 
 class ExpressionSymbol:
