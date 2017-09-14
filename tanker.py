@@ -1857,7 +1857,7 @@ def yaml_load(stream):
 
 def cli():
     parser = argparse.ArgumentParser(description='Tanker CLI')
-    parser.add_argument('action', help='read or info',
+    parser.add_argument('action', help='info, read, write, init or delete',
                         nargs=1)
     parser.add_argument('table', help='Table to query',
                         nargs='*')
@@ -1867,10 +1867,14 @@ def cli():
                         type=int)
     parser.add_argument('-o', '--offset', help='Offset results',
                         type=int)
-    parser.add_argument('-f', '--filter', action='append', help='Add filter',
+    parser.add_argument('-F', '--filter', action='append', help='Add filter',
                         default=[])
+    parser.add_argument('-p', '--purge', help='Purge table after write',
+                        action='store_true')
     parser.add_argument('-s', '--sort', action='append', help='Sort results',
                         default=[])
+    parser.add_argument('-f', '--file', help='Read/Write to file '
+                        '(instead of stdin/stdout)')
     parser.add_argument('--yaml', help='Enable YAML input / ouput '
                         '(defaults to csv)', action='store_true')
     parser.add_argument('-d', '--debug', help='Enable debugging',
@@ -1881,44 +1885,93 @@ def cli():
         logger.setLevel('DEBUG')
     cfg = yaml_load(open(args.config))
     cfg['schema'] = yaml_load(open(os.path.expanduser(cfg['schema'])))
-    action = args.action[0]
-    table = args.table[0] if args.table else None
-    fields = args.table[1:] or None
-    order = map(lambda x: x.split(':') if ':' in x else x, args.sort)
 
     with connect(cfg):
-        if action == 'read':
-            view = View(table, fields)
-            res = view.read(
-                args.filter,
-                order=order,
-                limit=args.limit,
-                offset=args.offset,
-            )
-            if args.yaml:
-                import yaml
-                print(yaml.dump(
-                    list(res.dict()),
-                    default_flow_style=False)
-                )
-            else:
-                writer = csv.writer(sys.stdout)
-                writer.writerow([f.name for f in view.fields])
-                writer.writerows(res)
-        elif action == 'info':
-            if table:
-                columns = sorted(Table.get(table).columns, key=lambda x: x.name)
-                for col in columns:
-                    if col.ctype in ('M2O', 'O2M'):
-                        details = '%s -> %s' % (col.ctype, col.fk)
-                    else:
-                        details = col.ctype
-                    print('%s (%s)' % (col.name, details) + '\n')
-            else:
-                for name in sorted(ctx.registry):
-                    print(name + '\n')
+        cli_main(args)
+
+
+def cli_input_data(args):
+    fields = args.table[1:] or None
+    fh = None
+    if args.file:
+        fh = open(args.file)
+    elif args.action in ('write', 'delete'):
+        fh = sys.stdin
+    if not fh:
+        return fields, None
+
+    if args.yaml:
+        data = yaml_load(fh)
+    else:
+        reader = csv.reader(fh)
+        data = list(reader)
+
+    # If not field is given we infer them from the data
+    if not fields and data:
+        if args.yaml:
+            fields = data[0].keys()
         else:
-            print('Action "%s" not supported' % action)
+            fields = data[0]
+            data = data[1:]
+
+    return fields, data
+
+
+def cli_main(args):
+    action = args.action[0]
+    table = args.table[0] if args.table else None
+    order = map(lambda x: x.split(':') if ':' in x else x, args.sort)
+    fields, data = cli_input_data(args)
+
+    if action == 'read':
+        view = View(table, fields)
+        res = view.read(
+            args.filter,
+            order=list(order),
+            limit=args.limit,
+            offset=args.offset,
+        )
+        if args.file:
+            fh = open(args.file, 'w')
+        else:
+            fh = sys.stdout
+        if args.yaml:
+            import yaml
+            fh.write(yaml.dump(
+                list(res.dict()),
+                default_flow_style=False)
+            )
+        else:
+            writer = csv.writer(fh)
+            writer.writerow([f.name for f in view.fields])
+            writer.writerows(res)
+
+    elif action == 'delete':
+        View(table, fields).delete(filters=args.filter, data=data)
+
+    elif action == 'write':
+        # Extract data
+        fields, data = cli_input_data(args)
+        View(table, fields).write(data, purge=args.purge)
+
+    elif action == 'info':
+        if table:
+            columns = sorted(Table.get(table).columns, key=lambda x: x.name)
+            for col in columns:
+                if col.ctype in ('M2O', 'O2M'):
+                    details = '%s -> %s' % (col.ctype, col.fk)
+                else:
+                    details = col.ctype
+                print('%s (%s)' % (col.name, details))
+        else:
+            for name in sorted(ctx.registry):
+                print(name)
+
+    elif action == 'init':
+        create_tables()
+
+    else:
+        print('Action "%s" not supported' % action)
 
 
 if __name__ == '__main__':
