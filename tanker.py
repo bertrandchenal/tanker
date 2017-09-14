@@ -96,6 +96,7 @@ def interleave(value, items):
         else:
             yield head
 
+
 def paginate(iterators, size=LRU_PAGE_SIZE):
     rows = zip(*iterators)
     while True:
@@ -103,6 +104,7 @@ def paginate(iterators, size=LRU_PAGE_SIZE):
         if not page:
             raise StopIteration
         yield page
+
 
 class TankerThread(Thread):
 
@@ -316,7 +318,7 @@ class Context:
             read_fields = list(self._fk_fields(fields))
             view = View(remote_table, read_fields + ['id'])
             db_values = view.read(disable_acl=True, limit=LRU_SIZE,
-                               order=('id', 'desc'))
+                                  order=('id', 'desc'))
             mapping = dict((val[:-1], val[-1])
                            for val in db_values)
 
@@ -651,7 +653,7 @@ class View(object):
         if fields is None:
             fields = []
             for col in self.table.own_columns:
-                if col.ctype ==  'M2O':
+                if col.ctype == 'M2O':
                     ft = col.get_foreign_table()
                     fields.extend('.'.join((col.name, i)) for i in ft.index)
                 else:
@@ -817,10 +819,9 @@ class View(object):
                     yield map(int, data[idx[0]])
                 else:
                     # Resole foreign key reference
-                    values = map(
-                        lambda a: tuple(a[0].col.format(a[1], astype=a[0].ctype)),
-                        zip(fields, values)
-                        )
+                    fmt_cols = lambda a: tuple(
+                        a[0].col.format(a[1], astype=a[0].ctype))
+                    values = map(fmt_cols, zip(fields, values))
                     yield ctx.resolve_fk(fields, values)
             else:
                 yield col.format(data[idx[0]])
@@ -953,7 +954,8 @@ class View(object):
                         rowcounts['update'] = cnt
                 else:
                     # ON-CONFLICT is available since postgres 9.5
-                    cnt = self._pg_upsert(join_cond, insert=insert, update=update)
+                    cnt = self._pg_upsert(join_cond, insert=insert,
+                                          update=update)
                     rowcounts['upsert'] = cnt
 
                 if purge:
@@ -1010,12 +1012,12 @@ class View(object):
         for key, line in zip(data_keys, data):
             if insert and key not in db_keys:
                 cur = execute(insert_qr, line)
-                cnt['insert'] +=  cur.rowcount
+                cnt['insert'] += cur.rowcount
             if update and key in db_keys:
                 vals = upd_vals(line)
                 if vals:
                     cur = execute(update_qr, vals + key)
-                    cnt['update'] +=  cur.rowcount
+                    cnt['update'] += cur.rowcount
         if purge:
             to_delete = db_keys - set(data_keys)
             if to_delete:
@@ -1330,7 +1332,7 @@ class Column:
             self.ctype = 'BLOB'
         if self.array_dim and self.base_type in ('O2M', 'M2O'):
             msg = 'Array type is not supported on "%s" (for column "%s")'
-            raise ValueError(msg  % (self.base_type, name))
+            raise ValueError(msg % (self.base_type, name))
         if self.base_type not in COLUMN_TYPE:
             raise ValueError('Unexpected type %s for column %s' % (ctype, name))
 
@@ -1392,7 +1394,7 @@ class Column:
                     value = str(value)
                 else:
                     if PY2 and isinstance(value, unicode):
-                        value =  value.encode(ctx.encoding)
+                        value = value.encode(ctx.encoding)
                     elif not PY2 and isinstance(value, bytes):
                         value = value.encode(ctx.encoding)
                 yield value
@@ -1563,9 +1565,9 @@ class Expression(object):
             ', '.join('%s' for _ in xs[1:]))) % xs,
         'notin': lambda *xs: ('%%s not in (%s)' % (
             ', '.join('%s' for _ in xs[1:]))) % xs,
-        'any': lambda x : 'any(%s)' % x,
-        'all': lambda x : 'all(%s)' % x,
-        'unnest': lambda x : 'unnest(%s)' % x,
+        'any': lambda x: 'any(%s)' % x,
+        'all': lambda x: 'all(%s)' % x,
+        'unnest': lambda x: 'unnest(%s)' % x,
         'is': lambda x, y: '%s is %s' % (x, y),
         'isnot': lambda x, y: '%s is not %s' % (x, y),
         'null': 'null',
@@ -1690,7 +1692,7 @@ class ExpressionSymbol:
             return
 
         ref = None
-        if self.token.startswith('_parent.'): # XXX replace with '_.' ?
+        if self.token.startswith('_parent.'):  # XXX replace with '_.' ?
             tail = self.token
             parent = exp
             while tail.startswith('_parent.'):
@@ -1836,6 +1838,7 @@ def connect(cfg=None, action=None):
         return pool.__exit__(None, None, None)
     else:
         ValueError('Unexpected value "%s" for action parameter' % action)
+
 
 def yaml_load(stream):
     import yaml
