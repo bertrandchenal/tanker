@@ -270,8 +270,8 @@ dictionary to map dataframe columns to database columns.
 
 Some ideas, in no particular order:
 
-  - Allow to define default config (that will be used by views to
-    create a context automatically, outside of any with block)
+  - Enforce acl on write and split `acl_rules` into `acl_read` and
+    `acl_write`.
   - Be able to introspect existing db (without yaml schema then)
   - Add support for other 'ON CONFLICT' action (mainly update a given
     field, like validity date)

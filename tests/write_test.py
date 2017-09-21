@@ -50,8 +50,8 @@ def test_no_fields(session):
 def test_purge(session):
     team_view = View('team', ['name', 'country.name'])
     team_view.write([
-        ('Orange', 'Holland'),
-        ('Blue', 'France'),
+        ('Orange', 'Holland'), # this is an insert
+        ('Blue', 'France'),    # belgium is missing
     ], purge=True, insert=False, update=False)
 
     expected = [('Blue', 'France',)]
@@ -116,3 +116,25 @@ def test_nullable_fk(session):
     member_view = View('member', ['team'])
     res = member_view.read('(= registration_code "test")').one()
     assert res == (None,)
+
+
+def test_filters(session):
+    teams = [
+        ['Red', 'Belgium'],
+    ] # France is missing
+
+    fltr = '(= country.name "Belgium")'  # We restrict purge to belgium
+    team_view = View('team', ['name', 'country.name'])
+    team_view.write(teams, purge=True, filters=fltr)
+
+    expected = [('Red', 'Belgium',),
+                ('Blue', 'France',)]
+    res = team_view.read()
+    check(expected, res)
+
+    # Opposite filter
+    fltr = '(!= country.name "Belgium")'  # We don't purge belgium
+    team_view.write(teams, purge=True, filters=fltr)
+    expected = [('Red', 'Belgium',)]
+    res = team_view.read()
+    check(expected, res)

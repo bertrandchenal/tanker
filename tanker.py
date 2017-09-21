@@ -912,12 +912,13 @@ class View(object):
         # Clean tmp table
         execute('DROP TABLE tmp')
 
-    def write(self, data, purge=False, insert=True, update=True):
+    def write(self, data, purge=False, insert=True, update=True, filters=None,
+              disable_acl=False):
         '''
         Write given data to view table. If insert is true, new lines will
         be inserted.  if update is true, existing line will be
         updated. If purge is true existing line that are not present
-        in data will be deleted.
+        in data (and that match filters) will be deleted.
         '''
 
         # Handle list of dict and dataframes
@@ -941,9 +942,10 @@ class View(object):
         if self.ctx.flavor == 'sqlite':
             # Convert back to lines:
             data = list(zip(*data))
-            rowcounts = self._sqlite_upsert(data, purge=purge, insert=insert,
-                                            update=update)
+            # TODO: add filters, disable_acl
+            rowcounts = self._sqlite_upsert(data, purge, insert, update)
         else:
+            # FIXME enforce ACL
             with self._prepare_write(data) as join_cond:
                 rowcounts = {}
                 if ctx.legacy_pg:
@@ -960,14 +962,14 @@ class View(object):
                     rowcounts['upsert'] = cnt
 
                 if purge:
-                    cnt = self._purge(join_cond)
+                    cnt = self._purge(join_cond, filters, disable_acl)
                     rowcounts['delete'] = cnt
 
         # Clean cache for current table
         self.ctx.reset_cache(self.table.name)
         return rowcounts
 
-    def _sqlite_upsert(self, data, purge, insert, update):
+    def _sqlite_upsert(self, data, purge, insert, update): # TODO: add filters, disable_acl
         # Identify position and name of index fields
         key_pos = []
         key_cols = []
@@ -1023,6 +1025,7 @@ class View(object):
             to_delete = db_keys - set(data_keys)
             if to_delete:
                 cnt['deleted'] = len(to_delete)
+                # deleted += filters + disable_acl
                 executemany(delete_qr, to_delete)
 
         return cnt
@@ -1102,16 +1105,38 @@ class View(object):
 
         return cur and cur.rowcount or 0
 
-    def _purge(self, join_cond):
-        qr = 'DELETE FROM %(main)s WHERE id IN (' \
-             'SELECT %(main)s.id FROM %(main)s ' \
-             'LEFT JOIN tmp on %(join_cond)s ' \
-             'WHERE tmp.%(field)s IS NULL)'
-        qr = qr % {
+    def _purge(self, join_cond, filters, disable_acl):
+        # Prepare basic query
+        head_qr = (
+            'DELETE FROM %(main)s '
+            'WHERE id IN ('
+            'SELECT %(main)s.id FROM %(main)s ')
+        join_qr = 'LEFT JOIN tmp on %(join_cond)s '
+        cond_qr = 'tmp.%(field)s IS NULL)'
+        fmt = {
             'main': self.table.name,
             'join_cond': ' AND '.join(join_cond),
             'field': self.index_cols[0]
         }
+        head_qr, join_qr, cond_qr = [
+            q % fmt for q in (head_qr, join_qr, cond_qr)]
+
+        # Build filters
+        acl_filters = None
+        if not disable_acl:
+            acl = self.ctx.cfg.get('acl_rules', {}).get(self.table.name)
+            acl_filters = acl and acl['filters']
+        exp = Expression(self)
+        filter_chunks = list(self._build_filter_cond(exp, filters, acl_filters))
+        join_chunks = [exp.ref_set]
+
+        if filter_chunks:
+            qr =  ([head_qr] + join_chunks + [join_qr]
+                   + ['WHERE'] + list(interleave(' AND ', filter_chunks))
+                   + ['AND'] + [cond_qr])
+        else:
+            qr = head_qr + join_qr + ' WHERE ' + cond_qr
+
         cur = TankerCursor(self, qr).execute()
         return cur.rowcount
 
