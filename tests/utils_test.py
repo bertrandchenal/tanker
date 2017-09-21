@@ -16,27 +16,29 @@ def test_paginate(session):
         assert len(page) == 2
         for line in page:
             assert line == (1, 2, 3)
-    assert cnt == 5
+        # Failsafe
+        assert cnt <= 5
 
 
 def test_lru(session):
-    values = [('%s' % i, ) for i in range(LRU_SIZE * 2)]
+    values = [('c%s' % i, ) for i in range(LRU_SIZE * 2)]
     country_view = View('country', ['name'])
     team_view = View('team', ['name', 'country.name'])
-
 
     # Fill country table, clean team table
     country_view.write(values)
     team_view.delete()
 
     # Fill team table to trigger lru on country fk
-    values = [('%s' % i, '%s' % i,) for i in range(LRU_SIZE * 2)]
+    values = [('t%s' % i, 'c%s' % i,) for i in range(LRU_SIZE * 2)]
     team_view.write(values)
 
     teams = team_view.read().all()
     assert len(teams) == LRU_SIZE * 2
     for team_name, country_name in teams:
-        assert team_name == country_name
+        assert team_name[0] == 't'
+        assert country_name[0] == 'c'
+        assert team_name[1:] == country_name[1:]
 
 def test_manual_conn(session):
     country_view = View('country', ['name'])

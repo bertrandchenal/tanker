@@ -36,7 +36,9 @@ except ImportError:
 # Python2/Python3 magic
 PY2 = sys.version_info[0] == 2
 if PY2:
+    from itertools import izip
     BuffIO = io.BytesIO
+    zip = izip
 else:
     BuffIO = io.StringIO
 if not PY2:
