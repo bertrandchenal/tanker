@@ -382,11 +382,7 @@ class Context:
         for table in self.registry.values():
             if table.name in self.db_tables:
                 continue
-            if self.flavor == 'sqlite':
-                id_type = 'INTEGER'
-            elif self.flavor == 'postgresql':
-                id_type = 'SERIAL'
-
+            id_type = 'INTEGER' if self.flavor == 'sqlite' else 'SERIAL'
             col_defs = ['id %s PRIMARY KEY' % id_type]
             for col in table.columns:
                 if col.ctype in ('M2O', 'O2M') or col.name == 'id':
@@ -827,7 +823,23 @@ class View(object):
             else:
                 yield col.format(data[idx[0]])
 
-    def delete(self, filters=None, data=None, args=None):
+    def delete(self, filters=None, data=None, args=None, table_alias=None,
+               reverse_filters=False):
+        '''
+        Delete rows from table that:
+        - match `filters` if set (or that doesn't match `filters` if
+          reverse_filters is set
+        - match `data` (based on index columns)
+        Only one of `filters` or `data` can be passed.
+
+        table_alias allows to pass an alternate table name (that will
+        act as self.table).
+        `args` is a dict of values that allows to escape `filters`.
+        '''
+
+        if table_alias and not filters:
+            raise ValueError('table_alias parameter is only supported with '
+                             'non-empty filters parameters')
         if not any((data, filters)):
             qr = 'DELETE FROM %s' % self.table.name
             return execute(qr)
@@ -835,24 +847,28 @@ class View(object):
         if data and filters:
             raise ValueError('Deletion by both data and filter not supported')
 
-        exp = Expression(self)
+        exp = Expression(self, table_alias=table_alias)
         filter_chunks = list(self._build_filter_cond(exp, filters))
 
         if data:
             with self._prepare_write(data) as join_cond:
-                qr = 'DELETE FROM %(main)s WHERE id IN (' \
+                qr = 'DELETE FROM %(main)s WHERE id %(op)s (' \
                      'SELECT %(main)s.id FROM %(main)s ' \
                      'INNER JOIN tmp on %(join_cond)s)'
                 qr = qr % {
                     'main': self.table.name,
+                    'op': 'NOT IN' if reverse_filters else 'IN',
                     'join_cond': ' AND '.join(join_cond),
                 }
                 execute(qr)
 
         else:
-            qr = ('DELETE FROM %(main_table)s WHERE id IN ('
-                  'SELECT %(main_table)s.id FROM %(main_table)s ')
-            qr = qr % {'main_table': self.table.name}
+            qr = ('DELETE FROM %(main_table)s WHERE id %(op)s ('
+                  'SELECT %(main_table)s.id FROM %(main_table)s')
+            qr = qr % {
+                'main_table': table_alias or self.table.name,
+                'op': 'NOT IN' if reverse_filters else 'IN',
+            }
             chunks = [qr, exp.ref_set]
             if filter_chunks:
                 chunks += ['WHERE'] + filter_chunks
@@ -861,15 +877,20 @@ class View(object):
             return cur.rowcount
 
     @contextmanager
-    def _prepare_write(self, data):
-        # Create tmp
+    def _prepare_write(self, data, filters=None, disable_acl=False):
+        # An id column is needed to enable filters
+        extra_id = filters and 'id' not in self.field_map
         not_null = lambda n: 'NOT NULL' if n in self.index_fields else ''
+        # Create tmp
         qr = 'CREATE TEMPORARY TABLE tmp (%s)'
-        qr = qr % ', '.join('"%s" %s %s' % (
+        col_defs = ', '.join('"%s" %s %s' % (
             col.name,
             fields[0].ftype,
             not_null(col.name))
             for col, fields in self.field_map.items())
+        if extra_id:
+            col_defs += ', id SERIAL PRIMARY KEY'
+        qr = qr % col_defs
         execute(qr)
 
         # Fill tmp
@@ -887,11 +908,13 @@ class View(object):
                 if c.ctype != 'VARCHAR':
                     continue
                 data[pos] = [clean(v) for v in data[pos]]
+
             # Append to writer by row
             for row in zip(*data):
                 writer.writerow(row)
             buff.seek(0)
-            copy_from(buff, 'tmp', null='')
+            copy_from(buff, 'tmp', null='',
+                      columns=[c.name for c in self.field_map])
 
         else:
             qr = 'INSERT INTO tmp (%(fields)s) VALUES (%(values)s)'
@@ -900,6 +923,14 @@ class View(object):
                 'values': ', '.join('%s' for _ in self.field_map),
             }
             executemany(qr, data)
+
+        # Apply filters if any
+        if not disable_acl:
+            filters = filters or []
+            acl = self.ctx.cfg.get('acl_rules', {})
+            filters += acl.get(self.table.name, [])
+        if filters:
+            self.delete(filters, table_alias='tmp', reverse_filters=True)
 
         # Create join conditions
         join_cond = []
@@ -938,6 +969,9 @@ class View(object):
         # Format values
         data = list(self.format(data))
 
+        if isinstance(filters, basestring):
+            filters = [filters]
+
         # Launch upsert
         if self.ctx.flavor == 'sqlite':
             # Convert back to lines:
@@ -945,8 +979,11 @@ class View(object):
             # TODO: add filters, disable_acl
             rowcounts = self._sqlite_upsert(data, purge, insert, update)
         else:
-            # FIXME enforce ACL
-            with self._prepare_write(data) as join_cond:
+            # prepare_write creates (and fill) the tmp table in a
+            # context manager and yield the joins that need to be done
+            # between tmp and self.table
+            with self._prepare_write(data, filters=filters,
+                                     disable_acl=disable_acl) as join_cond:
                 rowcounts = {}
                 if ctx.legacy_pg:
                     if insert:
@@ -1105,13 +1142,17 @@ class View(object):
 
         return cur and cur.rowcount or 0
 
-    def _purge(self, join_cond, filters, disable_acl):
+    def _purge(self, join_cond, filters, disable_acl=False):
+        '''
+        Delete rows from self.table that are not in tmp table and evaluate
+        filters to true
+        '''
         # Prepare basic query
         head_qr = (
             'DELETE FROM %(main)s '
             'WHERE id IN ('
             'SELECT %(main)s.id FROM %(main)s ')
-        join_qr = 'LEFT JOIN tmp on %(join_cond)s '
+        join_qr = 'LEFT JOIN tmp on %(join_cond)s ' if join_cond else ''
         cond_qr = 'tmp.%(field)s IS NULL)'
         fmt = {
             'main': self.table.name,
@@ -1621,7 +1662,7 @@ class Expression(object):
         'sum': lambda *x: 'sum(%s)' % x,
     }
 
-    def __init__(self, view, ref_set=None, parent=None):
+    def __init__(self, view, ref_set=None, parent=None, table_alias=None):
         self.view = view
         # Populate env with view fields
         self.env = self.base_env(view.table)
@@ -1634,7 +1675,8 @@ class Expression(object):
         # Add refset
         if not ref_set:
             parent_rs = parent and parent.ref_set
-            ref_set = ReferenceSet(view.table, parent=parent_rs)
+            ref_set = ReferenceSet(view.table, table_alias=table_alias,
+                                   parent=parent_rs)
         self.ref_set = ref_set
 
     def _sub_select(self, *items):

@@ -8,7 +8,7 @@ from tanker import (connect, create_tables, View, logger, yaml_load, fetch,
 
 SQLITE_FILE = 'test.db'
 DB_TYPES = [
-    'sqlite',
+#    'sqlite',
     'pg',
 ]
 
