@@ -8,11 +8,11 @@ from tanker import (connect, create_tables, View, logger, yaml_load, fetch,
 
 SQLITE_FILE = 'test.db'
 DB_TYPES = [
-#    'sqlite',
+    'sqlite',
     'pg',
 ]
 
-logger.setLevel('WARNING')
+logger.setLevel('DEBUG')
 
 # Tables definitions can be written in yaml
 yaml_def = '''

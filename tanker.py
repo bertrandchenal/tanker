@@ -139,6 +139,7 @@ class Pool:
             self.conn_kwargs = {
                 'check_same_thread': False,
                 'detect_types': sqlite3.PARSE_DECLTYPES,
+                'isolation_level': 'DEFERRED',
             }
 
         elif self.flavor == 'postgresql':
@@ -824,11 +825,11 @@ class View(object):
                 yield col.format(data[idx[0]])
 
     def delete(self, filters=None, data=None, args=None, table_alias=None,
-               reverse_filters=False):
+               swap=False):
         '''
         Delete rows from table that:
         - match `filters` if set (or that doesn't match `filters` if
-          reverse_filters is set
+          swap is set
         - match `data` (based on index columns)
         Only one of `filters` or `data` can be passed.
 
@@ -857,7 +858,7 @@ class View(object):
                      'INNER JOIN tmp on %(join_cond)s)'
                 qr = qr % {
                     'main': self.table.name,
-                    'op': 'NOT IN' if reverse_filters else 'IN',
+                    'op': 'NOT IN' if swap else 'IN',
                     'join_cond': ' AND '.join(join_cond),
                 }
                 execute(qr)
@@ -867,7 +868,7 @@ class View(object):
                   'SELECT %(main_table)s.id FROM %(main_table)s')
             qr = qr % {
                 'main_table': table_alias or self.table.name,
-                'op': 'NOT IN' if reverse_filters else 'IN',
+                'op': 'NOT IN' if swap else 'IN',
             }
             chunks = [qr, exp.ref_set]
             if filter_chunks:
@@ -878,8 +879,9 @@ class View(object):
 
     @contextmanager
     def _prepare_write(self, data, filters=None, disable_acl=False):
-        # An id column is needed to enable filters
-        extra_id = filters and 'id' not in self.field_map
+        # An id column is needed to enable filters (and for sqlite
+        # REPLACE)
+        extra_id = 'id' not in self.field_dict
         not_null = lambda n: 'NOT NULL' if n in self.index_fields else ''
         # Create tmp
         qr = 'CREATE TEMPORARY TABLE tmp (%s)'
@@ -889,7 +891,8 @@ class View(object):
             not_null(col.name))
             for col, fields in self.field_map.items())
         if extra_id:
-            col_defs += ', id SERIAL PRIMARY KEY'
+            id_type = 'INTEGER' if ctx.flavor == 'sqlite' else 'SERIAL'
+            col_defs += ', id %s PRIMARY KEY' % id_type
         qr = qr % col_defs
         execute(qr)
 
@@ -922,15 +925,8 @@ class View(object):
                 'fields': ', '.join('"%s"' % c.name for c in self.field_map),
                 'values': ', '.join('%s' for _ in self.field_map),
             }
-            executemany(qr, data)
+            executemany(qr, zip(*data))
 
-        # Apply filters if any
-        if not disable_acl:
-            filters = filters or []
-            acl = self.ctx.cfg.get('acl_rules', {})
-            filters += acl.get(self.table.name, [])
-        if filters:
-            self.delete(filters, table_alias='tmp', reverse_filters=True)
 
         # Create join conditions
         join_cond = []
@@ -938,7 +934,27 @@ class View(object):
             join_cond.append('tmp."%s" = "%s"."%s"' % (
                 name, self.table.name, name))
 
+        # Apply filters if any
+        if not disable_acl:
+            filters = filters or []
+            acl = self.ctx.cfg.get('acl_rules', {})
+            filters += acl.get(self.table.name, [])
+
+        if filters:
+            # Filter is based on existing line in self.table, so it
+            # only affect updates (and not inserts)
+            # (We introduced acl in filters, so we disable them)
+            self._purge(join_cond, filters, disable_acl=True,
+                        delete_match=False, join_type='exclude',
+                        swap_table=True)
+
         yield join_cond
+
+        if filters:
+            # Delete inserted lines that do not match the filters
+            # (We introduced acl in filters, so we disable them)
+            self._purge(join_cond, filters, disable_acl=True, join_type='inner',
+                        reverse_filter=True)
 
         # Clean tmp table
         execute('DROP TABLE tmp')
@@ -973,99 +989,64 @@ class View(object):
             filters = [filters]
 
         # Launch upsert
-        if self.ctx.flavor == 'sqlite':
-            # Convert back to lines:
-            data = list(zip(*data))
-            # TODO: add filters, disable_acl
-            rowcounts = self._sqlite_upsert(data, purge, insert, update)
-        else:
-            # prepare_write creates (and fill) the tmp table in a
-            # context manager and yield the joins that need to be done
-            # between tmp and self.table
-            with self._prepare_write(data, filters=filters,
-                                     disable_acl=disable_acl) as join_cond:
-                rowcounts = {}
-                if ctx.legacy_pg:
-                    if insert:
-                        cnt = self._insert(join_cond)
-                        rowcounts['insert'] = cnt
-                    if update:
-                        cnt = self._update(join_cond)
-                        rowcounts['update'] = cnt
-                else:
-                    # ON-CONFLICT is available since postgres 9.5
-                    cnt = self._pg_upsert(join_cond, insert=insert,
-                                          update=update)
-                    rowcounts['upsert'] = cnt
+        with self._prepare_write(data, filters=filters,
+                                 disable_acl=disable_acl) as join_cond:
+            rowcounts = {}
+            if self.ctx.flavor == 'sqlite':
+                self._sqlite_upsert(join_cond, insert, update)
+            elif ctx.legacy_pg:
+                if insert:
+                    cnt = self._insert(join_cond)
+                    rowcounts['insert'] = cnt
+                if update:
+                    cnt = self._update(join_cond)
+                    rowcounts['update'] = cnt
+            else:
+                # ON-CONFLICT is available since postgres 9.5
+                cnt = self._pg_upsert(join_cond, insert=insert,
+                                      update=update)
+                rowcounts['upsert'] = cnt
 
-                if purge:
-                    cnt = self._purge(join_cond, filters, disable_acl)
-                    rowcounts['delete'] = cnt
+            if purge:
+                cnt = self._purge(join_cond, filters, disable_acl,
+                                  join_type='exclude')
+                rowcounts['delete'] = cnt
 
         # Clean cache for current table
         self.ctx.reset_cache(self.table.name)
         return rowcounts
 
-    def _sqlite_upsert(self, data, purge, insert, update): # TODO: add filters, disable_acl
-        # Identify position and name of index fields
-        key_pos = []
-        key_cols = []
-        upd_pos = []
-        upd_fields = []
+    def _sqlite_upsert(self, join_cond, insert, update):
+        # As sqlite cannot update only some columns whe have to also
+        # update fields not in the query
+        qr_cols = [f.name for f in self.field_map]
+        other_cols = [col.name for col in self.table.own_columns \
+                      if col.name not in qr_cols]
+        qr = 'INSERT OR REPLACE INTO %(main)s (%(fields)s) %(select)s'
+        select = 'SELECT %(tmp_fields)s FROM tmp '\
+                 '%(join_type)s JOIN %(main_table)s ON ( %(join_cond)s)'
+        tmp_fields = ', '.join('tmp."%s"' % c for c in qr_cols)
+        if other_cols:
+            tmp_fields += ', '
+            tmp_fields += ', '.join('%s.%s' % (self.table.name, f)\
+                                    for f in other_cols)
+        if 'id' not in self.field_dict:
+            other_cols.append('id')
+            tmp_fields += ', %s.id' % self.table.name
 
-        for pos, col in enumerate(self.field_map):
-            if col.name in self.index_cols:
-                key_pos.append(pos)
-                key_cols.append(col.name)
-            else:
-                upd_pos.append(pos)
-                upd_fields.append(col.name)
-
-        # Read existing data from table
-        view = View(self.table.name, key_cols)
-        db_keys = set(view.read())
-        key_vals = lambda row: tuple(row[i] for i in key_pos)
-        upd_vals = lambda row: tuple(row[i] for i in upd_pos)
-
-        # Build sql statements
-        insert_qr = 'INSERT INTO %(table)s (%(fields)s) VALUES (%(values)s)'
-        insert_qr = insert_qr % {
-            'table': self.table.name,
-            'fields': ', '.join('"%s"' % c.name for c in self.field_map),
-            'values': ', '.join('%s' for _ in self.field_map),
+        select = select % {
+            'tmp_fields': tmp_fields,
+            'main_table': self.table.name,
+            'join_cond': ' AND '.join(join_cond),
+            'join_type': 'LEFT' if insert else 'INNER',
         }
-        update_qr = 'UPDATE %(table)s SET %(upd_stm)s WHERE %(cond)s'
-        update_qr = update_qr % {
-            'table': self.table.name,
-            'upd_stm': ', '.join('"%s" = %%s' % c for c in upd_fields),
-            'cond': ' AND '.join('"%s" = %%s' % c for c in key_cols),
+        qr = qr % {
+            'main': self.table.name,
+            'fields': ', '.join('"%s"' % c for c in qr_cols + other_cols),
+            'select': select,
         }
-        delete_qr = 'DELETE FROM %(table)s WHERE %(cond)s'
-        delete_qr = delete_qr % {
-            'table': self.table.name,
-            'cond': ' AND '.join('%s = %%s' % c for c in key_cols),
-        }
-
-        # Run queries
-        cnt = {'insert': 0, 'update': 0, 'deleted': 0}
-        data_keys = [key_vals(line) for line in data]
-        for key, line in zip(data_keys, data):
-            if insert and key not in db_keys:
-                cur = execute(insert_qr, line)
-                cnt['insert'] += cur.rowcount
-            if update and key in db_keys:
-                vals = upd_vals(line)
-                if vals:
-                    cur = execute(update_qr, vals + key)
-                    cnt['update'] += cur.rowcount
-        if purge:
-            to_delete = db_keys - set(data_keys)
-            if to_delete:
-                cnt['deleted'] = len(to_delete)
-                # deleted += filters + disable_acl
-                executemany(delete_qr, to_delete)
-
-        return cnt
+        cur = TankerCursor(self, [qr]).execute()
+        return cur.rowcount
 
     def _pg_upsert(self, join_cond, insert, update):
         tmp_fields = ', '.join('tmp."%s"' % f.name for f in self.field_map)
@@ -1142,25 +1123,43 @@ class View(object):
 
         return cur and cur.rowcount or 0
 
-    def _purge(self, join_cond, filters, disable_acl=False):
+    def _purge(self, join_cond, filters, disable_acl=False, delete_match=True,
+               join_type='left', swap_table=False, reverse_filter=False):
         '''
-        Delete rows from self.table that are not in tmp table and evaluate
-        filters to true
+        Delete rows from main table that are not in tmp table and evaluate
+        filters to true. Do the opposite if swap_table is True (keep in tmp
+        lines that are also in main and that evaluate filter to false.
         '''
+        assert join_type in ('inner', 'left', 'exclude')
+        main = self.table.name
+        tmp = 'tmp'
+        if swap_table:
+            assert bool(filters), 'filters is nedded to purge on tmp'
+            main, tmp = tmp, main
+
         # Prepare basic query
         head_qr = (
             'DELETE FROM %(main)s '
-            'WHERE id IN ('
-            'SELECT %(main)s.id FROM %(main)s ')
-        join_qr = 'LEFT JOIN tmp on %(join_cond)s ' if join_cond else ''
-        cond_qr = 'tmp.%(field)s IS NULL)'
+            'WHERE id %(filter_operator)s ('
+            ' SELECT %(main)s.id FROM %(main)s ')
+        join_qr = '{} JOIN %(tmp)s on (%(join_cond)s) '.format(
+            'INNER' if join_type == 'inner' else 'left')
+        excl_cond = '%(tmp)s.%(field)s IS NULL' if join_type == 'exclude' \
+                    else ''
+        tail_qr = ')'
+
         fmt = {
-            'main': self.table.name,
+            'main': main,
+            'tmp': tmp,
+            'filter_operator': 'IN' if delete_match else 'NOT IN',
             'join_cond': ' AND '.join(join_cond),
             'field': self.index_cols[0]
         }
-        head_qr, join_qr, cond_qr = [
-            q % fmt for q in (head_qr, join_qr, cond_qr)]
+
+        # Format all parts of the query
+        head_qr = head_qr % fmt
+        join_qr = join_qr % fmt
+        excl_cond = excl_cond % fmt
 
         # Build filters
         acl_filters = None
@@ -1172,11 +1171,21 @@ class View(object):
         join_chunks = [exp.ref_set]
 
         if filter_chunks:
-            qr =  ([head_qr] + join_chunks + [join_qr]
-                   + ['WHERE'] + list(interleave(' AND ', filter_chunks))
-                   + ['AND'] + [cond_qr])
+            qr = [head_qr] + [join_qr] + join_chunks
+            if reverse_filter:
+                qr += ['WHERE NOT ('] \
+                      + list(interleave(' AND ', filter_chunks)) \
+                      + [')']
+            else:
+                qr += ['WHERE']+ list(interleave(' AND ', filter_chunks))
+            if excl_cond:
+                qr += ['OR', excl_cond] #FIXME should be 'AND' for purge and update
+            qr += [tail_qr]
         else:
-            qr = head_qr + join_qr + ' WHERE ' + cond_qr
+            qr = head_qr + join_qr
+            if excl_cond:
+                qr += ' WHERE ' + excl_cond
+            qr += tail_qr
 
         cur = TankerCursor(self, qr).execute()
         return cur.rowcount

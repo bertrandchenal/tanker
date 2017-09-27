@@ -118,12 +118,12 @@ def test_nullable_fk(session):
     assert res == (None,)
 
 
-def test_filters(session):
+def test_purge_filters(session):
     teams = [
         ['Red', 'Belgium'],
-    ] # France is missing
+    ] # Blue-Belgium is missing
 
-    fltr = '(= country.name "Belgium")'  # We restrict purge to belgium
+    fltr = '(= country.name "Belgium")'  # We restrict writes to belgium
     team_view = View('team', ['name', 'country.name'])
     team_view.write(teams, purge=True, filters=fltr)
 
@@ -137,4 +137,57 @@ def test_filters(session):
     team_view.write(teams, purge=True, filters=fltr)
     expected = [('Red', 'Belgium',)]
     res = team_view.read()
+    check(expected, res)
+
+def test_update_filters(session):
+    # init members
+    full_view = View('member', [
+        'name',
+        'team.country.name',
+        'team.name',
+        'registration_code'])
+    full_view.write(members)
+
+    # Let's update some names (the index is registration_code)
+    fltr = '(= registration_code "001")'
+    member_view = View('member', ['registration_code', 'name'])
+    data = [
+        ('001', 'BOB'),
+        ('003', 'TRUDY'),
+    ]
+    member_view.write(data, filters=fltr)
+    expected = [
+        ('001', 'BOB', ),
+        ('002', 'Alice'),
+        ('003', 'Trudy'),
+    ]
+    res = member_view.read()
+    check(expected, res)
+
+
+
+def test_insert_filters(session):
+    # init members
+    full_view = View('member', [
+        'name',
+        'team.country.name',
+        'team.name',
+        'registration_code'])
+    full_view.write(members)
+
+    # Let's insert some names (the index is registration_code)
+    fltr = '(= registration_code "004")'
+    member_view = View('member', ['registration_code', 'name'])
+    data = [
+        ('004', 'Carol'),
+        ('005', 'Dan'),
+    ]
+    member_view.write(data, filters=fltr)
+    expected = [
+        ('001', 'Bob', ),
+        ('002', 'Alice'),
+        ('003', 'Trudy'),
+        ('004', 'Carol'),
+    ]
+    res = member_view.read()
     check(expected, res)
