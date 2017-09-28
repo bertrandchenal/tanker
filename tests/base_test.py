@@ -4,15 +4,15 @@ import os
 import pytest
 
 from tanker import (connect, create_tables, View, logger, yaml_load, fetch,
-                    save, execute, Table, LRU)
+                    save, execute, Table, LRU, ctx)
 
 SQLITE_FILE = 'test.db'
 DB_TYPES = [
     'sqlite',
     'pg',
 ]
-
-logger.setLevel('WARNING')
+logger.setLevel('DEBUG' if pytest.config.getoption('verbose')
+                else 'WARNING')
 
 # Tables definitions can be written in yaml
 yaml_def = '''
@@ -56,6 +56,7 @@ yaml_def = '''
     - member
 - table: kitchensink
   columns:
+    index: integer
     integer: integer
     bigint: bigint
     float: float
@@ -63,9 +64,14 @@ yaml_def = '''
     timestamp: timestamp
     date: date
     varchar: varchar
+    int_array: integer[]
+    bool_array: bool[]
+    ts_array: timestamp[][]
+    char_array: varchar[][][]
   index:
-    - varchar
+    - index
 '''
+
 
 SCHEMA = yaml_load(yaml_def)
 teams = [
@@ -85,29 +91,34 @@ def get_config(db_type, schema=SCHEMA):
         db_uri = 'sqlite:///' + SQLITE_FILE
     elif db_type == 'pg':
         db_uri = 'postgresql:///tanker_test'
+    else:
+        raise ValueError('Unsupported db type "%s"' % db_type)
 
     cfg = {
         'db_uri': db_uri,
         'schema': schema,
     }
 
-    if db_type == 'sqlite' and os.path.isfile(SQLITE_FILE):
-        os.unlink(SQLITE_FILE)
-        return cfg
-
-    with connect(cfg):
-        to_clean = [t['table'] for t in schema]
-        for table in to_clean:
-            qr = 'DROP TABLE IF EXISTS %s' % table
-            if db_type == 'pg':
-                qr += ' CASCADE'
-            execute(qr)
     return cfg
 
 
 @pytest.yield_fixture(scope='function', params=DB_TYPES)
 def session(request):
-    cfg = get_config(request.param)
+    db_type = request.param
+    cfg = get_config(db_type)
+
+    # DB cleanup
+    if db_type == 'sqlite' and os.path.isfile(SQLITE_FILE):
+        os.unlink(SQLITE_FILE)
+    else:
+        with connect(cfg):
+            to_clean = [t['table'] for t in SCHEMA]
+            for table in to_clean:
+                qr = 'DROP TABLE IF EXISTS %s' % table
+                if db_type == 'pg':
+                    qr += ' CASCADE'
+                execute(qr)
+
     with connect(cfg):
         create_tables()
         View('team', ['name', 'country.name']).write(teams)
@@ -185,6 +196,7 @@ def test_link(session):
 
 def test_kitchensink(session):
     record = {
+        'index': 1,
         'integer': 1,
         'bigint': 10000000000,
         'float': 1.0,
@@ -192,14 +204,39 @@ def test_kitchensink(session):
         'timestamp': datetime(1970, 1, 1),
         'date': date(1970, 1, 1),
         'varchar': 'varchar',
+        'int_array': [1,2],
+        'bool_array': [True, False],
+        'ts_array': [
+            [datetime(1970, 1, 1), datetime(1970, 1, 2)],
+            [datetime(1970, 1, 3), datetime(1970, 1, 4)],
+        ],
+        'char_array': [
+            [['ham', 'spam'], ['foo', 'bar']],
+            [['foo', 'bar'], [None, None]],
+        ],
     }
 
+
+    # Write actual values
     ks_view = View('kitchensink')
     ks_view.write([record])
     res = list(ks_view.read().dict())[0]
+    for k, v in record.items():
+        if ctx.flavor == 'sqlite' and k.endswith('array'):
+            # Array support with sqlite is incomplete
+            continue
+        assert res[k] == v
 
+    # Write nulls
+    for k in record:
+        if k == 'index':
+            continue
+        record[k] = None
+    ks_view.write([record])
+    res = list(ks_view.read().dict())[0]
     for k, v in record.items():
         assert res[k] == v
+
 
 def test_lru():
     lru = LRU(size=10)

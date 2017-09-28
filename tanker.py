@@ -21,7 +21,6 @@ import sqlite3
 import sys
 import textwrap
 import threading
-
 try:
     import pandas
 except ImportError:
@@ -37,22 +36,38 @@ except ImportError:
 # Python2/Python3 magic
 PY2 = sys.version_info[0] == 2
 if PY2:
+    from itertools import izip
     BuffIO = io.BytesIO
+    zip = izip
 else:
     BuffIO = io.StringIO
 if not PY2:
     basestring = (str, bytes)
 
-__version__ = '0.5.3'
+__version__ = '0.6'
 
-COLUMN_TYPE = ('TIMESTAMP', 'DATE', 'FLOAT', 'INTEGER', 'BIGINT', 'M2O', 'O2M',
-               'VARCHAR', 'BOOL')
+COLUMN_TYPE = (
+    'BIGINT',
+    'BOOL',
+    'DATE',
+    'FLOAT',
+    'INTEGER',
+    'M2O',
+    'O2M',
+    'TIMESTAMP',
+    'VARCHAR',
+)
 QUOTE_SEPARATION = re.compile(r"(.*?)('.*?')", re.DOTALL)
 NAMED_RE = re.compile(r"%\(([^\)]+)\)s")
 EPOCH = datetime(1970, 1, 1)
 LRU_SIZE = 10000
+LRU_PAGE_SIZE = 100
 
 all_none = lambda xs: all(x is None for x in xs)
+skip_none = (lambda fn: (
+    lambda x: None
+    if x is None or (pandas and pandas.isnull(x))
+    else fn(x)))
 fmt = '%(levelname)s:%(asctime).19s: %(message)s'
 logging.basicConfig(format=fmt)
 logger = logging.getLogger('tanker')
@@ -83,12 +98,15 @@ def interleave(value, items):
         else:
             yield head
 
-def paginate(it, size):
+
+def paginate(iterators, size=LRU_PAGE_SIZE):
+    rows = zip(*iterators)
     while True:
-        page = list(islice(it, size))
+        page = list(islice(rows, size))
         if not page:
             raise StopIteration
         yield page
+
 
 class TankerThread(Thread):
 
@@ -121,6 +139,7 @@ class Pool:
             self.conn_kwargs = {
                 'check_same_thread': False,
                 'detect_types': sqlite3.PARSE_DECLTYPES,
+                'isolation_level': 'DEFERRED',
             }
 
         elif self.flavor == 'postgresql':
@@ -143,8 +162,7 @@ class Pool:
             raise ValueError('Unsupported scheme "%s" in uri "%s"' % (
                 uri.scheme, uri))
 
-    @contextmanager
-    def get_context(self):
+    def __enter__(self):
         if self.flavor == 'sqlite':
             connection = sqlite3.connect(*self.conn_args, **self.conn_kwargs)
             connection.text_factory = str
@@ -165,16 +183,16 @@ class Pool:
             for table_def in schema:
                 new_ctx.register(table_def)
 
-        try:
-            yield new_ctx
-            connection.commit()
-        except:
+        return new_ctx
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        connection = CTX_STACK.pop()
+        if exc_value:
             connection.rollback()
-            raise
-        finally:
-            CTX_STACK.pop()
-            if self.flavor == 'postgresql':
-                self.pg_pool.putconn(connection)
+        else:
+            connection.commit()
+        if self.flavor == 'postgresql':
+            self.pg_pool.putconn(connection)
 
     @classmethod
     def disconnect(cls):
@@ -212,7 +230,8 @@ class ContextStack:
         return new_ctx
 
     def pop(self):
-        self._local.contexts.pop()
+        popped_ctx = self._local.contexts.pop()
+        return popped_ctx.connection
 
     def active_context(self):
         return self._local.contexts[-1]
@@ -301,8 +320,10 @@ class Context:
         if mapping is None:
             read_fields = list(self._fk_fields(fields))
             view = View(remote_table, read_fields + ['id'])
+            db_values = view.read(disable_acl=True, limit=LRU_SIZE,
+                                  order=('id', 'desc'))
             mapping = dict((val[:-1], val[-1])
-                       for val in view.read(disable_acl=True, limit=LRU_SIZE))
+                           for val in db_values)
 
             # Enable lru if fk mapping reach LRU_SIZE
             if len(mapping) == LRU_SIZE:
@@ -314,9 +335,12 @@ class Context:
             view = View(remote_table, read_fields + ['id'])
             base_filter = '(AND %s)' % ' '.join(
                 '(= %s {})' % f for f in read_fields)
-            for page in paginate(values, 100):
+
+            # Value is a list of column, paginate yield page that is a
+            # small chunk of rows
+            for page in paginate(values):
                 missing = set(
-                    val for val in zip(*page)
+                    val for val in page
                     if not all_none(val) and val not in mapping)
                 if missing:
                     fltr = '(OR %s)' % ' '.join(base_filter for _ in missing)
@@ -327,7 +351,7 @@ class Context:
                     yield val
 
         else:
-            for val in self._emit_fk(values, mapping, remote_table):
+            for val in self._emit_fk(zip(*values), mapping, remote_table):
                 yield val
 
     def _fk_fields(self, fields):
@@ -335,7 +359,7 @@ class Context:
             yield field.desc.split('.', 1)[1]
 
     def _emit_fk(self, values, mapping, remote_table):
-        for val in zip(*values):
+        for val in values:
             if all_none(val):
                 yield None
                 continue
@@ -359,16 +383,12 @@ class Context:
         for table in self.registry.values():
             if table.name in self.db_tables:
                 continue
-            if self.flavor == 'sqlite':
-                id_type = 'INTEGER'
-            elif self.flavor == 'postgresql':
-                id_type = 'SERIAL'
-
+            id_type = 'INTEGER' if self.flavor == 'sqlite' else 'SERIAL'
             col_defs = ['id %s PRIMARY KEY' % id_type]
             for col in table.columns:
                 if col.ctype in ('M2O', 'O2M') or col.name == 'id':
                     continue
-                col_defs.append('%s %s' % (col.name, col.sql_definition()))
+                col_defs.append('"%s" %s' % (col.name, col.sql_definition()))
 
             qr = 'CREATE TABLE "%s" (%s)' % (table.name, ', '.join(col_defs))
             execute(qr)
@@ -393,11 +413,9 @@ class Context:
             if table_name not in self.registry:
                 continue
 
-            # Add M2O columns
+            # Execute alter table queries
             table = self.registry[table_name]
-            for col in table.columns:
-                if col.ctype != 'M2O':
-                    continue
+            for col in table.own_columns:
                 if col.name in current_cols:
                     continue
                 qr = 'ALTER TABLE %(table)s '\
@@ -634,7 +652,7 @@ class View(object):
         if fields is None:
             fields = []
             for col in self.table.own_columns:
-                if col.ctype ==  'M2O':
+                if col.ctype == 'M2O':
                     ft = col.get_foreign_table()
                     fields.extend('.'.join((col.name, i)) for i in ft.index)
                 else:
@@ -720,7 +738,6 @@ class View(object):
 
         exp = Expression(self)
 
-
         # Add select fields
         select_ast = exp.parse('(select %s)' % ' '.join(
             f.desc for f in self.fields))
@@ -800,39 +817,59 @@ class View(object):
                     yield map(int, data[idx[0]])
                 else:
                     # Resole foreign key reference
-                    values = map(
-                        lambda a: tuple(a[0].col.format(a[1], astype=a[0].ctype)),
-                        zip(fields, values)
-                        )
+                    fmt_cols = lambda a: tuple(
+                        a[0].col.format(a[1], astype=a[0].ctype))
+                    values = map(fmt_cols, zip(fields, values))
                     yield ctx.resolve_fk(fields, values)
             else:
                 yield col.format(data[idx[0]])
 
-    def delete(self, filters=None, data=None, args=None):
+    def delete(self, filters=None, data=None, args=None, table_alias=None,
+               swap=False):
+        '''
+        Delete rows from table that:
+        - match `filters` if set (or that doesn't match `filters` if
+          swap is set
+        - match `data` (based on index columns)
+        Only one of `filters` or `data` can be passed.
+
+        table_alias allows to pass an alternate table name (that will
+        act as self.table).
+        `args` is a dict of values that allows to escape `filters`.
+        '''
+
+        if table_alias and not filters:
+            raise ValueError('table_alias parameter is only supported with '
+                             'non-empty filters parameters')
         if not any((data, filters)):
-            raise ValueError('No deletion criteria given')
+            qr = 'DELETE FROM %s' % self.table.name
+            return execute(qr)
 
         if data and filters:
             raise ValueError('Deletion by both data and filter not supported')
 
-        exp = Expression(self)
+        exp = Expression(self, table_alias=table_alias)
         filter_chunks = list(self._build_filter_cond(exp, filters))
 
         if data:
             with self._prepare_write(data) as join_cond:
-                qr = 'DELETE FROM %(main)s WHERE id IN (' \
+                qr = 'DELETE FROM %(main)s WHERE id %(op)s (' \
                      'SELECT %(main)s.id FROM %(main)s ' \
                      'INNER JOIN tmp on %(join_cond)s)'
                 qr = qr % {
                     'main': self.table.name,
+                    'op': 'NOT IN' if swap else 'IN',
                     'join_cond': ' AND '.join(join_cond),
                 }
                 execute(qr)
 
         else:
-            qr = ('DELETE FROM %(main_table)s WHERE id IN ('
-                  'SELECT %(main_table)s.id FROM %(main_table)s ')
-            qr = qr % {'main_table': self.table.name}
+            qr = ('DELETE FROM %(main_table)s WHERE id %(op)s ('
+                  'SELECT %(main_table)s.id FROM %(main_table)s')
+            qr = qr % {
+                'main_table': table_alias or self.table.name,
+                'op': 'NOT IN' if swap else 'IN',
+            }
             chunks = [qr, exp.ref_set]
             if filter_chunks:
                 chunks += ['WHERE'] + filter_chunks
@@ -841,15 +878,22 @@ class View(object):
             return cur.rowcount
 
     @contextmanager
-    def _prepare_write(self, data):
-        # Create tmp
+    def _prepare_write(self, data, filters=None, disable_acl=False):
+        # An id column is needed to enable filters (and for sqlite
+        # REPLACE)
+        extra_id = 'id' not in self.field_dict
         not_null = lambda n: 'NOT NULL' if n in self.index_fields else ''
+        # Create tmp
         qr = 'CREATE TEMPORARY TABLE tmp (%s)'
-        qr = qr % ', '.join('"%s" %s %s' % (
+        col_defs = ', '.join('"%s" %s %s' % (
             col.name,
             fields[0].ftype,
             not_null(col.name))
             for col, fields in self.field_map.items())
+        if extra_id:
+            id_type = 'INTEGER' if ctx.flavor == 'sqlite' else 'SERIAL'
+            col_defs += ', id %s PRIMARY KEY' % id_type
+        qr = qr % col_defs
         execute(qr)
 
         # Fill tmp
@@ -867,11 +911,13 @@ class View(object):
                 if c.ctype != 'VARCHAR':
                     continue
                 data[pos] = [clean(v) for v in data[pos]]
+
             # Append to writer by row
             for row in zip(*data):
                 writer.writerow(row)
             buff.seek(0)
-            copy_from(buff, 'tmp', null='')
+            copy_from(buff, 'tmp', null='',
+                      columns=[c.name for c in self.field_map])
 
         else:
             qr = 'INSERT INTO tmp (%(fields)s) VALUES (%(values)s)'
@@ -879,7 +925,8 @@ class View(object):
                 'fields': ', '.join('"%s"' % c.name for c in self.field_map),
                 'values': ', '.join('%s' for _ in self.field_map),
             }
-            executemany(qr, data)
+            executemany(qr, zip(*data))
+
 
         # Create join conditions
         join_cond = []
@@ -887,21 +934,39 @@ class View(object):
             join_cond.append('tmp."%s" = "%s"."%s"' % (
                 name, self.table.name, name))
 
+        # Apply filters if any
+        if not disable_acl:
+            filters = filters or []
+            acl = self.ctx.cfg.get('acl_rules', {})
+            filters += acl.get(self.table.name, [])
+
+        if filters:
+            # Filter is based on existing line in self.table, so it
+            # only affect updates (and not inserts)
+            # (We introduced acl in filters, so we disable them)
+            self._purge(join_cond, filters, disable_acl=True, action='update')
+
         yield join_cond
+
+        if filters:
+            # Delete inserted lines that do not match the filters
+            # (We introduced acl in filters, so we disable them)
+            self._purge(join_cond, filters, disable_acl=True, action='insert')
 
         # Clean tmp table
         execute('DROP TABLE tmp')
 
-    def write(self, data, purge=False, insert=True, update=True):
+    def write(self, data, purge=False, insert=True, update=True, filters=None,
+              disable_acl=False):
         '''
         Write given data to view table. If insert is true, new lines will
         be inserted.  if update is true, existing line will be
         updated. If purge is true existing line that are not present
-        in data will be deleted.
+        in data (and that match filters) will be deleted.
         '''
 
         # Handle list of dict and dataframes
-        if isinstance(data, list) and isinstance(data[0], dict):
+        if isinstance(data, list) and data and isinstance(data[0], dict):
             data = [[record.get(f.name) for record in data]
                     for f in self.fields]
         elif pandas and isinstance(data, pandas.DataFrame):
@@ -917,94 +982,68 @@ class View(object):
         # Format values
         data = list(self.format(data))
 
-        # Launch upsert
-        if self.ctx.flavor == 'sqlite':
-            # Convert back to lines:
-            data = list(zip(*data))
-            rowcounts = self._sqlite_upsert(data, purge=purge, insert=insert,
-                                            update=update)
-        else:
-            with self._prepare_write(data) as join_cond:
-                rowcounts = {}
-                if ctx.legacy_pg:
-                    if insert:
-                        cnt = self._insert(join_cond)
-                        rowcounts['insert'] = cnt
-                    if update:
-                        cnt = self._update(join_cond)
-                        rowcounts['update'] = cnt
-                else:
-                    # ON-CONFLICT is available since postgres 9.5
-                    cnt = self._pg_upsert(join_cond, insert=insert, update=update)
-                    rowcounts['upsert'] = cnt
+        if isinstance(filters, basestring):
+            filters = [filters]
 
-                if purge:
-                    cnt = self._purge(join_cond)
-                    rowcounts['delete'] = cnt
+        # Launch upsert
+        with self._prepare_write(data, filters=filters,
+                                 disable_acl=disable_acl) as join_cond:
+            rowcounts = {}
+            if self.ctx.flavor == 'sqlite':
+                self._sqlite_upsert(join_cond, insert, update)
+            elif ctx.legacy_pg:
+                if insert:
+                    cnt = self._insert(join_cond)
+                    rowcounts['insert'] = cnt
+                if update:
+                    cnt = self._update(join_cond)
+                    rowcounts['update'] = cnt
+            else:
+                # ON-CONFLICT is available since postgres 9.5
+                cnt = self._pg_upsert(join_cond, insert=insert,
+                                      update=update)
+                rowcounts['upsert'] = cnt
+
+            if purge:
+                cnt = self._purge(join_cond, filters, disable_acl,
+                                  action='purge')
+                rowcounts['delete'] = cnt
 
         # Clean cache for current table
         self.ctx.reset_cache(self.table.name)
         return rowcounts
 
-    def _sqlite_upsert(self, data, purge, insert, update):
-        # Identify position and name of index fields
-        key_pos = []
-        key_cols = []
-        upd_pos = []
-        upd_fields = []
+    def _sqlite_upsert(self, join_cond, insert, update):
+        # As sqlite cannot update only some columns whe have to also
+        # update fields not in the query
+        qr_cols = [f.name for f in self.field_map]
+        other_cols = [col.name for col in self.table.own_columns \
+                      if col.name not in qr_cols]
+        qr = 'INSERT OR REPLACE INTO %(main)s (%(fields)s) %(select)s'
+        select = 'SELECT %(tmp_fields)s FROM tmp '\
+                 '%(join_type)s JOIN %(main_table)s ON ( %(join_cond)s)'
+        tmp_fields = ', '.join('tmp."%s"' % c for c in qr_cols)
+        if other_cols:
+            tmp_fields += ', '
+            tmp_fields += ', '.join('%s.%s' % (self.table.name, f)\
+                                    for f in other_cols)
+        if 'id' not in self.field_dict:
+            other_cols.append('id')
+            tmp_fields += ', %s.id' % self.table.name
 
-        for pos, col in enumerate(self.field_map):
-            if col.name in self.index_cols:
-                key_pos.append(pos)
-                key_cols.append(col.name)
-            else:
-                upd_pos.append(pos)
-                upd_fields.append(col.name)
-
-        # Read existing data from table
-        view = View(self.table.name, key_cols)
-        db_keys = set(view.read())
-        key_vals = lambda row: tuple(row[i] for i in key_pos)
-        upd_vals = lambda row: tuple(row[i] for i in upd_pos)
-
-        # Build sql statements
-        insert_qr = 'INSERT INTO %(table)s (%(fields)s) VALUES (%(values)s)'
-        insert_qr = insert_qr % {
-            'table': self.table.name,
-            'fields': ', '.join('"%s"' % c.name for c in self.field_map),
-            'values': ', '.join('%s' for _ in self.field_map),
+        select = select % {
+            'tmp_fields': tmp_fields,
+            'main_table': self.table.name,
+            'join_cond': ' AND '.join(join_cond),
+            'join_type': 'LEFT' if insert else 'INNER',
         }
-        update_qr = 'UPDATE %(table)s SET %(upd_stm)s WHERE %(cond)s'
-        update_qr = update_qr % {
-            'table': self.table.name,
-            'upd_stm': ', '.join('%s = %%s' % c for c in upd_fields),
-            'cond': ' AND '.join('%s = %%s' % c for c in key_cols),
+        qr = qr % {
+            'main': self.table.name,
+            'fields': ', '.join('"%s"' % c for c in qr_cols + other_cols),
+            'select': select,
         }
-        delete_qr = 'DELETE FROM %(table)s WHERE %(cond)s'
-        delete_qr = delete_qr % {
-            'table': self.table.name,
-            'cond': ' AND '.join('%s = %%s' % c for c in key_cols),
-        }
-
-        # Run queries
-        cnt = {'insert': 0, 'update': 0, 'deleted': 0}
-        data_keys = [key_vals(line) for line in data]
-        for key, line in zip(data_keys, data):
-            if insert and key not in db_keys:
-                cur = execute(insert_qr, line)
-                cnt['insert'] +=  cur.rowcount
-            if update and key in db_keys:
-                vals = upd_vals(line)
-                if vals:
-                    cur = execute(update_qr, vals + key)
-                    cnt['update'] +=  cur.rowcount
-        if purge:
-            to_delete = db_keys - set(data_keys)
-            if to_delete:
-                cnt['deleted'] = len(to_delete)
-                executemany(delete_qr, to_delete)
-
-        return cnt
+        cur = TankerCursor(self, [qr]).execute()
+        return cur.rowcount
 
     def _pg_upsert(self, join_cond, insert, update):
         tmp_fields = ', '.join('tmp."%s"' % f.name for f in self.field_map)
@@ -1081,16 +1120,69 @@ class View(object):
 
         return cur and cur.rowcount or 0
 
-    def _purge(self, join_cond):
-        qr = 'DELETE FROM %(main)s WHERE id IN (' \
-             'SELECT %(main)s.id FROM %(main)s ' \
-             'LEFT JOIN tmp on %(join_cond)s ' \
-             'WHERE tmp.%(field)s IS NULL)'
-        qr = qr % {
-            'main': self.table.name,
+    def _purge(self, join_cond, filters, disable_acl=False, action='purge'):
+        '''
+        Delete rows from main table that are not in tmp table and evaluate
+        filters to true. Do the opposite if swap_table is True (keep in tmp
+        lines that are also in main and that evaluate filter to false.
+        '''
+        assert action in ('purge', 'update', 'insert')
+        insert = action == 'insert'
+        update = action == 'update'
+        main = self.table.name
+        tmp = 'tmp'
+        if update:
+            assert bool(filters), 'filters is nedded to purge on tmp'
+            main, tmp = tmp, main
+
+        # Prepare basic query
+        head_qr = (
+            'DELETE FROM %(main)s '
+            'WHERE id %(filter_operator)s ('
+            ' SELECT %(main)s.id FROM %(main)s ')
+        join_qr = '{} JOIN %(tmp)s on (%(join_cond)s) '.format(
+            'INNER' if insert else 'LEFT')
+        excl_cond = '' if insert else '%(tmp)s.%(field)s IS NULL'
+        tail_qr = ')'
+
+        # Format all parts of the query
+        fmt = {
+            'main': main,
+            'tmp': tmp,
+            'filter_operator': 'NOT IN' if update else 'IN',
             'join_cond': ' AND '.join(join_cond),
             'field': self.index_cols[0]
         }
+        head_qr = head_qr % fmt
+        join_qr = join_qr % fmt
+        excl_cond = excl_cond % fmt
+
+        # Build filters
+        acl_filters = None
+        if not disable_acl:
+            acl = self.ctx.cfg.get('acl_rules', {}).get(self.table.name)
+            acl_filters = acl and acl['filters']
+        exp = Expression(self)
+        filter_chunks = list(self._build_filter_cond(exp, filters, acl_filters))
+        join_chunks = [exp.ref_set]
+
+        if filter_chunks:
+            qr = [head_qr] + [join_qr] + join_chunks
+            if insert:
+                qr += ['WHERE NOT ('] \
+                      + list(interleave(' AND ', filter_chunks)) \
+                      + [')']
+            else:
+                qr += ['WHERE'] + list(interleave(' AND ', filter_chunks))
+            if excl_cond:
+                qr += ['OR' if update else 'AND', excl_cond]
+            qr += [tail_qr]
+        else:
+            qr = head_qr + join_qr
+            if excl_cond:
+                qr += ' WHERE ' + excl_cond
+            qr += tail_qr
+
         cur = TankerCursor(self, qr).execute()
         return cur.rowcount
 
@@ -1201,7 +1293,7 @@ class Table:
         # Add implicit id column
         if 'id' not in [c.name for c in self.columns]:
             self.columns.append(Column('id', 'INTEGER'))
-        self.own_columns = [c for c in self.columns \
+        self.own_columns = [c for c in self.columns
                             if c.name != 'id' and c.ctype != 'O2M']
 
         # Set table attribute on columns object
@@ -1217,11 +1309,18 @@ class Table:
             else:
                 raise ValueError('No index defined on %s' % name)
         self.index = [index] if isinstance(index, basestring) else index
+        # Test index columns are members of the table
         self._column_dict = dict((col.name, col) for col in self.columns)
-
         for col in self.index:
             if col not in self._column_dict:
                 raise ValueError('Index column "%s" does not exist' % col)
+        # # Forbid array types in index
+        # for col in self.index:
+        #     if col.array_dim:
+        #         msg = 'Array type is not allowed on index column '\
+        #               '("%s" in table "%s")'
+        #         raise ValueError(msg % (col, self.name))
+
         ctx.registry[name] = self
 
     def get_column(self, name):
@@ -1282,15 +1381,31 @@ class Column:
 
     def __init__(self, name, ctype, default=None):
         if ' ' in ctype:
+            full_ctype = ctype
             ctype, self.fk = ctype.split()
+            if '.' not in self.fk:
+                msg = 'Malformed column definition "%s" for %s'
+                raise ValueError(msg % (full_ctype, name))
             self.foreign_table, self.foreign_col = self.fk.split('.')
         else:
             self.fk = None
             self.foreign_table = self.foreign_col = None
         self.name = name
-        self.ctype = ctype.upper()
         self.default = default
-        if self.ctype not in COLUMN_TYPE:
+
+        # Build ctype, array_dim and base_type
+        self.ctype = ctype.upper()
+        self.base_type = self.ctype
+        self.array_dim = 0
+        while self.base_type.endswith('[]'):
+            self.base_type = self.base_type[:-2]
+            self.array_dim += 1
+        if self.array_dim and ctx.flavor == 'sqlite':
+            self.ctype = 'BLOB'
+        if self.array_dim and self.base_type in ('O2M', 'M2O'):
+            msg = 'Array type is not supported on "%s" (for column "%s")'
+            raise ValueError(msg % (self.base_type, name))
+        if self.base_type not in COLUMN_TYPE:
             raise ValueError('Unexpected type %s for column %s' % (ctype, name))
 
     def sql_definition(self):
@@ -1314,19 +1429,34 @@ class Column:
     def get_foreign_table(self):
         return Table.get(self.foreign_table)
 
-    def format(self, values, astype=None):
-        '''
-        Sanitize value wrt the column type of the current field.
-        '''
-        skip_none = (lambda fn: (
-            lambda x: None
-            if x is None or (pandas and pandas.isnull(x))
-            else fn(x)))
-        astype = astype or self.ctype
-        res = []
+    def format_array(self, array, astype, array_dim):
+        if array is None:
+            return None
+        if array_dim == 1:
+            items = self.format(array, astype=astype, array_dim=0)
+            items = map(lambda x: 'null' if x is None else str(x), items)
+        else:
+            items = (
+                self.format_array(v, astype=astype, array_dim=array_dim-1)
+                for v in array)
+        items = ','.join(items)
+        return '{%s}' % items
 
-        if astype in ('INTEGER', 'BIGINT'):
-            res = map(skip_none(int), values)
+    def format(self, values, astype=None, array_dim=None):
+        '''
+        Sanitize a column of values wrt the column type of the current
+        field.
+        '''
+        astype = astype or self.base_type
+        array_dim = self.array_dim if array_dim is None else array_dim
+
+        if array_dim:
+            for array in values:
+                yield self.format_array(array, astype, array_dim)
+
+        elif astype in ('INTEGER', 'BIGINT'):
+            for v in map(skip_none(int), values):
+                yield v
 
         elif astype == 'VARCHAR':
             for value in values:
@@ -1336,10 +1466,10 @@ class Column:
                     value = str(value)
                 else:
                     if PY2 and isinstance(value, unicode):
-                        value =  value.encode(ctx.encoding)
+                        value = value.encode(ctx.encoding)
                     elif not PY2 and isinstance(value, bytes):
                         value = value.encode(ctx.encoding)
-                res.append(value)
+                yield value
 
         elif astype == 'TIMESTAMP':
             for value in values:
@@ -1361,7 +1491,7 @@ class Column:
                         raise ValueError(
                             'Unexpected value "%s" for type "%s"' % (
                                 value, astype))
-                res.append(value)
+                yield value
 
         elif astype == 'DATE':
             for value in values:
@@ -1381,11 +1511,10 @@ class Column:
                         raise ValueError(
                             'Unexpected value "%s" for type "%s"' % (
                                 value, astype))
-                res.append(value)
+                yield value
         else:
-            res = values
-
-        return res
+            for v in values:
+                yield v
 
     def __repr__(self):
         return '<Column %s %s>' % (self.name, self.ctype)
@@ -1431,7 +1560,7 @@ class ReferenceSet:
     def get_sql_joins(self):
         for key, alias in self.joins.items():
             left_table, right_table, left_col, right_col = key
-            yield 'LEFT JOIN %s AS %s ON (%s.%s = %s.%s)' % (
+            yield 'LEFT JOIN %s AS %s ON ("%s"."%s" = "%s"."%s")' % (
                 right_table, alias, left_table, left_col, alias, right_col
             )
 
@@ -1507,6 +1636,9 @@ class Expression(object):
             ', '.join('%s' for _ in xs[1:]))) % xs,
         'notin': lambda *xs: ('%%s not in (%s)' % (
             ', '.join('%s' for _ in xs[1:]))) % xs,
+        'any': lambda x: 'any(%s)' % x,
+        'all': lambda x: 'all(%s)' % x,
+        'unnest': lambda x: 'unnest(%s)' % x,
         'is': lambda x, y: '%s is %s' % (x, y),
         'isnot': lambda x, y: '%s is not %s' % (x, y),
         'null': 'null',
@@ -1535,7 +1667,7 @@ class Expression(object):
         'sum': lambda *x: 'sum(%s)' % x,
     }
 
-    def __init__(self, view, ref_set=None, parent=None):
+    def __init__(self, view, ref_set=None, parent=None, table_alias=None):
         self.view = view
         # Populate env with view fields
         self.env = self.base_env(view.table)
@@ -1548,7 +1680,8 @@ class Expression(object):
         # Add refset
         if not ref_set:
             parent_rs = parent and parent.ref_set
-            ref_set = ReferenceSet(view.table, parent=parent_rs)
+            ref_set = ReferenceSet(view.table, table_alias=table_alias,
+                                   parent=parent_rs)
         self.ref_set = ref_set
 
     def _sub_select(self, *items):
@@ -1617,7 +1750,6 @@ class Expression(object):
             return ExpressionSymbol(token, self)
 
 
-
 class ExpressionSymbol:
 
     def __init__(self, token, exp):
@@ -1631,7 +1763,7 @@ class ExpressionSymbol:
             return
 
         ref = None
-        if self.token.startswith('_parent.'): # XXX replace with '_.' ?
+        if self.token.startswith('_parent.'):  # XXX replace with '_.' ?
             tail = self.token
             parent = exp
             while tail.startswith('_parent.'):
@@ -1656,7 +1788,7 @@ class ExpressionSymbol:
 
     def eval(self):
         if self.ref:
-            return '%s.%s' % (self.ref.join_alias, self.ref.remote_field)
+            return '"%s"."%s"' % (self.ref.join_alias, self.ref.remote_field)
         return self.builtin
 
     def __repr__(self):
@@ -1767,9 +1899,16 @@ class AST(object):
         return '<AST [%s]>' % ' '.join(map(str, self.atoms))
 
 
-def connect(cfg=None):
+def connect(cfg=None, action=None):
     pool = Pool.get_pool(cfg or {})
-    return pool.get_context()
+    if not action:
+        return pool
+    if action == 'enter':
+        return pool.__enter__()
+    elif action == 'exit':
+        return pool.__exit__(None, None, None)
+    else:
+        ValueError('Unexpected value "%s" for action parameter' % action)
 
 
 def yaml_load(stream):
@@ -1789,7 +1928,7 @@ def yaml_load(stream):
 
 def cli():
     parser = argparse.ArgumentParser(description='Tanker CLI')
-    parser.add_argument('action', help='read or info',
+    parser.add_argument('action', help='info, read, write, init or delete',
                         nargs=1)
     parser.add_argument('table', help='Table to query',
                         nargs='*')
@@ -1799,10 +1938,14 @@ def cli():
                         type=int)
     parser.add_argument('-o', '--offset', help='Offset results',
                         type=int)
-    parser.add_argument('-f', '--filter', action='append', help='Add filter',
+    parser.add_argument('-F', '--filter', action='append', help='Add filter',
                         default=[])
+    parser.add_argument('-p', '--purge', help='Purge table after write',
+                        action='store_true')
     parser.add_argument('-s', '--sort', action='append', help='Sort results',
                         default=[])
+    parser.add_argument('-f', '--file', help='Read/Write to file '
+                        '(instead of stdin/stdout)')
     parser.add_argument('--yaml', help='Enable YAML input / ouput '
                         '(defaults to csv)', action='store_true')
     parser.add_argument('-d', '--debug', help='Enable debugging',
@@ -1813,44 +1956,93 @@ def cli():
         logger.setLevel('DEBUG')
     cfg = yaml_load(open(args.config))
     cfg['schema'] = yaml_load(open(os.path.expanduser(cfg['schema'])))
-    action = args.action[0]
-    table = args.table[0] if args.table else None
-    fields = args.table[1:] or None
-    order = map(lambda x: x.split(':') if ':' in x else x, args.sort)
 
     with connect(cfg):
-        if action == 'read':
-            view = View(table, fields)
-            res = view.read(
-                args.filter,
-                order=order,
-                limit=args.limit,
-                offset=args.offset,
-            )
-            if args.yaml:
-                import yaml
-                print(yaml.dump(
-                    list(res.dict()),
-                    default_flow_style=False)
-                )
-            else:
-                writer = csv.writer(sys.stdout)
-                writer.writerow([f.name for f in view.fields])
-                writer.writerows(res)
-        elif action == 'info':
-            if table:
-                columns = sorted(Table.get(table).columns, key=lambda x: x.name)
-                for col in columns:
-                    if col.ctype in ('M2O', 'O2M'):
-                        details = '%s -> %s' % (col.ctype, col.fk)
-                    else:
-                        details = col.ctype
-                    print('%s (%s)' % (col.name, details) + '\n')
-            else:
-                for name in sorted(ctx.registry):
-                    print(name + '\n')
+        cli_main(args)
+
+
+def cli_input_data(args):
+    fields = args.table[1:] or None
+    fh = None
+    if args.file:
+        fh = open(args.file)
+    elif args.action in ('write', 'delete'):
+        fh = sys.stdin
+    if not fh:
+        return fields, None
+
+    if args.yaml:
+        data = yaml_load(fh)
+    else:
+        reader = csv.reader(fh)
+        data = list(reader)
+
+    # If not field is given we infer them from the data
+    if not fields and data:
+        if args.yaml:
+            fields = data[0].keys()
         else:
-            print('Action "%s" not supported' % action)
+            fields = data[0]
+            data = data[1:]
+
+    return fields, data
+
+
+def cli_main(args):
+    action = args.action[0]
+    table = args.table[0] if args.table else None
+    order = map(lambda x: x.split(':') if ':' in x else x, args.sort)
+    fields, data = cli_input_data(args)
+
+    if action == 'read':
+        view = View(table, fields)
+        res = view.read(
+            args.filter,
+            order=list(order),
+            limit=args.limit,
+            offset=args.offset,
+        )
+        if args.file:
+            fh = open(args.file, 'w')
+        else:
+            fh = sys.stdout
+        if args.yaml:
+            import yaml
+            fh.write(yaml.dump(
+                list(res.dict()),
+                default_flow_style=False)
+            )
+        else:
+            writer = csv.writer(fh)
+            writer.writerow([f.name for f in view.fields])
+            writer.writerows(res)
+
+    elif action == 'delete':
+        View(table, fields).delete(filters=args.filter, data=data)
+
+    elif action == 'write':
+        # Extract data
+        fields, data = cli_input_data(args)
+        View(table, fields).write(data, purge=args.purge)
+
+    elif action == 'info':
+        if table:
+            columns = sorted(Table.get(table).columns, key=lambda x: x.name)
+            for col in columns:
+                if col.ctype in ('M2O', 'O2M'):
+                    details = '%s -> %s' % (col.ctype, col.fk)
+                else:
+                    details = col.ctype
+                print('%s (%s)' % (col.name, details))
+        else:
+            for name in sorted(ctx.registry):
+                print(name)
+
+    elif action == 'init':
+        create_tables()
+
+    else:
+        print('Action "%s" not supported' % action)
 
 
 if __name__ == '__main__':

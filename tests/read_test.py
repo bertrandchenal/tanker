@@ -253,3 +253,22 @@ def test_like_ilike(session):
     fltr = '(ilike name {prefix})'
     res = view.read(fltr, args={'prefix': 'H%'}).all()
     assert res == [('Holland',)]
+
+
+def test_array(session):
+    if ctx.flavor == 'sqlite':
+        return
+    data = [(1, [1, 2])]
+    view = View('kitchensink', ['index', 'int_array'])
+    view.write(data)
+
+    flrt = '(= 1 (any int_array))'
+    res = view.read(flrt).all()
+    assert len(res) == 1
+
+    flrt = '(!= 3 (all int_array))'
+    res = view.read(flrt).all()
+    assert len(res) == 1
+
+    res = View('kitchensink', ['index', '(unnest int_array)']).read().all()
+    assert len(res) == 2

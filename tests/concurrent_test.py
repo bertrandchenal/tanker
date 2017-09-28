@@ -16,7 +16,7 @@ def session(request):
     cfg = get_config(request.param)
     with connect(cfg):
         create_tables()
-        yield
+        yield request.param
 
 def read(in_q, out_q):
     t_id = current_thread().ident
