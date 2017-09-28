@@ -214,3 +214,29 @@ def test_insert_filters(session):
     ]
     res = member_view.read()
     check(expected, res)
+
+def test_filter_args(session):
+    # init members
+    full_view = View('member', [
+        'name',
+        'team.country.name',
+        'team.name',
+        'registration_code'])
+    full_view.write(members)
+
+    # Let's insert some names (the index is registration_code)
+    fltr = '(= registration_code {})'
+    member_view = View('member', ['registration_code', 'name'])
+    data = [
+        ('004', 'Carol'),
+        ('005', 'Dan'),
+    ]
+    member_view.write(data, filters=fltr, args=['004'])
+    expected = [
+        ('001', 'Bob', ),
+        ('002', 'Alice'),
+        ('003', 'Trudy'),
+        ('004', 'Carol'),
+    ]
+    res = member_view.read()
+    check(expected, res)

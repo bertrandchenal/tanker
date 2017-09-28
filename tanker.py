@@ -878,7 +878,7 @@ class View(object):
             return cur.rowcount
 
     @contextmanager
-    def _prepare_write(self, data, filters=None, disable_acl=False):
+    def _prepare_write(self, data, filters=None, disable_acl=False, args=None):
         # An id column is needed to enable filters (and for sqlite
         # REPLACE)
         extra_id = 'id' not in self.field_dict
@@ -927,7 +927,6 @@ class View(object):
             }
             executemany(qr, zip(*data))
 
-
         # Create join conditions
         join_cond = []
         for name in self.index_cols:
@@ -944,20 +943,22 @@ class View(object):
             # Filter is based on existing line in self.table, so it
             # only affect updates (and not inserts)
             # (We introduced acl in filters, so we disable them)
-            self._purge(join_cond, filters, disable_acl=True, action='update')
+            self._purge(join_cond, filters, disable_acl=True, action='update',
+                        args=args)
 
         yield join_cond
 
         if filters:
             # Delete inserted lines that do not match the filters
             # (We introduced acl in filters, so we disable them)
-            self._purge(join_cond, filters, disable_acl=True, action='insert')
+            self._purge(join_cond, filters, disable_acl=True, action='insert',
+                        args=args)
 
         # Clean tmp table
         execute('DROP TABLE tmp')
 
     def write(self, data, purge=False, insert=True, update=True, filters=None,
-              disable_acl=False):
+              disable_acl=False, args=None):
         '''
         Write given data to view table. If insert is true, new lines will
         be inserted.  if update is true, existing line will be
@@ -986,8 +987,9 @@ class View(object):
             filters = [filters]
 
         # Launch upsert
-        with self._prepare_write(data, filters=filters,
-                                 disable_acl=disable_acl) as join_cond:
+        with self._prepare_write(
+                data, filters=filters, disable_acl=disable_acl, args=args
+        ) as join_cond:
             rowcounts = {}
             if self.ctx.flavor == 'sqlite':
                 self._sqlite_upsert(join_cond, insert, update)
@@ -1006,7 +1008,7 @@ class View(object):
 
             if purge:
                 cnt = self._purge(join_cond, filters, disable_acl,
-                                  action='purge')
+                                  action='purge', args=args)
                 rowcounts['delete'] = cnt
 
         # Clean cache for current table
@@ -1120,7 +1122,8 @@ class View(object):
 
         return cur and cur.rowcount or 0
 
-    def _purge(self, join_cond, filters, disable_acl=False, action='purge'):
+    def _purge(self, join_cond, filters, disable_acl=False, action='purge',
+               args=None):
         '''
         Delete rows from main table that are not in tmp table and evaluate
         filters to true. Do the opposite if swap_table is True (keep in tmp
@@ -1183,7 +1186,7 @@ class View(object):
                 qr += ' WHERE ' + excl_cond
             qr += tail_qr
 
-        cur = TankerCursor(self, qr).execute()
+        cur = TankerCursor(self, qr, args=args).execute()
         return cur.rowcount
 
 
@@ -1243,7 +1246,7 @@ class TankerCursor:
             kwargs.update(self._kwargs or {})
             cfg = ctx.cfg
             kwargs.update(cfg)
-            return x.eval(self._args, kwargs), x.params
+            return x.eval(self._args and self._args[:], kwargs), x.params
         if isinstance(x, tuple):
             return x
         if isinstance(x, basestring):
