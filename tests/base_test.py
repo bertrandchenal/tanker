@@ -11,8 +11,8 @@ DB_TYPES = [
     'sqlite',
     'pg',
 ]
-
-logger.setLevel('DEBUG')
+logger.setLevel('DEBUG' if pytest.config.getoption('verbose')
+                else 'WARNING')
 
 # Tables definitions can be written in yaml
 yaml_def = '''
