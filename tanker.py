@@ -1141,9 +1141,8 @@ class View(object):
             'WHERE id %(filter_operator)s ('
             ' SELECT %(main)s.id FROM %(main)s ')
         join_qr = '{} JOIN %(tmp)s on (%(join_cond)s) '.format(
-            'INNER' if insert else 'left')
-        excl_cond = '%(tmp)s.%(field)s {} NULL'.format(
-            'IS NOT' if insert else 'IS')
+            'INNER' if insert else 'LEFT')
+        excl_cond = '' if insert else '%(tmp)s.%(field)s IS NULL'
         tail_qr = ')'
 
         # Format all parts of the query
@@ -1176,7 +1175,7 @@ class View(object):
             else:
                 qr += ['WHERE'] + list(interleave(' AND ', filter_chunks))
             if excl_cond:
-                qr += ['OR' if update else 'AND' , excl_cond]
+                qr += ['OR' if update else 'AND', excl_cond]
             qr += [tail_qr]
         else:
             qr = head_qr + join_qr
