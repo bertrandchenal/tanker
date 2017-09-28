@@ -944,17 +944,14 @@ class View(object):
             # Filter is based on existing line in self.table, so it
             # only affect updates (and not inserts)
             # (We introduced acl in filters, so we disable them)
-            self._purge(join_cond, filters, disable_acl=True,
-                        delete_match=False, join_type='exclude',
-                        swap_table=True)
+            self._purge(join_cond, filters, disable_acl=True, action='update')
 
         yield join_cond
 
         if filters:
             # Delete inserted lines that do not match the filters
             # (We introduced acl in filters, so we disable them)
-            self._purge(join_cond, filters, disable_acl=True, join_type='inner',
-                        reverse_filter=True)
+            self._purge(join_cond, filters, disable_acl=True, action='insert')
 
         # Clean tmp table
         execute('DROP TABLE tmp')
@@ -1009,7 +1006,7 @@ class View(object):
 
             if purge:
                 cnt = self._purge(join_cond, filters, disable_acl,
-                                  join_type='exclude')
+                                  action='purge')
                 rowcounts['delete'] = cnt
 
         # Clean cache for current table
@@ -1123,17 +1120,18 @@ class View(object):
 
         return cur and cur.rowcount or 0
 
-    def _purge(self, join_cond, filters, disable_acl=False, delete_match=True,
-               join_type='left', swap_table=False, reverse_filter=False):
+    def _purge(self, join_cond, filters, disable_acl=False, action='purge'):
         '''
         Delete rows from main table that are not in tmp table and evaluate
         filters to true. Do the opposite if swap_table is True (keep in tmp
         lines that are also in main and that evaluate filter to false.
         '''
-        assert join_type in ('inner', 'left', 'exclude')
+        assert action in ('purge', 'update', 'insert')
+        insert = action == 'insert'
+        update = action == 'update'
         main = self.table.name
         tmp = 'tmp'
-        if swap_table:
+        if update:
             assert bool(filters), 'filters is nedded to purge on tmp'
             main, tmp = tmp, main
 
@@ -1143,20 +1141,19 @@ class View(object):
             'WHERE id %(filter_operator)s ('
             ' SELECT %(main)s.id FROM %(main)s ')
         join_qr = '{} JOIN %(tmp)s on (%(join_cond)s) '.format(
-            'INNER' if join_type == 'inner' else 'left')
-        excl_cond = '%(tmp)s.%(field)s IS NULL' if join_type == 'exclude' \
-                    else ''
+            'INNER' if insert else 'left')
+        excl_cond = '%(tmp)s.%(field)s {} NULL'.format(
+            'IS NOT' if insert else 'IS')
         tail_qr = ')'
 
+        # Format all parts of the query
         fmt = {
             'main': main,
             'tmp': tmp,
-            'filter_operator': 'IN' if delete_match else 'NOT IN',
+            'filter_operator': 'NOT IN' if update else 'IN',
             'join_cond': ' AND '.join(join_cond),
             'field': self.index_cols[0]
         }
-
-        # Format all parts of the query
         head_qr = head_qr % fmt
         join_qr = join_qr % fmt
         excl_cond = excl_cond % fmt
@@ -1172,14 +1169,14 @@ class View(object):
 
         if filter_chunks:
             qr = [head_qr] + [join_qr] + join_chunks
-            if reverse_filter:
+            if insert:
                 qr += ['WHERE NOT ('] \
                       + list(interleave(' AND ', filter_chunks)) \
                       + [')']
             else:
-                qr += ['WHERE']+ list(interleave(' AND ', filter_chunks))
+                qr += ['WHERE'] + list(interleave(' AND ', filter_chunks))
             if excl_cond:
-                qr += ['OR', excl_cond] #FIXME should be 'AND' for purge and update
+                qr += ['OR' if update else 'AND' , excl_cond]
             qr += [tail_qr]
         else:
             qr = head_qr + join_qr
