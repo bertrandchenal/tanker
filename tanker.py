@@ -1758,10 +1758,6 @@ class ExpressionSymbol:
         self.ref = None
         self.builtin = None
 
-        if self.token.lower() in exp.builtins:
-            self.builtin = exp.builtins[self.token.lower()]
-            return
-
         ref = None
         if self.token.startswith('_parent.'):  # XXX replace with '_.' ?
             tail = self.token
@@ -1776,6 +1772,9 @@ class ExpressionSymbol:
         elif self.token in exp.env:
             val = exp.env[self.token]
             ref = exp.ref_set.add(val.desc)
+        elif self.token.lower() in exp.builtins:
+            self.builtin = exp.builtins[self.token.lower()]
+            return
         else:
             try:
                 ref = exp.ref_set.add(self.token)

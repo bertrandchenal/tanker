@@ -227,6 +227,13 @@ def test_kitchensink(session):
             continue
         assert res[k] == v
 
+    # Filters
+    for k, v in record.items():
+        if isinstance(v, list):
+            continue
+        res = ks_view.read('(= %s {})' % k, args=[v]).all()
+        assert len(res) == 1
+
     # Write nulls
     for k in record:
         if k == 'index':
@@ -236,7 +243,6 @@ def test_kitchensink(session):
     res = list(ks_view.read().dict())[0]
     for k, v in record.items():
         assert res[k] == v
-
 
 def test_lru():
     lru = LRU(size=10)
