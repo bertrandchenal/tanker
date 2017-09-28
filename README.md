@@ -270,12 +270,11 @@ dictionary to map dataframe columns to database columns.
 
 Some ideas, in no particular order:
 
-  - Enforce acl on write and split `acl_rules` into `acl_read` and
-    `acl_write`.
+  - Split `acl_rules` into `acl_read` and `acl_write`.
+  - Support for version column (probably a write timestamp)
   - Be able to introspect existing db (without yaml schema then)
   - Add support for other 'ON CONFLICT' action (mainly update a given
     field, like validity date)
-  - Support for version column (probably a write timestamp)
   - Support for table constraints
   - Allow to excute complete queries with s-expressions (select,
     update, insert and delete).
