@@ -165,6 +165,29 @@ def test_update_filters(session):
     check(expected, res)
 
 
+def test_sneaky_update_filters(session):
+    full_view = View('member', [
+        'name',
+        'team.country.name',
+        'team.name',
+        'registration_code'])
+    full_view.write(members)
+
+    # Same but we express the filter on the updated column
+    fltr = '(= name "Bob")'
+    member_view = View('member', ['registration_code', 'name'])
+    data = [
+        ('001', 'Trudy'),
+    ]
+    member_view.write(data, filters=fltr)
+    expected = [
+        # 001 is lost!
+        ('002', 'Alice'),
+        ('003', 'Trudy'),
+    ]
+    res = member_view.read()
+    check(expected, res)
+
 
 def test_insert_filters(session):
     # init members
