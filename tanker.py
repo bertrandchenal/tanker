@@ -830,12 +830,12 @@ class View(object):
         Delete rows from table that:
         - match `filters` if set (or that doesn't match `filters` if
           swap is set
-        - match `data` (based on index columns)
+        - match `data` based on index columns (or doesn't match if swap is set)
         Only one of `filters` or `data` can be passed.
 
         table_alias allows to pass an alternate table name (that will
         act as self.table).
-        `args` is a dict of values that allows to escape `filters`.
+        `args` is a dict of values that allows to parameterize `filters`.
         '''
 
         if table_alias and not filters:

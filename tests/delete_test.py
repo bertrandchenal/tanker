@@ -22,6 +22,15 @@ def test_delete_data_extra_col(session):
     res = full_view.read().all()
     assert res == []
 
+def test_delete_data_id(session):
+    view = View('country', ['id'])
+
+    data = view.read('(!= name "Belgium")').all()
+    view.delete(data=[[i] for i, in data ])
+
+    res = view.read().all()
+    assert len(res) == 1
+
 def test_delete_filter(session):
     view = View('country', ['name'])
     view.delete('(in name {names})',
