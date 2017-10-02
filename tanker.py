@@ -852,6 +852,9 @@ class View(object):
         filter_chunks = list(self._build_filter_cond(exp, filters))
 
         if data:
+            # Transform rows into columns
+            data = list(zip(*data))
+            data = list(self.format(data))
             with self._prepare_write(data) as join_cond:
                 qr = 'DELETE FROM %(main)s WHERE id %(op)s (' \
                      'SELECT %(main)s.id FROM %(main)s ' \
@@ -861,7 +864,7 @@ class View(object):
                     'op': 'NOT IN' if swap else 'IN',
                     'join_cond': ' AND '.join(join_cond),
                 }
-                execute(qr)
+                cur = execute(qr)
 
         else:
             qr = ('DELETE FROM %(main_table)s WHERE id %(op)s ('
@@ -875,7 +878,7 @@ class View(object):
                 chunks += ['WHERE'] + filter_chunks
             chunks.append(')')
             cur = TankerCursor(self, chunks, args=args).execute()
-            return cur.rowcount
+        return cur.rowcount
 
     @contextmanager
     def _prepare_write(self, data, filters=None, disable_acl=False, args=None):
