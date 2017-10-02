@@ -1,5 +1,5 @@
 from tanker import View
-from .base_test import session
+from .base_test import session, members
 
 def test_delete_data(session):
     view = View('country', ['name'])
@@ -7,6 +7,20 @@ def test_delete_data(session):
 
     res = view.read().all()
     assert res == [('Belgium',), ('Holland',)]
+
+def test_delete_data_extra_col(session):
+    full_view = View('member', [
+        'name',
+        'team.country.name',
+        'team.name',
+        'registration_code'])
+    full_view.write(members)
+    assert len(full_view.read().all()) == len(members)
+
+    full_view.delete(data=members)
+
+    res = full_view.read().all()
+    assert res == []
 
 def test_delete_filter(session):
     view = View('country', ['name'])

@@ -54,6 +54,7 @@ yaml_def = '''
   index:
     - country
     - member
+
 - table: kitchensink
   columns:
     index: integer
