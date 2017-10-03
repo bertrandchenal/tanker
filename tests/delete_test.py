@@ -31,13 +31,22 @@ def test_delete_data_id(session):
     res = view.read().all()
     assert len(res) == 1
 
+
 def test_delete_filter(session):
+    # Use a list of filters
+    view = View('country', ['name'])
+    view.delete(['(> id 0 )' , '(< id 0)'])
+    res = view.read(order='name').all()
+    assert res == [('Belgium',), ('France',), ('Holland',)]
+
+    # Filter with args
     view = View('country', ['name'])
     view.delete('(in name {names})',
                 args={'names': ['France', 'Holland']})
 
     res = view.read().all()
     assert res == [('Belgium',)]
+
 
 def test_delete_filter_dict(session):
     view = View('country', ['name'])

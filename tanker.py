@@ -875,7 +875,7 @@ class View(object):
             }
             chunks = [qr, exp.ref_set]
             if filter_chunks:
-                chunks += ['WHERE'] + filter_chunks
+                chunks += ['WHERE'] + list(interleave(' AND ', filter_chunks))
             chunks.append(')')
             cur = TankerCursor(self, chunks, args=args).execute()
         return cur.rowcount
