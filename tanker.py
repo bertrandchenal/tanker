@@ -426,6 +426,24 @@ class Context:
                     'def': col.sql_definition(),
                 }
                 execute(qr % params)
+                if not(self.flavor == 'sqlite' and col.ctype == 'M2O'):
+                    continue
+                # the on delete cascade is not enabled for sqlite
+                # because the 'INSERT OR REPLACE' operation execute a
+                # delete and thus execute the delete cascade. But it
+                # does not execute triggers (see
+                # https://stackoverflow.com/a/32554601)
+                execute(
+                    'CREATE TRIGGER on_delete_trigger_%(table)s_%(col)s '
+                    'AFTER DELETE ON %(remote)s '
+                    'BEGIN '
+                    'DELETE FROM %(table)s '
+                    'WHERE %(table)s.%(col)s=OLD.id;'
+                    'END' % {
+                        'remote': col.foreign_table,
+                        'table': table.name,
+                        'col': col.name,
+                    })
 
         # Create indexes
         if self.flavor == 'sqlite':
@@ -1429,11 +1447,13 @@ class Column:
         # M2O
         if ctx.flavor == 'sqlite':
             table = '"%s"' % self.foreign_table
+            cascade = ''
         elif ctx.flavor == 'postgresql':
             pg_schema = ctx.cfg.get('pg_schema', 'public')
             table = '"%s"."%s"' % (pg_schema, self.foreign_table)
-        return 'INTEGER REFERENCES %s ("%s") ON DELETE CASCADE' % (
-            table, self.foreign_col)
+            cascade = 'ON DELETE CASCADE'
+        return 'INTEGER REFERENCES %s ("%s") %s' % (
+            table, self.foreign_col, cascade)
 
     def get_foreign_table(self):
         return Table.get(self.foreign_table)
