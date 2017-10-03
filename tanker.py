@@ -1226,7 +1226,7 @@ class TankerCursor:
             self._kwargs = args
             self._args = None
         else:
-            self._args = args
+            self._args = args and args[:]
             self._kwargs = None
 
     def args(self, *args, **kwargs):
