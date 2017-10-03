@@ -704,6 +704,7 @@ class View(object):
         return self.field_dict.get(name)
 
     def _build_filter_cond(self, exp, *filters):
+        res = []
         for fltr in filters:
             if not fltr:
                 continue
@@ -714,7 +715,7 @@ class View(object):
                 for key, val in fltr.items():
                     ast = exp.parse('(= %s {}) ' % key)
                     ast.args = [val]
-                    yield ast
+                    res.append(ast)
                 continue
 
             # Filters can be a query string or a list of query string
@@ -723,7 +724,9 @@ class View(object):
             # Parse expression filters
             for line in fltr:
                 ast = exp.parse(line)
-                yield ast
+                res.append(ast)
+
+        return list(interleave(' AND ', res))
 
     def read(self, filters=None, args=None, order=None, groupby=None,
              limit=None, offset=None, disable_acl=False):
@@ -754,9 +757,9 @@ class View(object):
                 aggregates.append(pos)
 
         # Add filters
-        filter_chunks = list(self._build_filter_cond(exp, filters, acl_filters))
+        filter_chunks = self._build_filter_cond(exp, filters, acl_filters)
         if filter_chunks:
-            filter_chunks = ['WHERE'] + list(interleave(' AND ', filter_chunks))
+            filter_chunks = ['WHERE'] + filter_chunks
 
         # Add group by
         groupby_chunks = []
@@ -849,7 +852,7 @@ class View(object):
             raise ValueError('Deletion by both data and filter not supported')
 
         exp = Expression(self, table_alias=table_alias)
-        filter_chunks = list(self._build_filter_cond(exp, filters))
+        filter_chunks = self._build_filter_cond(exp, filters)
 
         if data:
             # Transform rows into columns
@@ -875,7 +878,7 @@ class View(object):
             }
             chunks = [qr, exp.ref_set]
             if filter_chunks:
-                chunks += ['WHERE'] + list(interleave(' AND ', filter_chunks))
+                chunks += ['WHERE'] + filter_chunks
             chunks.append(')')
             cur = TankerCursor(self, chunks, args=args).execute()
         return cur.rowcount
@@ -1169,17 +1172,17 @@ class View(object):
             acl = self.ctx.cfg.get('acl_rules', {}).get(self.table.name)
             acl_filters = acl and acl['filters']
         exp = Expression(self)
-        filter_chunks = list(self._build_filter_cond(exp, filters, acl_filters))
+        filter_chunks = self._build_filter_cond(exp, filters, acl_filters)
         join_chunks = [exp.ref_set]
 
         if filter_chunks:
             qr = [head_qr] + [join_qr] + join_chunks
             if insert:
                 qr += ['WHERE NOT ('] \
-                      + list(interleave(' AND ', filter_chunks)) \
+                      + filter_chunks \
                       + [')']
             else:
-                qr += ['WHERE'] + list(interleave(' AND ', filter_chunks))
+                qr += ['WHERE'] + filter_chunks
             if excl_cond:
                 qr += ['OR' if update else 'AND', excl_cond]
             qr += [tail_qr]
