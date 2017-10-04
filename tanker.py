@@ -44,7 +44,7 @@ else:
 if not PY2:
     basestring = (str, bytes)
 
-__version__ = '0.6'
+__version__ = '0.6.1'
 
 COLUMN_TYPE = (
     'BIGINT',
@@ -428,6 +428,24 @@ class Context:
                     'def': col.sql_definition(),
                 }
                 execute(qr % params)
+                if not(self.flavor == 'sqlite' and col.ctype == 'M2O'):
+                    continue
+                # the on delete cascade is not enabled for sqlite
+                # because the 'INSERT OR REPLACE' operation execute a
+                # delete and thus execute the delete cascade. But it
+                # does not execute triggers (see
+                # https://stackoverflow.com/a/32554601)
+                execute(
+                    'CREATE TRIGGER on_delete_trigger_%(table)s_%(col)s '
+                    'AFTER DELETE ON %(remote)s '
+                    'BEGIN '
+                    'DELETE FROM %(table)s '
+                    'WHERE %(table)s.%(col)s=OLD.id;'
+                    'END' % {
+                        'remote': col.foreign_table,
+                        'table': table.name,
+                        'col': col.name,
+                    })
 
         # Create indexes
         if self.flavor == 'sqlite':
@@ -706,6 +724,7 @@ class View(object):
         return self.field_dict.get(name)
 
     def _build_filter_cond(self, exp, *filters):
+        res = []
         for fltr in filters:
             if not fltr:
                 continue
@@ -716,7 +735,7 @@ class View(object):
                 for key, val in fltr.items():
                     ast = exp.parse('(= %s {}) ' % key)
                     ast.args = [val]
-                    yield ast
+                    res.append(ast)
                 continue
 
             # Filters can be a query string or a list of query string
@@ -725,7 +744,9 @@ class View(object):
             # Parse expression filters
             for line in fltr:
                 ast = exp.parse(line)
-                yield ast
+                res.append(ast)
+
+        return list(interleave(' AND ', res))
 
     def read(self, filters=None, args=None, order=None, groupby=None,
              limit=None, offset=None, disable_acl=False):
@@ -756,9 +777,9 @@ class View(object):
                 aggregates.append(pos)
 
         # Add filters
-        filter_chunks = list(self._build_filter_cond(exp, filters, acl_filters))
+        filter_chunks = self._build_filter_cond(exp, filters, acl_filters)
         if filter_chunks:
-            filter_chunks = ['WHERE'] + list(interleave(' AND ', filter_chunks))
+            filter_chunks = ['WHERE'] + filter_chunks
 
         # Add group by
         groupby_chunks = []
@@ -832,12 +853,12 @@ class View(object):
         Delete rows from table that:
         - match `filters` if set (or that doesn't match `filters` if
           swap is set
-        - match `data` (based on index columns)
+        - match `data` based on index columns (or doesn't match if swap is set)
         Only one of `filters` or `data` can be passed.
 
         table_alias allows to pass an alternate table name (that will
         act as self.table).
-        `args` is a dict of values that allows to escape `filters`.
+        `args` is a dict of values that allows to parameterize `filters`.
         '''
 
         if table_alias and not filters:
@@ -851,9 +872,12 @@ class View(object):
             raise ValueError('Deletion by both data and filter not supported')
 
         exp = Expression(self, table_alias=table_alias)
-        filter_chunks = list(self._build_filter_cond(exp, filters))
+        filter_chunks = self._build_filter_cond(exp, filters)
 
         if data:
+            # Transform rows into columns
+            data = list(zip(*data))
+            data = list(self.format(data))
             with self._prepare_write(data) as join_cond:
                 qr = 'DELETE FROM %(main)s WHERE id %(op)s (' \
                      'SELECT %(main)s.id FROM %(main)s ' \
@@ -863,7 +887,7 @@ class View(object):
                     'op': 'NOT IN' if swap else 'IN',
                     'join_cond': ' AND '.join(join_cond),
                 }
-                execute(qr)
+                cur = execute(qr)
 
         else:
             qr = ('DELETE FROM %(main_table)s WHERE id %(op)s ('
@@ -877,7 +901,7 @@ class View(object):
                 chunks += ['WHERE'] + filter_chunks
             chunks.append(')')
             cur = TankerCursor(self, chunks, args=args).execute()
-            return cur.rowcount
+        return cur.rowcount
 
     @contextmanager
     def _prepare_write(self, data, filters=None, disable_acl=False, args=None):
@@ -1168,17 +1192,17 @@ class View(object):
             acl = self.ctx.cfg.get('acl_rules', {}).get(self.table.name)
             acl_filters = acl and acl['filters']
         exp = Expression(self)
-        filter_chunks = list(self._build_filter_cond(exp, filters, acl_filters))
+        filter_chunks = self._build_filter_cond(exp, filters, acl_filters)
         join_chunks = [exp.ref_set]
 
         if filter_chunks:
             qr = [head_qr] + [join_qr] + join_chunks
             if insert:
                 qr += ['WHERE NOT ('] \
-                      + list(interleave(' AND ', filter_chunks)) \
+                      + filter_chunks \
                       + [')']
             else:
-                qr += ['WHERE'] + list(interleave(' AND ', filter_chunks))
+                qr += ['WHERE'] + filter_chunks
             if excl_cond:
                 qr += ['OR' if update else 'AND', excl_cond]
             qr += [tail_qr]
@@ -1425,11 +1449,13 @@ class Column:
         # M2O
         if ctx.flavor == 'sqlite':
             table = '"%s"' % self.foreign_table
+            cascade = ''
         elif ctx.flavor == 'postgresql':
             pg_schema = ctx.cfg.get('pg_schema', 'public')
             table = '"%s"."%s"' % (pg_schema, self.foreign_table)
-        return 'INTEGER REFERENCES %s ("%s") ON DELETE CASCADE' % (
-            table, self.foreign_col)
+            cascade = 'ON DELETE CASCADE'
+        return 'INTEGER REFERENCES %s ("%s") %s' % (
+            table, self.foreign_col, cascade)
 
     def get_foreign_table(self):
         return Table.get(self.foreign_table)

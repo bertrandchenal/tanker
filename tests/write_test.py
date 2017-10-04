@@ -177,7 +177,7 @@ def test_sneaky_update_filters(session):
     fltr = '(= name "Bob")'
     member_view = View('member', ['registration_code', 'name'])
     data = [
-        ('001', 'Trudy'),
+        ('001', 'Trudy'), # This supposed to update 001 from Bob to Trudy
     ]
     member_view.write(data, filters=fltr)
     expected = [
