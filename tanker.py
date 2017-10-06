@@ -154,6 +154,8 @@ class Pool:
                 con_info += "user='%s' " % uri.username
             if uri.password:
                 con_info += "password='%s' " % uri.password
+            if uri.port:
+                con_info += "port='%s' " % uri.port
 
             pool_size = cfg.get('pg_pool_size', 10)
             self.pg_pool = ThreadedConnectionPool(1, pool_size, con_info)
