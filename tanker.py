@@ -169,6 +169,7 @@ class Pool:
             connection = sqlite3.connect(*self.conn_args, **self.conn_kwargs)
             connection.text_factory = str
             connection.execute('PRAGMA foreign_keys=ON')
+            connection.execute('PRAGMA journal_mode=wal')
         elif self.flavor == 'postgresql':
             connection = self.pg_pool.getconn()
         else:
