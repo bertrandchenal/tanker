@@ -766,7 +766,7 @@ class View(object):
         select_ast = exp.parse('(select %s)' % ' '.join(
             f.desc for f in self.fields))
         select_chunk = [select_ast]
-        select_chunk.append('FROM %s' % self.table.name)
+        select_chunk.append('FROM "%s"' % self.table.name)
 
         # Identify aggregates
         aggregates = []
@@ -880,8 +880,8 @@ class View(object):
             data = list(zip(*data))
             data = list(self.format(data))
             with self._prepare_write(data) as join_cond:
-                qr = 'DELETE FROM %(main)s WHERE id %(op)s (' \
-                     'SELECT %(main)s.id FROM %(main)s ' \
+                qr = 'DELETE FROM "%(main)s" WHERE id %(op)s (' \
+                     'SELECT "%(main)s".id FROM "%(main)s" ' \
                      'INNER JOIN tmp on %(join_cond)s)'
                 qr = qr % {
                     'main': self.table.name,
@@ -891,8 +891,8 @@ class View(object):
                 cur = execute(qr)
 
         else:
-            qr = ('DELETE FROM %(main_table)s WHERE id %(op)s ('
-                  'SELECT %(main_table)s.id FROM %(main_table)s')
+            qr = ('DELETE FROM "%(main_table)s" WHERE id %(op)s ('
+                  'SELECT "%(main_table)s".id FROM "%(main_table)s"')
             qr = qr % {
                 'main_table': table_alias or self.table.name,
                 'op': 'NOT IN' if swap else 'IN',
@@ -1084,9 +1084,9 @@ class View(object):
             upd_fields.append('"%s" = EXCLUDED."%s"' % (f.name, f.name))
 
         qr = (
-            'INSERT INTO %(main)s (%(main_fields)s) '
+            'INSERT INTO "%(main)s" (%(main_fields)s) '
             'SELECT %(tmp_fields)s FROM tmp '
-            '%(join_type)s JOIN %(main_table)s ON ( %(join_cond)s) ')
+            '%(join_type)s JOIN "%(main_table)s" ON ( %(join_cond)s) ')
         if upd_fields and update:
             qr += 'ON CONFLICT (%(idx)s) DO UPDATE SET %(upd_fields)s'
         else:
@@ -1106,9 +1106,9 @@ class View(object):
         return cur.rowcount
 
     def _insert(self, join_cond):
-        qr = 'INSERT INTO %(main)s (%(fields)s) %(select)s'
+        qr = 'INSERT INTO "%(main)s" (%(fields)s) %(select)s'
         select = 'SELECT %(tmp_fields)s FROM tmp '\
-                 'LEFT JOIN %(main_table)s ON ( %(join_cond)s) ' \
+                 'LEFT JOIN "%(main_table)s" ON ( %(join_cond)s) ' \
                  'WHERE %(where_cond)s'
 
         # Consider only new rows
@@ -1167,9 +1167,9 @@ class View(object):
 
         # Prepare basic query
         head_qr = (
-            'DELETE FROM %(main)s '
+            'DELETE FROM "%(main)s" '
             'WHERE id %(filter_operator)s ('
-            ' SELECT %(main)s.id FROM %(main)s ')
+            ' SELECT "%(main)s".id FROM "%(main)s" ')
         join_qr = '{} JOIN %(tmp)s on (%(join_cond)s) '.format(
             'INNER' if insert else 'LEFT')
         excl_cond = '' if insert else '%(tmp)s.%(field)s IS NULL'
