@@ -44,7 +44,7 @@ else:
 if not PY2:
     basestring = (str, bytes)
 
-__version__ = '0.6.1'
+__version__ = '0.6.2'
 
 COLUMN_TYPE = (
     'BIGINT',
@@ -1048,17 +1048,17 @@ class View(object):
         qr_cols = [f.name for f in self.field_map]
         other_cols = [col.name for col in self.table.own_columns \
                       if col.name not in qr_cols]
-        qr = 'INSERT OR REPLACE INTO %(main)s (%(fields)s) %(select)s'
+        qr = 'INSERT OR REPLACE INTO "%(main)s" (%(fields)s) %(select)s'
         select = 'SELECT %(tmp_fields)s FROM tmp '\
-                 '%(join_type)s JOIN %(main_table)s ON ( %(join_cond)s)'
+                 '%(join_type)s JOIN "%(main_table)s" ON ( %(join_cond)s)'
         tmp_fields = ', '.join('tmp."%s"' % c for c in qr_cols)
         if other_cols:
             tmp_fields += ', '
-            tmp_fields += ', '.join('%s.%s' % (self.table.name, f)\
+            tmp_fields += ', '.join('"%s"."%s"' % (self.table.name, f)\
                                     for f in other_cols)
         if 'id' not in self.field_dict:
             other_cols.append('id')
-            tmp_fields += ', %s.id' % self.table.name
+            tmp_fields += ', "%s".id' % self.table.name
 
         select = select % {
             'tmp_fields': tmp_fields,
