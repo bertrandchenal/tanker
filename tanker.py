@@ -756,9 +756,8 @@ class View(object):
             filters = [filters]
 
         acl_filters = None
-        acl = self.ctx.cfg.get('acl_rules', {}).get(self.table.name)
-        if acl and not disable_acl:
-            acl_filters = acl['filters']
+        if not disable_acl:
+            acl_filters = self.ctx.cfg.get('acl_rules', {}).get(self.table.name)
 
         exp = Expression(self)
 
@@ -1190,8 +1189,7 @@ class View(object):
         # Build filters
         acl_filters = None
         if not disable_acl:
-            acl = self.ctx.cfg.get('acl_rules', {}).get(self.table.name)
-            acl_filters = acl and acl['filters']
+            acl_filters = self.ctx.cfg.get('acl_rules', {}).get(self.table.name)
         exp = Expression(self)
         filter_chunks = self._build_filter_cond(exp, filters, acl_filters)
         join_chunks = [exp.ref_set]
