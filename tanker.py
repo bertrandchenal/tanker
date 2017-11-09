@@ -99,10 +99,10 @@ def interleave(value, items):
             yield head
 
 
-def paginate(iterators, size=LRU_PAGE_SIZE):
+def paginate(iterators, size=None):
     rows = zip(*iterators)
     while True:
-        page = list(islice(rows, size))
+        page = list(islice(rows, size or LRU_PAGE_SIZE))
         if not page:
             raise StopIteration
         yield page
@@ -629,8 +629,8 @@ class ViewField:
 
 class LRU:
 
-    def __init__(self, init_data=None, size=LRU_SIZE):
-        self.size = size
+    def __init__(self, init_data=None, size=None):
+        self.size = size or LRU_SIZE
         self.recent = init_data or {}
         self.least_recent = {}
 
@@ -659,7 +659,12 @@ class LRU:
             self.recent = {}
 
     def __contains__(self, key):
-        return key in self.recent or key in self.least_recent
+        if key in self.recent:
+            return True
+        if key in self.least_recent:
+            self.recent[key] = self.least_recent[key]
+            return True
+        return False
 
     def __len__(self):
         return len(self.recent) + len(self.least_recent)

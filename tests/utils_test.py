@@ -1,4 +1,7 @@
-from tanker import paginate, LRU_SIZE, View, connect, ctx
+from random import shuffle, seed
+
+import tanker
+from tanker import paginate, View, connect, ctx
 
 from .base_test import session, get_config
 
@@ -21,7 +24,11 @@ def test_paginate(session):
 
 
 def test_lru(session):
-    values = [('c%s' % i, ) for i in range(LRU_SIZE * 2)]
+    tanker.LRU_SIZE = 10
+    tanker.LRU_PAGE_SIZE = 5
+    factor = 3
+    nb_record = tanker.LRU_SIZE * factor
+    values = [('c%s' % i, ) for i in range(nb_record)]
     country_view = View('country', ['name'])
     team_view = View('team', ['name', 'country.name'])
 
@@ -30,11 +37,13 @@ def test_lru(session):
     team_view.delete()
 
     # Fill team table to trigger lru on country fk
-    values = [('t%s' % i, 'c%s' % i,) for i in range(LRU_SIZE * 2)]
+    values = [('t%s' % i, 'c%s' % i,) for i in range(nb_record)]
+    seed(1) # Reset seed to get determinism
+    shuffle(values)
     team_view.write(values)
 
     teams = team_view.read().all()
-    assert len(teams) == LRU_SIZE * 2
+    assert len(teams) == nb_record
     for team_name, country_name in teams:
         assert team_name[0] == 't'
         assert country_name[0] == 'c'
