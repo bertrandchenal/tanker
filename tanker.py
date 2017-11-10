@@ -948,7 +948,7 @@ class View(object):
                 writer.writerow(row)
             buff.seek(0)
             copy_from(buff, 'tmp', null='',
-                      columns=[c.name for c in self.field_map])
+                      columns=['"%s"' % c.name for c in self.field_map])
 
         else:
             qr = 'INSERT INTO tmp (%(fields)s) VALUES (%(values)s)'
