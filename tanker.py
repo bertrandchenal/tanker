@@ -840,7 +840,7 @@ class View(object):
             if col.ctype == 'M2O':
                 fields = tuple(f for f in self.field_map[col])
                 values = tuple(data[i] for i in idx)
-                if len(fields) == 1 and fields[0].ctype == 'INTEGER':
+                if len(fields) == 1 and fields[0].ref is None:
                     # Handle update of fk by id
                     yield map(int, data[idx[0]])
                 else:
