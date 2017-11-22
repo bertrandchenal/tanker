@@ -755,7 +755,7 @@ class View(object):
         return list(interleave(' AND ', res))
 
     def read(self, filters=None, args=None, order=None, groupby=None,
-             limit=None, offset=None, disable_acl=False):
+             limit=None, distinct=False, offset=None, disable_acl=False):
 
         if isinstance(filters, basestring):
             filters = [filters]
@@ -767,7 +767,8 @@ class View(object):
         exp = Expression(self)
 
         # Add select fields
-        select_ast = exp.parse('(select %s)' % ' '.join(
+        statement = '(select-distinct %s)'if distinct else '(select %s)'
+        select_ast = exp.parse(statement % ' '.join(
             f.desc for f in self.fields))
         select_chunk = [select_ast]
         select_chunk.append('FROM "%s"' % self.table.name)
@@ -1691,6 +1692,7 @@ class Expression(object):
         'exists': lambda x: 'EXISTS (%s)' % x,
         'where': lambda *x: 'WHERE ' + ' AND '.join(x),
         'select': lambda *x: 'SELECT ' + ', '.join(x),
+        'select-distinct': lambda *x: 'SELECT DISTINCT ' + ', '.join(x),
         'cast': lambda x, y: 'CAST (%s AS %s)' % (x, y),
     }
 
@@ -1736,7 +1738,7 @@ class Expression(object):
 
     def parse(self, exp):
         lexer = shlex.shlex(exp)
-        lexer.wordchars += '.!=<>:{}'
+        lexer.wordchars += '.!=<>:{}-'
         ast = self.read(list(lexer))
         return ast
 

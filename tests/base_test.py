@@ -244,22 +244,3 @@ def test_kitchensink(session):
     res = list(ks_view.read().dict())[0]
     for k, v in record.items():
         assert res[k] == v
-
-def test_lru():
-    lru = LRU(size=10)
-
-    # Add 20 items
-    for i in range(20):
-        lru.set(i, i)
-    # Access only new keys
-    for i in range(10, 20):
-        assert lru.get(i) == i
-
-    # This other insert will push older items out
-    for i in range(20, 30):
-        lru.set(i, i)
-    for i in range(10):
-        assert i not in lru
-    # But less older are still there
-    for i in range(10, 20):
-        assert lru.get(i) == i
