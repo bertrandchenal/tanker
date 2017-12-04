@@ -1476,6 +1476,9 @@ class Column:
             table, self.foreign_col, cascade)
 
     def get_foreign_table(self):
+        if not self.foreign_table:
+            raise ValueError('The "%s" column of "%s" is not a foreign key' % (
+                self.name, self.table.name))
         return Table.get(self.foreign_table)
 
     def format_array(self, array, astype, array_dim):
