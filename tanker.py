@@ -107,6 +107,22 @@ def paginate(iterators, size=None):
             raise StopIteration
         yield page
 
+TIMESTAMP_FMT = [
+    '%Y-%m-%d %H:%M:%S',
+    '%Y-%m-%dT%H:%M:%S',
+]
+DATE_FMT = [
+    '%Y-%m-%d',
+]
+def strptime(val, kind):
+    kind_fmt = TIMESTAMP_FMT if kind == 'timestamp' else DATE_FMT
+    for fmt in kind_fmt:
+        try:
+            return datetime.strptime(val, fmt)
+        except ValueError:
+            continue
+    raise ValueError('Unable to parse "%s" as datetime' % val)
+
 
 class TankerThread(Thread):
 
@@ -1510,43 +1526,49 @@ class Column:
             for value in values:
                 if not value:
                     value = None
-                elif not isinstance(value, datetime):
-                    if hasattr(value, 'timetuple'):
-                        value = datetime(*value.timetuple()[:7])
-                    elif hasattr(value, 'tolist'):
-                        # tolist is a numpy.datetime64 method that
-                        # returns nanosecond from 1970. EPOCH + delta(val)
-                        # suppors values far in the past (or future)
-                        ts = value.tolist()
-                        if ts is None:
-                            value = None
-                        else:
-                            value = EPOCH + timedelta(seconds=ts/1e9)
+                elif isinstance(value, datetime):
+                    yield value
+                elif hasattr(value, 'timetuple'):
+                    value = datetime(*value.timetuple()[:7])
+                    yield value
+                elif hasattr(value, 'tolist'):
+                    # tolist is a numpy.datetime64 method that
+                    # returns nanosecond from 1970. EPOCH + delta(val)
+                    # suppors values far in the past (or future)
+                    ts = value.tolist()
+                    if ts is None:
+                        value = None
                     else:
-                        raise ValueError(
-                            'Unexpected value "%s" for type "%s"' % (
-                                value, astype))
-                yield value
+                        value = EPOCH + timedelta(seconds=ts/1e9)
+                    yield value
+                elif isinstance(value, basestring):
+                    yield strptime(value, 'timestamp')
+                else:
+                    raise ValueError(
+                        'Unexpected value "%s" for type "%s"' % (
+                            value, astype))
 
         elif astype == 'DATE':
             for value in values:
                 if value is None:
                     pass
-                elif not isinstance(value, date):
-                    if hasattr(value, 'timetuple'):
-                        value = date(*value.timetuple()[:3])
-                    elif hasattr(value, 'tolist'):
-                        ts = value.tolist()
-                        if ts is None:
-                            value = None
-                        else:
-                            dt = EPOCH + timedelta(seconds=ts/1e9)
-                            value = date(*dt.timetuple()[:3])
+                elif isinstance(value, date):
+                    yield value
+                if hasattr(value, 'timetuple'):
+                    value = date(*value.timetuple()[:3])
+                elif hasattr(value, 'tolist'):
+                    ts = value.tolist()
+                    if ts is None:
+                        value = None
                     else:
-                        raise ValueError(
-                            'Unexpected value "%s" for type "%s"' % (
-                                value, astype))
-                yield value
+                        dt = EPOCH + timedelta(seconds=ts/1e9)
+                        value = date(*dt.timetuple()[:3])
+                elif isinstance(value, basestring):
+                    yield strptime(value, 'date')
+                else:
+                    raise ValueError(
+                        'Unexpected value "%s" for type "%s"' % (
+                            value, astype))
         else:
             for v in values:
                 yield v
