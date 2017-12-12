@@ -272,3 +272,10 @@ def test_array(session):
 
     res = View('kitchensink', ['index', '(unnest int_array)']).read().all()
     assert len(res) == 2
+
+
+def test_distinct(session):
+    view = View('team', ['country.name'])
+    expected = sorted(set(view.read().all()))
+    res = sorted(view.read(distinct=True).all())
+    assert res == expected

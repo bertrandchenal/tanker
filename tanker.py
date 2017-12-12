@@ -274,7 +274,9 @@ class Context:
         self.aliases = {'null': None}
         self._fk_cache = {}
         self.db_tables = set()
-        self.db_fields = set()
+        self.db_columns = defaultdict(set)
+        self.db_constraints = set()
+        self.db_indexes = set()
         # Share pool registry
         self.pool = pool
         self.registry = pool.registry
@@ -286,8 +288,10 @@ class Context:
         '''
         new_ctx = Context(self.connection, self.pool)
         new_ctx.aliases = self.aliases
-        new_ctx.db_fields = self.db_fields
+        new_ctx.db_columns = self.db_columns
         new_ctx.db_tables = self.db_tables
+        new_ctx.db_constraints = self.db_constraints
+        new_ctx.db_indexes = self.db_indexes
         new_ctx.registry = self.registry
         new_ctx.cfg = self.cfg.copy()
         return new_ctx
@@ -388,7 +392,7 @@ class Context:
                     ', '.join(map(repr, val)), remote_table))
             yield res
 
-    def create_tables(self):
+    def introspect_db(self):
         # Collect table info
         if self.flavor == 'sqlite':
             qr = "SELECT name FROM sqlite_master WHERE type = 'table'"
@@ -397,6 +401,38 @@ class Context:
             qr = "SELECT table_name FROM information_schema.tables " \
                  "WHERE table_schema = '%s'" % pg_schema
         self.db_tables.update(name for name, in execute(qr))
+
+        # Collect columns
+        for table_name in self.db_tables:
+            if self.flavor == 'sqlite':
+                qr = 'PRAGMA table_info("%s")' % table_name
+                cursor = execute(qr)
+                current_cols = [x[1] for x in cursor]
+            elif self.flavor == 'postgresql':
+                qr = "SELECT column_name FROM information_schema.columns "\
+                     "WHERE table_name = '%s' " % table_name
+                cursor = execute(qr)
+                current_cols = [x[0] for x in cursor]
+            self.db_columns[table_name] = current_cols
+
+        # Collect indexes
+        if self.flavor == 'sqlite':
+            qr = "SELECT name FROM sqlite_master WHERE type = 'index'"
+        elif self.flavor == 'postgresql':
+            schema = ctx.cfg.get('pg_schema', 'public')
+            qr = "SELECT indexname FROM pg_indexes " \
+                 "WHERE schemaname = '%s'" % schema
+        self.db_indexes = set(name for name, in execute(qr))
+
+        # Collect constraints
+        if self.flavor != 'sqlite':
+            qr = 'SELECT constraint_name '\
+                 'FROM information_schema.table_constraints'
+            self.db_constraints = set(name for name, in execute(qr))
+
+    def create_tables(self):
+        # First we collect db info
+        self.introspect_db()
 
         # Create tables and simple columns
         for table in self.registry.values():
@@ -408,35 +444,25 @@ class Context:
                 if col.ctype in ('M2O', 'O2M') or col.name == 'id':
                     continue
                 col_defs.append('"%s" %s' % (col.name, col.sql_definition()))
+                self.db_columns[table.name].add(col.name)
 
             qr = 'CREATE TABLE "%s" (%s)' % (table.name, ', '.join(col_defs))
             execute(qr)
             self.db_tables.add(table.name)
             logger.info('Table "%s" created', table.name)
 
-        # Add M2O columns
+        # Add columns
         for table_name in self.db_tables:
-            if self.flavor == 'sqlite':
-                qr = 'PRAGMA table_info("%s")' % table_name
-                cursor = execute(qr)
-                current_cols = [x[1] for x in cursor]
-            elif self.flavor == 'postgresql':
-                qr = "SELECT column_name FROM information_schema.columns "\
-                     "WHERE table_name = '%s' " % table_name
-                cursor = execute(qr)
-                current_cols = [x[0] for x in cursor]
-
-            self.db_fields.update(
-                '%s.%s' % (table_name, c) for c in current_cols)
-
             if table_name not in self.registry:
                 continue
+            table_cols = self.db_columns[table_name]
 
             # Execute alter table queries
             table = self.registry[table_name]
             for col in table.own_columns:
-                if col.name in current_cols:
+                if col.name in table_cols:
                     continue
+                table_cols.add(col.name)
                 qr = 'ALTER TABLE %(table)s '\
                      'ADD COLUMN "%(name)s" %(def)s'
                 params = {
@@ -465,23 +491,13 @@ class Context:
                     })
 
         # Create indexes
-        if self.flavor == 'sqlite':
-            qr = "SELECT name FROM sqlite_master WHERE type = 'index'"
-        elif self.flavor == 'postgresql':
-            schema = ctx.cfg.get('pg_schema', 'public')
-            qr = "SELECT indexname FROM pg_indexes " \
-                 "WHERE schemaname = '%s'" % schema
-
-        indexes = set(name for name, in execute(qr))
-
         for table in self.registry.values():
             if not table.index:
                 continue
-
             idx = 'unique_index_%s' % table.name
-            if idx in indexes:
+            if idx in self.db_indexes:
                 continue
-
+            self.db_indexes.add(idx)
             cols = ', '.join('"%s"' % c for c in table.index)
             qr = 'CREATE UNIQUE INDEX "%s" ON "%s" (%s)' % (
                 idx, table.name, cols)
@@ -489,10 +505,6 @@ class Context:
 
         # Add unique constrains (not supported by sqlite)
         if self.flavor != 'sqlite':
-            qr = 'SELECT constraint_name '\
-                 'FROM information_schema.table_constraints'
-            db_cons = set(name for name, in execute(qr))
-
             unique_qr = 'ALTER TABLE %s ADD CONSTRAINT %s UNIQUE (%s)'
             for table in self.registry.values():
                 for cols in table.unique:
@@ -500,8 +512,9 @@ class Context:
                     if len(cons_name) > 63:
                         msg = 'Constrain name "%s" is too big'
                         ValueError(msg % cons_name)
-                    if cons_name in db_cons:
+                    if cons_name in self.db_constraints:
                         continue
+                    self.db_constraints.add(cons_name)
                     cons_cols = ', '.join(cols)
                     execute(unique_qr % (table.name, cons_name, cons_cols))
 
@@ -771,7 +784,7 @@ class View(object):
         return list(interleave(' AND ', res))
 
     def read(self, filters=None, args=None, order=None, groupby=None,
-             limit=None, offset=None, disable_acl=False):
+             limit=None, distinct=False, offset=None, disable_acl=False):
 
         if isinstance(filters, basestring):
             filters = [filters]
@@ -783,7 +796,8 @@ class View(object):
         exp = Expression(self)
 
         # Add select fields
-        select_ast = exp.parse('(select %s)' % ' '.join(
+        statement = '(select-distinct %s)'if distinct else '(select %s)'
+        select_ast = exp.parse(statement % ' '.join(
             f.desc for f in self.fields))
         select_chunk = [select_ast]
         select_chunk.append('FROM "%s"' % self.table.name)
@@ -964,7 +978,7 @@ class View(object):
                 writer.writerow(row)
             buff.seek(0)
             copy_from(buff, 'tmp', null='',
-                      columns=[c.name for c in self.field_map])
+                      columns=['"%s"' % c.name for c in self.field_map])
 
         else:
             qr = 'INSERT INTO tmp (%(fields)s) VALUES (%(values)s)'
@@ -1478,6 +1492,9 @@ class Column:
             table, self.foreign_col, cascade)
 
     def get_foreign_table(self):
+        if not self.foreign_table:
+            raise ValueError('The "%s" column of "%s" is not a foreign key' % (
+                self.name, self.table.name))
         return Table.get(self.foreign_table)
 
     def format_array(self, array, astype, array_dim):
@@ -1713,6 +1730,7 @@ class Expression(object):
         'exists': lambda x: 'EXISTS (%s)' % x,
         'where': lambda *x: 'WHERE ' + ' AND '.join(x),
         'select': lambda *x: 'SELECT ' + ', '.join(x),
+        'select-distinct': lambda *x: 'SELECT DISTINCT ' + ', '.join(x),
         'cast': lambda x, y: 'CAST (%s AS %s)' % (x, y),
     }
 
@@ -1758,7 +1776,7 @@ class Expression(object):
 
     def parse(self, exp):
         lexer = shlex.shlex(exp)
-        lexer.wordchars += '.!=<>:{}'
+        lexer.wordchars += '.!=<>:{}-'
         ast = self.read(list(lexer))
         return ast
 
