@@ -1269,7 +1269,7 @@ class TankerCursor:
         '''
         Set args for current cursor
         '''
-        self._args = args
+        self._args = list(args)
         self._kwargs = kwargs
         # reset db_cursor to allow to call args & re-launch query
         self.db_cursor = None
