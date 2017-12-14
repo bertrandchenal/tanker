@@ -1393,13 +1393,6 @@ class Table:
             raise KeyError('Column "%s" not found in table "%s"' % (
                 name, self.name))
 
-    def get_foreign_values(self, desc):
-        rel_name, field = desc.split('.')
-        rel = self.get_column(rel_name)
-        foreign_table = rel.get_foreign_table()
-        view = View(foreign_table.name, [field])
-        return [x[0] for x in view.read()]
-
     @classmethod
     def get(cls, table_name):
         return ctx.registry[table_name]
