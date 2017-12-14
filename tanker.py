@@ -1535,7 +1535,7 @@ class Column:
         elif astype == 'TIMESTAMP':
             for value in values:
                 if not value:
-                    value = None
+                    yield None
                 elif isinstance(value, datetime):
                     yield value
                 elif hasattr(value, 'timetuple'):
@@ -1560,12 +1560,13 @@ class Column:
 
         elif astype == 'DATE':
             for value in values:
-                if value is None:
-                    pass
+                if not value:
+                    yield None
                 elif isinstance(value, date):
                     yield value
-                if hasattr(value, 'timetuple'):
+                elif hasattr(value, 'timetuple'):
                     value = date(*value.timetuple()[:3])
+                    yield value
                 elif hasattr(value, 'tolist'):
                     ts = value.tolist()
                     if ts is None:
@@ -1573,6 +1574,7 @@ class Column:
                     else:
                         dt = EPOCH + timedelta(seconds=ts/1e9)
                         value = date(*dt.timetuple()[:3])
+                    yield value
                 elif isinstance(value, basestring):
                     yield strptime(value, 'date')
                 else:
