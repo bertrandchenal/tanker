@@ -1306,7 +1306,7 @@ class TankerCursor:
             kwargs.update(self._kwargs or {})
             cfg = ctx.cfg
             kwargs.update(cfg)
-            return x.eval(self._args and self._args[:], kwargs), x.params
+            return x.eval(self._args, kwargs), x.params
         if isinstance(x, tuple):
             return x
         if isinstance(x, basestring):

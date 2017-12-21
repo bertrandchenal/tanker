@@ -56,17 +56,23 @@ def test_args(session):
     rows = view.read(cond).args('Red')
     assert sorted(rows) == [('Red',)]
     cond = '(or (= name {0}) (= name {1}))'
-    rows = view.read(cond, args=['Red', 'Blue'])
+    args = ['Red', 'Blue']
+    rows = view.read(cond, args=args)
     assert sorted(rows) == [('Blue',), ('Blue',), ('Red',)]
+    # test params are unafected
+    assert args == ['Red', 'Blue']
 
     # Simple test, implicit position
     cond = '(= name {})'
     rows = view.read(cond).args('Red')
     assert sorted(rows) == [('Red',)]
     cond = '(or (= name {}) (= name {}))'
-    rows = view.read(cond, args=['Red', 'Blue'])
+    args = ['Red', 'Blue']
+    rows = view.read(cond, args=args)
+    # test output
     assert sorted(rows) == [('Blue',), ('Blue',), ('Red',)]
-
+    # test params are unafected
+    assert args == ['Red', 'Blue']
 
     # Mix value from config
     cond = '(in name {cfg_team})'
