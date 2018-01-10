@@ -270,6 +270,7 @@ dictionary to map dataframe columns to database columns.
 
 Some ideas, in no particular order:
 
+  - expose db introspection info to help schema migrations
   - Split `acl_rules` into `acl_read` and `acl_write`.
   - Support for version column (probably a write timestamp)
   - Be able to introspect existing db (without yaml schema then)

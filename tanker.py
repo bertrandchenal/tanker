@@ -107,6 +107,22 @@ def paginate(iterators, size=None):
             raise StopIteration
         yield page
 
+TIMESTAMP_FMT = [
+    '%Y-%m-%d %H:%M:%S',
+    '%Y-%m-%dT%H:%M:%S',
+]
+DATE_FMT = [
+    '%Y-%m-%d',
+]
+def strptime(val, kind):
+    kind_fmt = TIMESTAMP_FMT if kind == 'timestamp' else DATE_FMT
+    for fmt in kind_fmt:
+        try:
+            return datetime.strptime(val, fmt)
+        except ValueError:
+            continue
+    raise ValueError('Unable to parse "%s" as datetime' % val)
+
 
 class TankerThread(Thread):
 
@@ -258,7 +274,9 @@ class Context:
         self.aliases = {'null': None}
         self._fk_cache = {}
         self.db_tables = set()
-        self.db_fields = set()
+        self.db_columns = defaultdict(set)
+        self.db_constraints = set()
+        self.db_indexes = set()
         # Share pool registry
         self.pool = pool
         self.registry = pool.registry
@@ -270,8 +288,10 @@ class Context:
         '''
         new_ctx = Context(self.connection, self.pool)
         new_ctx.aliases = self.aliases
-        new_ctx.db_fields = self.db_fields
+        new_ctx.db_columns = self.db_columns
         new_ctx.db_tables = self.db_tables
+        new_ctx.db_constraints = self.db_constraints
+        new_ctx.db_indexes = self.db_indexes
         new_ctx.registry = self.registry
         new_ctx.cfg = self.cfg.copy()
         return new_ctx
@@ -372,7 +392,7 @@ class Context:
                     ', '.join(map(repr, val)), remote_table))
             yield res
 
-    def create_tables(self):
+    def introspect_db(self):
         # Collect table info
         if self.flavor == 'sqlite':
             qr = "SELECT name FROM sqlite_master WHERE type = 'table'"
@@ -381,6 +401,38 @@ class Context:
             qr = "SELECT table_name FROM information_schema.tables " \
                  "WHERE table_schema = '%s'" % pg_schema
         self.db_tables.update(name for name, in execute(qr))
+
+        # Collect columns
+        for table_name in self.db_tables:
+            if self.flavor == 'sqlite':
+                qr = 'PRAGMA table_info("%s")' % table_name
+                cursor = execute(qr)
+                current_cols = [x[1] for x in cursor]
+            elif self.flavor == 'postgresql':
+                qr = "SELECT column_name FROM information_schema.columns "\
+                     "WHERE table_name = '%s' " % table_name
+                cursor = execute(qr)
+                current_cols = [x[0] for x in cursor]
+            self.db_columns[table_name] = current_cols
+
+        # Collect indexes
+        if self.flavor == 'sqlite':
+            qr = "SELECT name FROM sqlite_master WHERE type = 'index'"
+        elif self.flavor == 'postgresql':
+            schema = ctx.cfg.get('pg_schema', 'public')
+            qr = "SELECT indexname FROM pg_indexes " \
+                 "WHERE schemaname = '%s'" % schema
+        self.db_indexes = set(name for name, in execute(qr))
+
+        # Collect constraints
+        if self.flavor != 'sqlite':
+            qr = 'SELECT constraint_name '\
+                 'FROM information_schema.table_constraints'
+            self.db_constraints = set(name for name, in execute(qr))
+
+    def create_tables(self):
+        # First we collect db info
+        self.introspect_db()
 
         # Create tables and simple columns
         for table in self.registry.values():
@@ -392,35 +444,25 @@ class Context:
                 if col.ctype in ('M2O', 'O2M') or col.name == 'id':
                     continue
                 col_defs.append('"%s" %s' % (col.name, col.sql_definition()))
+                self.db_columns[table.name].add(col.name)
 
             qr = 'CREATE TABLE "%s" (%s)' % (table.name, ', '.join(col_defs))
             execute(qr)
             self.db_tables.add(table.name)
             logger.info('Table "%s" created', table.name)
 
-        # Add M2O columns
+        # Add columns
         for table_name in self.db_tables:
-            if self.flavor == 'sqlite':
-                qr = 'PRAGMA table_info("%s")' % table_name
-                cursor = execute(qr)
-                current_cols = [x[1] for x in cursor]
-            elif self.flavor == 'postgresql':
-                qr = "SELECT column_name FROM information_schema.columns "\
-                     "WHERE table_name = '%s' " % table_name
-                cursor = execute(qr)
-                current_cols = [x[0] for x in cursor]
-
-            self.db_fields.update(
-                '%s.%s' % (table_name, c) for c in current_cols)
-
             if table_name not in self.registry:
                 continue
+            table_cols = self.db_columns[table_name]
 
             # Execute alter table queries
             table = self.registry[table_name]
             for col in table.own_columns:
-                if col.name in current_cols:
+                if col.name in table_cols:
                     continue
+                table_cols.add(col.name)
                 qr = 'ALTER TABLE %(table)s '\
                      'ADD COLUMN "%(name)s" %(def)s'
                 params = {
@@ -449,23 +491,13 @@ class Context:
                     })
 
         # Create indexes
-        if self.flavor == 'sqlite':
-            qr = "SELECT name FROM sqlite_master WHERE type = 'index'"
-        elif self.flavor == 'postgresql':
-            schema = ctx.cfg.get('pg_schema', 'public')
-            qr = "SELECT indexname FROM pg_indexes " \
-                 "WHERE schemaname = '%s'" % schema
-
-        indexes = set(name for name, in execute(qr))
-
         for table in self.registry.values():
             if not table.index:
                 continue
-
             idx = 'unique_index_%s' % table.name
-            if idx in indexes:
+            if idx in self.db_indexes:
                 continue
-
+            self.db_indexes.add(idx)
             cols = ', '.join('"%s"' % c for c in table.index)
             qr = 'CREATE UNIQUE INDEX "%s" ON "%s" (%s)' % (
                 idx, table.name, cols)
@@ -473,10 +505,6 @@ class Context:
 
         # Add unique constrains (not supported by sqlite)
         if self.flavor != 'sqlite':
-            qr = 'SELECT constraint_name '\
-                 'FROM information_schema.table_constraints'
-            db_cons = set(name for name, in execute(qr))
-
             unique_qr = 'ALTER TABLE %s ADD CONSTRAINT %s UNIQUE (%s)'
             for table in self.registry.values():
                 for cols in table.unique:
@@ -484,8 +512,9 @@ class Context:
                     if len(cons_name) > 63:
                         msg = 'Constrain name "%s" is too big'
                         ValueError(msg % cons_name)
-                    if cons_name in db_cons:
+                    if cons_name in self.db_constraints:
                         continue
+                    self.db_constraints.add(cons_name)
                     cons_cols = ', '.join(cols)
                     execute(unique_qr % (table.name, cons_name, cons_cols))
 
@@ -755,7 +784,7 @@ class View(object):
         return list(interleave(' AND ', res))
 
     def read(self, filters=None, args=None, order=None, groupby=None,
-             limit=None, offset=None, disable_acl=False):
+             limit=None, distinct=False, offset=None, disable_acl=False):
 
         if isinstance(filters, basestring):
             filters = [filters]
@@ -767,7 +796,8 @@ class View(object):
         exp = Expression(self)
 
         # Add select fields
-        select_ast = exp.parse('(select %s)' % ' '.join(
+        statement = '(select-distinct %s)'if distinct else '(select %s)'
+        select_ast = exp.parse(statement % ' '.join(
             f.desc for f in self.fields))
         select_chunk = [select_ast]
         select_chunk.append('FROM "%s"' % self.table.name)
@@ -948,7 +978,7 @@ class View(object):
                 writer.writerow(row)
             buff.seek(0)
             copy_from(buff, 'tmp', null='',
-                      columns=[c.name for c in self.field_map])
+                      columns=['"%s"' % c.name for c in self.field_map])
 
         else:
             qr = 'INSERT INTO tmp (%(fields)s) VALUES (%(values)s)'
@@ -1239,7 +1269,7 @@ class TankerCursor:
         '''
         Set args for current cursor
         '''
-        self._args = args
+        self._args = list(args)
         self._kwargs = kwargs
         # reset db_cursor to allow to call args & re-launch query
         self.db_cursor = None
@@ -1276,7 +1306,7 @@ class TankerCursor:
             kwargs.update(self._kwargs or {})
             cfg = ctx.cfg
             kwargs.update(cfg)
-            return x.eval(self._args and self._args[:], kwargs), x.params
+            return x.eval(self._args, kwargs), x.params
         if isinstance(x, tuple):
             return x
         if isinstance(x, basestring):
@@ -1362,13 +1392,6 @@ class Table:
         except KeyError:
             raise KeyError('Column "%s" not found in table "%s"' % (
                 name, self.name))
-
-    def get_foreign_values(self, desc):
-        rel_name, field = desc.split('.')
-        rel = self.get_column(rel_name)
-        foreign_table = rel.get_foreign_table()
-        view = View(foreign_table.name, [field])
-        return [x[0] for x in view.read()]
 
     @classmethod
     def get(cls, table_name):
@@ -1462,6 +1485,9 @@ class Column:
             table, self.foreign_col, cascade)
 
     def get_foreign_table(self):
+        if not self.foreign_table:
+            raise ValueError('The "%s" column of "%s" is not a foreign key' % (
+                self.name, self.table.name))
         return Table.get(self.foreign_table)
 
     def format_array(self, array, astype, array_dim):
@@ -1509,44 +1535,52 @@ class Column:
         elif astype == 'TIMESTAMP':
             for value in values:
                 if not value:
-                    value = None
-                elif not isinstance(value, datetime):
-                    if hasattr(value, 'timetuple'):
-                        value = datetime(*value.timetuple()[:7])
-                    elif hasattr(value, 'tolist'):
-                        # tolist is a numpy.datetime64 method that
-                        # returns nanosecond from 1970. EPOCH + delta(val)
-                        # suppors values far in the past (or future)
-                        ts = value.tolist()
-                        if ts is None:
-                            value = None
-                        else:
-                            value = EPOCH + timedelta(seconds=ts/1e9)
+                    yield None
+                elif isinstance(value, datetime):
+                    yield value
+                elif hasattr(value, 'timetuple'):
+                    value = datetime(*value.timetuple()[:7])
+                    yield value
+                elif hasattr(value, 'tolist'):
+                    # tolist is a numpy.datetime64 method that
+                    # returns nanosecond from 1970. EPOCH + delta(val)
+                    # suppors values far in the past (or future)
+                    ts = value.tolist()
+                    if ts is None:
+                        value = None
                     else:
-                        raise ValueError(
-                            'Unexpected value "%s" for type "%s"' % (
-                                value, astype))
-                yield value
+                        value = EPOCH + timedelta(seconds=ts/1e9)
+                    yield value
+                elif isinstance(value, basestring):
+                    yield strptime(value, 'timestamp')
+                else:
+                    raise ValueError(
+                        'Unexpected value "%s" for type "%s"' % (
+                            value, astype))
 
         elif astype == 'DATE':
             for value in values:
-                if value is None:
-                    pass
-                elif not isinstance(value, date):
-                    if hasattr(value, 'timetuple'):
-                        value = date(*value.timetuple()[:3])
-                    elif hasattr(value, 'tolist'):
-                        ts = value.tolist()
-                        if ts is None:
-                            value = None
-                        else:
-                            dt = EPOCH + timedelta(seconds=ts/1e9)
-                            value = date(*dt.timetuple()[:3])
+                if not value:
+                    yield None
+                elif isinstance(value, date):
+                    yield value
+                elif hasattr(value, 'timetuple'):
+                    value = date(*value.timetuple()[:3])
+                    yield value
+                elif hasattr(value, 'tolist'):
+                    ts = value.tolist()
+                    if ts is None:
+                        value = None
                     else:
-                        raise ValueError(
-                            'Unexpected value "%s" for type "%s"' % (
-                                value, astype))
-                yield value
+                        dt = EPOCH + timedelta(seconds=ts/1e9)
+                        value = date(*dt.timetuple()[:3])
+                    yield value
+                elif isinstance(value, basestring):
+                    yield strptime(value, 'date')
+                else:
+                    raise ValueError(
+                        'Unexpected value "%s" for type "%s"' % (
+                            value, astype))
         else:
             for v in values:
                 yield v
@@ -1691,6 +1725,7 @@ class Expression(object):
         'exists': lambda x: 'EXISTS (%s)' % x,
         'where': lambda *x: 'WHERE ' + ' AND '.join(x),
         'select': lambda *x: 'SELECT ' + ', '.join(x),
+        'select-distinct': lambda *x: 'SELECT DISTINCT ' + ', '.join(x),
         'cast': lambda x, y: 'CAST (%s AS %s)' % (x, y),
     }
 
@@ -1736,7 +1771,7 @@ class Expression(object):
 
     def parse(self, exp):
         lexer = shlex.shlex(exp)
-        lexer.wordchars += '.!=<>:{}'
+        lexer.wordchars += '.!=<>:{}-'
         ast = self.read(list(lexer))
         return ast
 

@@ -51,10 +51,28 @@ def test_args(session):
     rows = view.read(cond).args(name='Blue')
     assert sorted(rows) == [('Blue',), ('Blue',)]
 
-    # Simple test, anonymous
+    # Simple test explicit position
     cond = '(= name {0})'
     rows = view.read(cond).args('Red')
     assert sorted(rows) == [('Red',)]
+    cond = '(or (= name {0}) (= name {1}))'
+    args = ['Red', 'Blue']
+    rows = view.read(cond, args=args)
+    assert sorted(rows) == [('Blue',), ('Blue',), ('Red',)]
+    # test params are unafected
+    assert args == ['Red', 'Blue']
+
+    # Simple test, implicit position
+    cond = '(= name {})'
+    rows = view.read(cond).args('Red')
+    assert sorted(rows) == [('Red',)]
+    cond = '(or (= name {}) (= name {}))'
+    args = ['Red', 'Blue']
+    rows = view.read(cond, args=args)
+    # test output
+    assert sorted(rows) == [('Blue',), ('Blue',), ('Red',)]
+    # test params are unafected
+    assert args == ['Red', 'Blue']
 
     # Mix value from config
     cond = '(in name {cfg_team})'
@@ -272,3 +290,10 @@ def test_array(session):
 
     res = View('kitchensink', ['index', '(unnest int_array)']).read().all()
     assert len(res) == 2
+
+
+def test_distinct(session):
+    view = View('team', ['country.name'])
+    expected = sorted(set(view.read().all()))
+    res = sorted(view.read(distinct=True).all())
+    assert res == expected
