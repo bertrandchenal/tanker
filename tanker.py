@@ -412,7 +412,7 @@ class Context:
                 qr = "SELECT column_name FROM information_schema.columns "\
                      "WHERE table_name = '%s' " % table_name
                 cursor = execute(qr)
-                current_cols = [x[0] for x in cursor]
+                current_cols = {x[0] for x in cursor}
             self.db_columns[table_name] = current_cols
 
         # Collect indexes
