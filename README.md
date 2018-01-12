@@ -1,8 +1,7 @@
 # Tanker
 
-Tanker goal is to allow easy batch operations without compromising
-database modeling. For pandas users, it's like DataFrame.to_sql on
-steroids.
+Tanker is a Python database library targeting analytic operations but
+it also fits most transactional processing.
 
 Currently Postgresql and Sqlite are supported. There is also optional
 support for pandas DataFrames.
@@ -47,8 +46,10 @@ to the database and creates the tables.
         create_tables()
 
 Tanker automatically add an `id` column on each table, to allow to
-define foreign keys. for example, in the yaml definition, `country:
-m2o country.id` will generate the following column definition:
+define foreign keys. For example, in the yaml definition, `country:
+m2o country.id` means that a many-to-one relation will be created
+between the tables team and country. When the team table will be
+created this will generate the following column definition:
 
     "country" INTEGER REFERENCES "country" (id) ON DELETE CASCADE
 
@@ -104,13 +105,6 @@ latencies, what Tanker do to speed up writes is to create a temporary
 table, insert all the record as one batch and then join this temporary
 table with the actual one to know which record to insert and which to
 update.
-
-Unfortunately, SQLite is not able to handle transactional table
-creation (even a temporary one), hence automatically trigger a commit
-before the `CREATE` statement. It's not an issue if your transaction
-do only one `View.write` call, but if several are done and the
-transaction is aborted, only the last will be rollbacked.  Postgresql
-has no such limitation.
 
 
 ### Foreign key resolution
@@ -270,6 +264,7 @@ dictionary to map dataframe columns to database columns.
 
 Some ideas, in no particular order:
 
+  - Use `key`instead of `index` in table definition
   - expose db introspection info to help schema migrations
   - Split `acl_rules` into `acl_read` and `acl_write`.
   - Support for version column (probably a write timestamp)
