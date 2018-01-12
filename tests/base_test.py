@@ -21,7 +21,7 @@ yaml_def = '''
     name: varchar
     country: m2o country.id
     members: o2m member.team
-  index:
+  key:
     - name
     - country
 - table: country
@@ -29,7 +29,7 @@ yaml_def = '''
     name: varchar
     teams: o2m team.country
     licensees: o2m licensee.country
-  index:
+  key:
     - name
   values:
     - name: Belgium
@@ -42,7 +42,7 @@ yaml_def = '''
     registration_code: varchar
     created_at: timestamp
     team: m2o team.id
-  index:
+  key:
     - registration_code
   defaults:
     created_at: current_timestamp
@@ -51,7 +51,7 @@ yaml_def = '''
   columns:
     country: m2o country.id
     member: m2o member.id
-  index:
+  key:
     - country
     - member
 
@@ -69,7 +69,7 @@ yaml_def = '''
     bool_array: bool[]
     ts_array: timestamp[][]
     char_array: varchar[][][]
-  index:
+  key:
     - index
 '''
 

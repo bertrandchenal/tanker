@@ -18,19 +18,19 @@ root of the repository.
 ### Schema definition and database connection
 
 The file `schema.yaml` defines the database structure: table, columns
-types and indexes.
+(and their types) and key.
 
     - table: team
       columns:
         name: varchar
         country: m2o country.id
-      index:
+      key:
         - name
         - country
     - table: country
       columns:
         name: varchar
-      index:
+      key:
         - name
 
 The code here-under create the config dictionary and use it to connect
@@ -87,12 +87,15 @@ returns the database cursor, the `.all()` allows to fetch all the
 records.
 
 
-### Index role
+### Key role
 
-As you can see in the database definition, each table comes with an
-index. This index is required by design in Tanker, its main role is to
+As you can see in the database definition, each table comes with a `key`
+attribute. This attribute contains the list of columns that form a
+[natural key](https://en.wikipedia.org/wiki/Natural_key).
+
+This key is required by design in Tanker, its main role is to
 allow Tanker to know what to do with each record when `View.write` is
-called. Thanks to the index, we know if the record is already in the
+called. Thanks to the key, we know if the record is already in the
 database (and in this case will generate an `UPDATE` statement) or if
 the record is new (and use an `INSERT` query).
 
@@ -127,7 +130,7 @@ But it's more convenient to use the country name instead of it's id:
 
 You can see that we changed `country` into `country.name` in the view,
 which means that the use the `name` column to identify the country
-(which is conveniently defined as the index in the table
+(which is conveniently defined as the key in the table
 definition).
 
 We can go further and use more than one dot and let tanker resolve
@@ -139,7 +142,7 @@ database, we append the following piece of yaml to our schema file
         name: varchar
         registration_code: varchar
         team: m2o team.id
-      index:
+      key:
         - registration_code
 
 And re-run the `create_tables()` as above. Now we can do:
@@ -150,7 +153,7 @@ Here, two join queries will be automatically generated, one between
 `member` and `team` and one between `team` and `country`.
 
 
-To add a member we have to link it to a team, whose index is composed
+To add a member we have to link it to a team, whose key is composed
 of both the name and the country column (so we allow two teams with the
 same name in different countries):
 
@@ -264,7 +267,6 @@ dictionary to map dataframe columns to database columns.
 
 Some ideas, in no particular order:
 
-  - Use `key`instead of `index` in table definition
   - expose db introspection info to help schema migrations
   - Split `acl_rules` into `acl_read` and `acl_write`.
   - Support for version column (probably a write timestamp)

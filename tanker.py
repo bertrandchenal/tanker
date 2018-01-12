@@ -325,7 +325,7 @@ class Context:
         # Instanciating the table adds it to current registry
         Table(name=table_def['table'], columns=columns,
               values=values,
-              index=table_def.get('index'),
+              key=table_def.get('key', table_def.get('index')),
               unique=table_def.get('unique'))
 
     def reset_cache(self, table=None):
@@ -492,13 +492,13 @@ class Context:
 
         # Create indexes
         for table in self.registry.values():
-            if not table.index:
+            if not table.key:
                 continue
             idx = 'unique_index_%s' % table.name
             if idx in self.db_indexes:
                 continue
             self.db_indexes.add(idx)
-            cols = ', '.join('"%s"' % c for c in table.index)
+            cols = ', '.join('"%s"' % c for c in table.key)
             qr = 'CREATE UNIQUE INDEX "%s" ON "%s" (%s)' % (
                 idx, table.name, cols)
             execute(qr)
@@ -709,7 +709,7 @@ class View(object):
             for col in self.table.own_columns:
                 if col.ctype == 'M2O':
                     ft = col.get_foreign_table()
-                    fields.extend('.'.join((col.name, i)) for i in ft.index)
+                    fields.extend('.'.join((col.name, i)) for i in ft.key)
                 else:
                     fields.append(col.name)
         if isinstance(fields, basestring):
@@ -742,18 +742,18 @@ class View(object):
             self.field_idx[view_field.col].append(idx)
             idx += 1
 
-        # Index fields identify each line in the data
-        self.index_fields = [f for f in self.fields
-                             if f.col and f.col.name in self.table.index]
-        # Index cols identify each row in the table
+        # Key fields identify each line in the data
+        self.key_fields = [f for f in self.fields
+                             if f.col and f.col.name in self.table.key]
+        # Key cols identify each row in the table
         id_col = self.table.get_column('id')
         if id_col in self.field_map:
             # Use id if present
-            self.index_cols = [id_col.name]
+            self.key_cols = [id_col.name]
         else:
-            # Use natural index if not
-            self.index_cols = [c.name for c in self.field_map
-                               if c.name in self.table.index]
+            # Use natural key if not
+            self.key_cols = [c.name for c in self.field_map
+                               if c.name in self.table.key]
 
     def get_field(self, name):
         return self.field_dict.get(name)
@@ -888,7 +888,7 @@ class View(object):
         Delete rows from table that:
         - match `filters` if set (or that doesn't match `filters` if
           swap is set
-        - match `data` based on index columns (or doesn't match if swap is set)
+        - match `data` based on key columns (or doesn't match if swap is set)
         Only one of `filters` or `data` can be passed.
 
         table_alias allows to pass an alternate table name (that will
@@ -943,7 +943,7 @@ class View(object):
         # An id column is needed to enable filters (and for sqlite
         # REPLACE)
         extra_id = 'id' not in self.field_dict
-        not_null = lambda n: 'NOT NULL' if n in self.index_fields else ''
+        not_null = lambda n: 'NOT NULL' if n in self.key_fields else ''
         # Create tmp
         qr = 'CREATE TEMPORARY TABLE tmp (%s)'
         col_defs = ', '.join('"%s" %s %s' % (
@@ -990,7 +990,7 @@ class View(object):
 
         # Create join conditions
         join_cond = []
-        for name in self.index_cols:
+        for name in self.key_cols:
             join_cond.append('tmp."%s" = "%s"."%s"' % (
                 name, self.table.name, name))
 
@@ -1113,7 +1113,7 @@ class View(object):
         main_fields = ', '.join('"%s"' % f.name for f in self.field_map)
         upd_fields = []
         for f in self.field_map:
-            if f.name in self.index_cols:
+            if f.name in self.key_cols:
                 continue
             upd_fields.append('"%s" = EXCLUDED."%s"' % (f.name, f.name))
 
@@ -1134,7 +1134,7 @@ class View(object):
             'join_cond': ' AND '.join(join_cond),
             'join_type': 'LEFT' if insert else 'INNER',
             'upd_fields': ', '.join(upd_fields),
-            'idx': ', '.join(self.index_cols),
+            'idx': ', '.join(self.key_cols),
         }
         cur = TankerCursor(self, qr).execute()
         return cur.rowcount
@@ -1147,7 +1147,7 @@ class View(object):
 
         # Consider only new rows
         where_cond = []
-        for name in self.index_cols:
+        for name in self.key_cols:
             where_cond.append('%s."%s" IS NULL' % (self.table.name, name))
 
         tmp_fields = ', '.join('tmp."%s"' % f.name for f in self.field_map)
@@ -1167,7 +1167,7 @@ class View(object):
 
     def _update(self, join_cond):
         update_cols = [f.name for f in self.field_map
-                       if f.name not in self.index_cols]
+                       if f.name not in self.key_cols]
         if not update_cols:
             return 0
 
@@ -1215,7 +1215,7 @@ class View(object):
             'tmp': tmp,
             'filter_operator': 'NOT IN' if update else 'IN',
             'join_cond': ' AND '.join(join_cond),
-            'field': self.index_cols[0]
+            'field': self.key_cols[0]
         }
         head_qr = head_qr % fmt
         join_qr = join_qr % fmt
@@ -1347,7 +1347,7 @@ class TankerCursor:
 
 class Table:
 
-    def __init__(self, name, columns, index=None, unique=None, values=None):
+    def __init__(self, name, columns, key=None, unique=None, values=None):
         self.name = name
         self.columns = columns[:]
         self.unique = unique or []
@@ -1363,24 +1363,24 @@ class Table:
         for col in self.columns:
             col.table = self
 
-        # set index
-        if index is None:
+        # set key
+        if key is None:
             if len(self.columns) == 2:
                 # If there is only one column (other then id), use it
-                # as index
-                index = tuple(c.name for c in self.columns if c.name != 'id')
+                # as key
+                key = tuple(c.name for c in self.columns if c.name != 'id')
             else:
-                raise ValueError('No index defined on %s' % name)
-        self.index = [index] if isinstance(index, basestring) else index
-        # Test index columns are members of the table
+                raise ValueError('No key defined on %s' % name)
+        self.key = [key] if isinstance(key, basestring) else key
+        # Test key columns are members of the table
         self._column_dict = dict((col.name, col) for col in self.columns)
-        for col in self.index:
+        for col in self.key:
             if col not in self._column_dict:
-                raise ValueError('Index column "%s" does not exist' % col)
-        # # Forbid array types in index
-        # for col in self.index:
+                raise ValueError('Key column "%s" does not exist' % col)
+        # # Forbid array types in ey
+        # for col in self.key:
         #     if col.array_dim:
-        #         msg = 'Array type is not allowed on index column '\
+        #         msg = 'Array type is not allowed on key column '\
         #               '("%s" in table "%s")'
         #         raise ValueError(msg % (col, self.name))
 
