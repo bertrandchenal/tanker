@@ -1373,7 +1373,7 @@ class Table:
         # set key
         if key is None:
             if len(self.columns) == 2:
-                # If there is only one column (other then id), use it
+                # If there is only one column (other than id), use it
                 # as key
                 key = tuple(c.name for c in self.columns if c.name != 'id')
             else:
