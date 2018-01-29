@@ -59,7 +59,7 @@ created this will generate the following column definition:
 
 If not specified, `sqlite:///:memory:` will be used as `db_uri`. To
 use Postgresql, the uri should looks like
-`postgresql://login:passwd@hostname/dbname` (and you can define the
+`postgresql://login:passwd@hostname/dbname` (and you can choose the
 postgres schema to use by appending `#shema_name`to the uri)
 
 Note that every database interaction must happen inside the `with

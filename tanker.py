@@ -279,7 +279,7 @@ class Context:
         self.aliases = {'null': None}
         self._fk_cache = {}
         self.db_tables = set()
-        self.db_columns = defaultdict(set)
+        self.db_columns = defaultdict(dict)
         self.db_constraints = set()
         self.db_indexes = set()
         # Share pool registry
@@ -411,12 +411,14 @@ class Context:
             if self.flavor == 'sqlite':
                 qr = 'PRAGMA table_info("%s")' % table_name
                 cursor = execute(qr)
-                current_cols = {x[1] for x in cursor}
+                current_cols = {x[1]: x[2] for x in cursor}
             elif self.flavor == 'postgresql':
-                qr = "SELECT column_name FROM information_schema.columns "\
-                     "WHERE table_name = '%s' " % table_name
+                qr = '''
+                 SELECT column_name, data_type
+                FROM information_schema.columns
+                WHERE table_name = '%s' ''' % table_name
                 cursor = execute(qr)
-                current_cols = {x[0] for x in cursor}
+                current_cols = {x[0]: x[1] for x in cursor}
             self.db_columns[table_name] = current_cols
 
         # Collect indexes
@@ -437,7 +439,27 @@ class Context:
         if not auto:
             return
 
-        
+        if self.flavor == 'sqlite':
+            qr = 'PRAGMA foreign_key_list(%s)'
+            # sqlite> PRAGMA foreign_key_list(member);
+            #  id|seq|table|from|to|on_update|on_delete|match
+            #  0|0|team|team|id|NO ACTION|NO ACTION|NONE
+
+        elif self.flavor == 'postgresql':
+            qr = '''
+            SELECT
+              tc.table_name, kcu.column_name,
+              ccu.table_name AS foreign_table_name,
+              ccu.column_name AS foreign_column_name
+            FROM information_schema.table_constraints AS tc
+            JOIN information_schema.key_column_usage
+              AS kcu ON tc.constraint_name = kcu.constraint_name
+            JOIN information_schema.constraint_column_usage
+              AS ccu ON ccu.constraint_name = tc.constraint_name
+            WHERE constraint_type = 'FOREIGN KEY';
+            '''
+
+
 
     def create_tables(self):
         # First we collect db info
@@ -453,7 +475,7 @@ class Context:
                 if col.ctype in ('M2O', 'O2M') or col.name == 'id':
                     continue
                 col_defs.append('"%s" %s' % (col.name, col.sql_definition()))
-                self.db_columns[table.name].add(col.name)
+                self.db_columns[table.name][col.name] = col.ctype
 
             qr = 'CREATE TABLE "%s" (%s)' % (table.name, ', '.join(col_defs))
             execute(qr)
@@ -471,7 +493,7 @@ class Context:
             for col in table.own_columns:
                 if col.name in table_cols:
                     continue
-                table_cols.add(col.name)
+                table_cols[col.name] = col.ctype
                 qr = 'ALTER TABLE "%(table)s" '\
                      'ADD COLUMN "%(name)s" %(def)s'
                 params = {
