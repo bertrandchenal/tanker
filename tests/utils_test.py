@@ -3,7 +3,7 @@ from random import shuffle, seed
 import tanker
 from tanker import paginate, View, connect, ctx
 
-from .base_test import session, get_config
+from .base_test import session, SCHEMA
 
 
 def test_paginate(session):
@@ -59,7 +59,7 @@ def test_manual_conn(session):
 
 
     # Manually start and stop of the connection
-    cfg = get_config(session)
+    cfg = {'db_uri': session, 'schema': SCHEMA}
     connect(cfg, 'enter')
     country_view.write([['Prussia']])
     connect(cfg, 'exit')

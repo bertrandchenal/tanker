@@ -7,13 +7,13 @@ from threading import Thread, current_thread
 import pytest
 
 from tanker import connect, create_tables, View, TankerThread, ctx
-from .base_test import get_config, DB_TYPES
+from .base_test import SCHEMA, DB_URIS
 
 NB_THREADS = 2
 
-@pytest.yield_fixture(scope='function', params=DB_TYPES)
+@pytest.yield_fixture(scope='function', params=DB_URIS)
 def session(request):
-    cfg = get_config(request.param)
+    cfg = {'db_uri': request.param, 'schema': SCHEMA}
     with connect(cfg):
         create_tables()
         yield request.param

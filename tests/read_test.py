@@ -239,7 +239,7 @@ def test_cast(session):
         assert isinstance(x, int)
 
     # (Sqlite doesn't know other conversions and fallback to numeric)
-    if session == 'sqlite':
+    if ctx.flavor == 'sqlite':
         return
 
     # Test int -> bool conversion

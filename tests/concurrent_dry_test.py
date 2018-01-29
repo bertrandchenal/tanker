@@ -6,14 +6,14 @@ except ImportError:
 from threading import Thread, current_thread
 import pytest
 
-from tanker import connect, create_tables, View,  ctx
-from .base_test import get_config, DB_TYPES
+from tanker import connect, create_tables, View
+from .base_test import SCHEMA, DB_URIS
 
 NB_THREADS = 2
 
-@pytest.yield_fixture(scope='function', params=DB_TYPES)
+@pytest.yield_fixture(scope='function', params=DB_URIS)
 def session(request):
-    cfg = get_config(request.param)
+    cfg = {'db_uri': request.param, 'schema': SCHEMA}
     with connect(cfg):
         create_tables()
     yield request.param
@@ -23,7 +23,7 @@ def test_read_thread(session):
     Test a situation where threads are created outside of any active
     context (hence dry).
     '''
-    cfg = get_config(session)
+    cfg = {'db_uri': session, 'schema': SCHEMA}
     with connect(cfg):
         create_tables()
         countries = View('country').read().all()

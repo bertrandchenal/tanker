@@ -6,10 +6,11 @@ import pytest
 from tanker import (connect, create_tables, View, logger, yaml_load, fetch,
                     save, execute, Table, LRU, ctx)
 
-SQLITE_FILE = 'test.db'
-DB_TYPES = [
-    'sqlite',
-    'pg',
+
+DB_URIS = [
+    'sqlite:///test.db',
+    'postgresql:///tanker_test',
+    'postgresql:///tanker_test#test_schema',
 ]
 logger.setLevel('DEBUG' if pytest.config.getoption('verbose')
                 else 'WARNING')
@@ -87,36 +88,29 @@ members = [
 ]
 
 
-def get_config(db_type, schema=SCHEMA):
-    if db_type == 'sqlite':
-        db_uri = 'sqlite:///' + SQLITE_FILE
-    elif db_type == 'pg':
-        db_uri = 'postgresql:///tanker_test'
-    else:
-        raise ValueError('Unsupported db type "%s"' % db_type)
-
+@pytest.yield_fixture(scope='function', params=DB_URIS)
+def session(request):
     cfg = {
-        'db_uri': db_uri,
-        'schema': schema,
+        'db_uri': request.param,
+        'schema': SCHEMA,
     }
 
-    return cfg
-
-
-@pytest.yield_fixture(scope='function', params=DB_TYPES)
-def session(request):
-    db_type = request.param
-    cfg = get_config(db_type)
+    is_sqlite = request.param.startswith('sqlite')
+    use_schema = '#' in request.param
 
     # DB cleanup
-    if db_type == 'sqlite' and os.path.isfile(SQLITE_FILE):
-        os.unlink(SQLITE_FILE)
+    if is_sqlite and os.path.isfile('test.db'):
+        os.unlink('test.db')
     else:
         with connect(cfg):
+            if use_schema:
+                execute('CREATE SCHEMA IF NOT EXISTS test_schema')
             to_clean = [t['table'] for t in SCHEMA]
             for table in to_clean:
+                if use_schema:
+                    table = 'test_schema.' + table
                 qr = 'DROP TABLE IF EXISTS %s' % table
-                if db_type == 'pg':
+                if not is_sqlite:
                     qr += ' CASCADE'
                 execute(qr)
 

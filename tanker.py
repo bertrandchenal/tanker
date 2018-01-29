@@ -149,7 +149,7 @@ class Pool:
         uri = urlparse(db_uri)
         dbname = uri.path[1:]
         self.flavor = uri.scheme
-
+        self.pg_schema = None
         if self.flavor == 'sqlite':
             self.conn_args = [dbname]
             self.conn_kwargs = {
@@ -159,10 +159,12 @@ class Pool:
             }
 
         elif self.flavor == 'postgresql':
+            self.pg_schema = uri.fragment
             if psycopg2 is None:
                 raise ImportError(
                     'Cannot connect to "%s" without psycopg2 package '
                     'installed' % db_uri)
+
             con_info = "dbname='%s' " % dbname
             if uri.hostname:
                 con_info += "host='%s' " % uri.hostname
@@ -188,6 +190,8 @@ class Pool:
             connection.execute('PRAGMA journal_mode=wal')
         elif self.flavor == 'postgresql':
             connection = self.pg_pool.getconn()
+            connection.cursor().execute('SET search_path TO %s' % (
+                self.pg_schema or 'public'))
         else:
             raise ValueError('Unexpected flavor "%s"' % self.flavor)
 
@@ -266,6 +270,7 @@ class Context:
 
     def __init__(self, connection, pool):
         self.flavor = pool.flavor
+        self.pg_schema = pool.pg_schema
         self.encoding = pool.cfg.get('encoding', 'utf-8')
         self.connection = connection
         if self.flavor == 'postgresql':
@@ -397,9 +402,8 @@ class Context:
         if self.flavor == 'sqlite':
             qr = "SELECT name FROM sqlite_master WHERE type = 'table'"
         elif self.flavor == 'postgresql':
-            pg_schema = ctx.cfg.get('pg_schema', 'public')
             qr = "SELECT table_name FROM information_schema.tables " \
-                 "WHERE table_schema = '%s'" % pg_schema
+                 "WHERE table_schema = '%s'" % (self.pg_schema or 'public')
         self.db_tables.update(name for name, in execute(qr))
 
         # Collect columns
@@ -419,7 +423,7 @@ class Context:
         if self.flavor == 'sqlite':
             qr = "SELECT name FROM sqlite_master WHERE type = 'index'"
         elif self.flavor == 'postgresql':
-            schema = ctx.cfg.get('pg_schema', 'public')
+            schema = self.pg_schema or 'public'
             qr = "SELECT indexname FROM pg_indexes " \
                  "WHERE schemaname = '%s'" % schema
         self.db_indexes = set(name for name, in execute(qr))
@@ -463,7 +467,7 @@ class Context:
                 if col.name in table_cols:
                     continue
                 table_cols.add(col.name)
-                qr = 'ALTER TABLE %(table)s '\
+                qr = 'ALTER TABLE "%(table)s" '\
                      'ADD COLUMN "%(name)s" %(def)s'
                 params = {
                     'table': table.name,
@@ -505,7 +509,7 @@ class Context:
 
         # Add unique constrains (not supported by sqlite)
         if self.flavor != 'sqlite':
-            unique_qr = 'ALTER TABLE %s ADD CONSTRAINT %s UNIQUE (%s)'
+            unique_qr = 'ALTER TABLE "%s" ADD CONSTRAINT %s UNIQUE (%s)'
             for table in self.registry.values():
                 for cols in table.unique:
                     cons_name = 'unique_' + '_'.join(cols)
@@ -895,12 +899,11 @@ class View(object):
         act as self.table).
         `args` is a dict of values that allows to parameterize `filters`.
         '''
-
         if table_alias and not filters:
             raise ValueError('table_alias parameter is only supported with '
                              'non-empty filters parameters')
         if not any((data, filters)):
-            qr = 'DELETE FROM %s' % self.table.name
+            qr = 'DELETE FROM "%s"' % self.table.name
             return execute(qr)
 
         if data and filters:
@@ -1120,7 +1123,7 @@ class View(object):
         qr = (
             'INSERT INTO "%(main)s" (%(main_fields)s) '
             'SELECT %(tmp_fields)s FROM tmp '
-            '%(join_type)s JOIN "%(main_table)s" ON ( %(join_cond)s) ')
+            '%(join_type)s JOIN "%(main)s" ON ( %(join_cond)s) ')
         if upd_fields and update:
             qr += 'ON CONFLICT (%(idx)s) DO UPDATE SET %(upd_fields)s'
         else:
@@ -1130,7 +1133,6 @@ class View(object):
             'main': self.table.name,
             'main_fields': main_fields,
             'tmp_fields': tmp_fields,
-            'main_table': self.table.name,
             'join_cond': ' AND '.join(join_cond),
             'join_type': 'LEFT' if insert else 'INNER',
             'upd_fields': ', '.join(upd_fields),
@@ -1142,7 +1144,7 @@ class View(object):
     def _insert(self, join_cond):
         qr = 'INSERT INTO "%(main)s" (%(fields)s) %(select)s'
         select = 'SELECT %(tmp_fields)s FROM tmp '\
-                 'LEFT JOIN "%(main_table)s" ON ( %(join_cond)s) ' \
+                 'LEFT JOIN "%(main)s" ON ( %(join_cond)s) ' \
                  'WHERE %(where_cond)s'
 
         # Consider only new rows
@@ -1153,7 +1155,7 @@ class View(object):
         tmp_fields = ', '.join('tmp."%s"' % f.name for f in self.field_map)
         select = select % {
             'tmp_fields': tmp_fields,
-            'main_table': self.table.name,
+            'main': self.table.name,
             'join_cond': ' AND '.join(join_cond),
             'where_cond': ' AND '.join(where_cond),
         }
@@ -1384,7 +1386,8 @@ class Table:
         #               '("%s" in table "%s")'
         #         raise ValueError(msg % (col, self.name))
 
-        ctx.registry[name] = self
+        self.ctx = ctx
+        self.ctx.registry[name] = self
 
     def get_column(self, name):
         try:
@@ -1474,14 +1477,9 @@ class Column:
         if self.ctype == 'O2M':
             return None
         # M2O
-        if ctx.flavor == 'sqlite':
-            table = '"%s"' % self.foreign_table
-            cascade = ''
-        elif ctx.flavor == 'postgresql':
-            pg_schema = ctx.cfg.get('pg_schema', 'public')
-            table = '"%s"."%s"' % (pg_schema, self.foreign_table)
-            cascade = 'ON DELETE CASCADE'
-        return 'INTEGER REFERENCES %s ("%s") %s' % (
+        table = Table.get(self.foreign_table).name
+        cascade = 'ON DELETE CASCADE' if ctx.flavor == 'postgresql' else ''
+        return 'INTEGER REFERENCES "%s" ("%s") %s' % (
             table, self.foreign_col, cascade)
 
     def get_foreign_table(self):
@@ -1629,8 +1627,9 @@ class ReferenceSet:
     def get_sql_joins(self):
         for key, alias in self.joins.items():
             left_table, right_table, left_col, right_col = key
-            yield 'LEFT JOIN %s AS %s ON ("%s"."%s" = "%s"."%s")' % (
-                right_table, alias, left_table, left_col, alias, right_col
+            yield 'LEFT JOIN "%s" AS "%s" ON ("%s"."%s" = "%s"."%s")' % (
+                right_table, alias, left_table, left_col, alias,
+                right_col
             )
 
     def get_ref(self, desc, table=None, alias=None):
@@ -1757,7 +1756,7 @@ class Expression(object):
     def _sub_select(self, *items):
         select = items[0]
         tail = ' '.join(items[1:])
-        from_ = 'FROM %s' % (self.ref_set.table_alias)
+        from_ = 'FROM "%s"' % (self.ref_set.table_alias)
         joins = ' '.join(self.ref_set.get_sql_joins())
 
         items = (select, from_, joins, tail)
