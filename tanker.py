@@ -397,7 +397,7 @@ class Context:
                     ', '.join(map(repr, val)), remote_table))
             yield res
 
-    def introspect_db(self):
+    def introspect_db(self, auto=False):
         # Collect table info
         if self.flavor == 'sqlite':
             qr = "SELECT name FROM sqlite_master WHERE type = 'table'"
@@ -411,7 +411,7 @@ class Context:
             if self.flavor == 'sqlite':
                 qr = 'PRAGMA table_info("%s")' % table_name
                 cursor = execute(qr)
-                current_cols = [x[1] for x in cursor]
+                current_cols = {x[1] for x in cursor}
             elif self.flavor == 'postgresql':
                 qr = "SELECT column_name FROM information_schema.columns "\
                      "WHERE table_name = '%s' " % table_name
@@ -433,6 +433,11 @@ class Context:
             qr = 'SELECT constraint_name '\
                  'FROM information_schema.table_constraints'
             self.db_constraints = set(name for name, in execute(qr))
+
+        if not auto:
+            return
+
+        
 
     def create_tables(self):
         # First we collect db info

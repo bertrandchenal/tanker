@@ -3,6 +3,10 @@
 Tanker is a Python database library targeting analytic operations but
 it also fits most transactional processing.
 
+As its core it's mainly a query builder that simplify greatly the join
+operations. It also comes with an way to automatically create the
+database tables based on your schema definition.
+
 Currently Postgresql and Sqlite are supported. There is also optional
 support for pandas DataFrames.
 
@@ -40,7 +44,7 @@ to the database and creates the tables.
 
     cfg = {
         'db_uri': 'sqlite:///test.db',
-        'schema': yaml_load(open('schema.yaml').read()),
+        'schema': open('schema.yaml').read(),
     }
     with connect(cfg):
         create_tables()
@@ -53,9 +57,10 @@ created this will generate the following column definition:
 
     "country" INTEGER REFERENCES "country" (id) ON DELETE CASCADE
 
-If not specified, `sqlite:///:memory:` will be used as `db_uri`. To use
-Postgresql, the uri should looks like
-`postgresql://login:passwd@hostname/dbname`
+If not specified, `sqlite:///:memory:` will be used as `db_uri`. To
+use Postgresql, the uri should looks like
+`postgresql://login:passwd@hostname/dbname` (and you can define the
+postgres schema to use by appending `#shema_name`to the uri)
 
 Note that every database interaction must happen inside the `with
 connect(cfg)` block.
