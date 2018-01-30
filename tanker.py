@@ -190,8 +190,10 @@ class Pool:
             connection.execute('PRAGMA journal_mode=wal')
         elif self.flavor == 'postgresql':
             connection = self.pg_pool.getconn()
-            connection.cursor().execute('SET search_path TO %s' % (
-                self.pg_schema or 'public'))
+            if self.pg_schema:
+                cur = connection.cursor()
+                cur.execute('CREATE SCHEMA IF NOT EXISTS %s' % self.pg_schema)
+                cur.execute('SET search_path TO %s' % self.pg_schema)
         else:
             raise ValueError('Unexpected flavor "%s"' % self.flavor)
 
@@ -201,6 +203,9 @@ class Pool:
         schema = self.cfg and self.cfg.get('schema')
         if isinstance(schema, basestring):
             schema = yaml_load(schema)
+        if not schema:
+            schema = new_ctx.introspect_db(auto=True)
+
         # Makes new_ctx init the pool registry if still empty
         if not self.registry and schema:
             for table_def in schema:
@@ -222,6 +227,11 @@ class Pool:
         for pool in cls._pools.values():
             if pool.flavor == 'postgresql':
                 pool.pg_pool.closeall()
+        cls.clear()
+
+    @classmethod
+    def clear(cls):
+        cls._pools = {}
 
     @classmethod
     def get_pool(cls, cfg):
@@ -439,16 +449,26 @@ class Context:
         if not auto:
             return
 
+        foreign_keys = {}
         if self.flavor == 'sqlite':
-            qr = 'PRAGMA foreign_key_list(%s)'
-            # sqlite> PRAGMA foreign_key_list(member);
+            # Example invocation of fk pragma:
+            #  sqlite> PRAGMA foreign_key_list(member);
             #  id|seq|table|from|to|on_update|on_delete|match
             #  0|0|team|team|id|NO ACTION|NO ACTION|NONE
+            type_map = {
+                # TODO
+            }
+            qr = 'PRAGMA foreign_key_list(%s)'
+            for table_name in self.db_tables:
+                cur = execute(qr % table_name)
+                foreign_keys.update({
+                    (table_name, r[3]): (r[2], r[4]) for r in cur})
 
         elif self.flavor == 'postgresql':
             qr = '''
             SELECT
-              tc.table_name, kcu.column_name,
+              tc.table_name,
+              kcu.column_name,
               ccu.table_name AS foreign_table_name,
               ccu.column_name AS foreign_column_name
             FROM information_schema.table_constraints AS tc
@@ -458,8 +478,12 @@ class Context:
               AS ccu ON ccu.constraint_name = tc.constraint_name
             WHERE constraint_type = 'FOREIGN KEY';
             '''
+            cur = execute(qr)
+            foreign_keys.update({
+                (r[0], r[1]): (r[2], r[3]) for r in cur})
 
-
+        schema = OrderedDict() # TODO
+        return schema
 
     def create_tables(self):
         # First we collect db info

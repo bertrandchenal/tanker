@@ -103,8 +103,6 @@ def session(request):
         os.unlink('test.db')
     else:
         with connect(cfg):
-            if use_schema:
-                execute('CREATE SCHEMA IF NOT EXISTS test_schema')
             to_clean = [t['table'] for t in SCHEMA]
             for table in to_clean:
                 if use_schema:
