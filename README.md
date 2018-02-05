@@ -7,8 +7,8 @@ As its core it's mainly a query builder that simplify greatly the join
 operations. It also comes with an way to automatically create the
 database tables based on your schema definition.
 
-Currently Postgresql and Sqlite are supported. There is also optional
-support for pandas DataFrames.
+Currently Postgresql and Sqlite are supported and the API is made to
+seamlessly integrate with pandas DataFrames.
 
 
 ## Licence
