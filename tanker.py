@@ -789,10 +789,11 @@ class View(object):
         for view_field in self.fields:
             if view_field.col is None:
                 continue
-            if self.field_map[view_field.col] and view_field.col.ctype != 'M2O':
-                raise ValueError(
-                    'Column %s is specified several time in view'
-                    % view_field.col.name)
+            if self.field_map[view_field.col]:
+                if view_field.col.ctype not in ('M2O', 'O2M'):
+                    raise ValueError(
+                        'Column %s is specified several time in view'
+                        % view_field.col.name)
             self.field_map[view_field.col].append(view_field)
             self.field_idx[view_field.col].append(idx)
             idx += 1
