@@ -1772,12 +1772,15 @@ class Expression(object):
         'timestamp': 'timestamp',
         'bool': 'bool',
         'float': 'float',
+        'epoch': 'epoch',
         'not': lambda x: 'not %s' % x,
         'exists': lambda x: 'EXISTS (%s)' % x,
         'where': lambda *x: 'WHERE ' + ' AND '.join(x),
         'select': lambda *x: 'SELECT ' + ', '.join(x),
         'select-distinct': lambda *x: 'SELECT DISTINCT ' + ', '.join(x),
         'cast': lambda x, y: 'CAST (%s AS %s)' % (x, y),
+        'extract': lambda x, y: 'EXTRACT (%s FROM %s)' % (x, y),
+        'floor': lambda x: 'floor (%s )' % x,
     }
 
     aggregates = {
@@ -1897,6 +1900,11 @@ class ExpressionSymbol:
             self.builtin = exp.builtins[self.token.lower()]
             return
         else:
+            # XXX use a leading dot to "force" to bypass builtins (for
+            # example ".floor" to express the floor column and not the
+            # floor operator. Another solution would consist of always
+            # identifying the first token of an expression as a
+            # builtins
             try:
                 ref = exp.ref_set.add(self.token)
             except KeyError:
