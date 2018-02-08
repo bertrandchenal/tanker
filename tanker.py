@@ -289,7 +289,7 @@ class Context:
         self.aliases = {'null': None}
         self._fk_cache = {}
         self.db_tables = set()
-        self.db_columns = defaultdict(dict)
+        self.db_columns = defaultdict(OrderedDict)
         self.db_constraints = set()
         self.db_indexes = set()
         # Share pool registry
@@ -482,7 +482,12 @@ class Context:
             foreign_keys.update({
                 (r[0], r[1]): (r[2], r[3]) for r in cur})
 
-        schema = OrderedDict() # TODO
+
+        schema = defaultdict(OrderedDict)
+        for table_name in self.db_tables:
+            for name, data_type in self.db_columns[table_name].items():
+                pass # TODO populate schema
+
         return schema
 
     def create_tables(self):
@@ -577,9 +582,9 @@ class Context:
         for table in self.registry.values():
             if not table.values:
                 continue
+            logger.info('Populate %s' % table.name)
             view = View(table.name, fields=list(table.values[0].keys()))
             view.write(table.values)
-
 
 def log_sql(query, params=None, exception=False):
     if not exception and logger.getEffectiveLevel() > logging.DEBUG:
@@ -852,7 +857,7 @@ class View(object):
         exp = Expression(self)
 
         # Add select fields
-        statement = '(select-distinct %s)'if distinct else '(select %s)'
+        statement = '(select-distinct %s)' if distinct else '(select %s)'
         select_ast = exp.parse(statement % ' '.join(
             f.desc for f in self.fields))
         select_chunk = [select_ast]
@@ -1386,6 +1391,10 @@ class TankerCursor:
     def all(self):
         return list(self)
 
+    def chain(self):
+        items = iter(self)
+        return chain(*items)
+
     def dict(self):
         keys = [f.name for f in self.view.fields]
         for row in self:
@@ -1740,7 +1749,7 @@ class Expression(object):
     builtins = {
         '+': lambda *xs: '(%s)' % ' + '.join(xs),
         '-': lambda *xs: '(%s)' % ' - '.join(xs),
-        'x': lambda *xs: '(%s)' % ' * '.join(xs),
+        '*': lambda *xs: '(%s)' % ' * '.join(xs),
         '/': lambda *xs: '(%s)' % ' / '.join(xs),
         'and': lambda *xs: '(%s)' % ' AND '.join(xs),
         'or': lambda *xs: '(%s)' % ' OR '.join(xs),
@@ -1761,18 +1770,6 @@ class Expression(object):
         'unnest': lambda x: 'unnest(%s)' % x,
         'is': lambda x, y: '%s is %s' % (x, y),
         'isnot': lambda x, y: '%s is not %s' % (x, y),
-        'null': 'null',
-        'true': 'true',
-        'false': 'false',
-        '*': '*',
-        'date': 'date',
-        'varchar': 'varchar',
-        'integer': 'integer',
-        'bigint': 'bigint',
-        'timestamp': 'timestamp',
-        'bool': 'bool',
-        'float': 'float',
-        'epoch': 'epoch',
         'not': lambda x: 'not %s' % x,
         'exists': lambda x: 'EXISTS (%s)' % x,
         'where': lambda *x: 'WHERE ' + ' AND '.join(x),
@@ -1780,12 +1777,12 @@ class Expression(object):
         'select-distinct': lambda *x: 'SELECT DISTINCT ' + ', '.join(x),
         'cast': lambda x, y: 'CAST (%s AS %s)' % (x, y),
         'extract': lambda x, y: 'EXTRACT (%s FROM %s)' % (x, y),
-        'floor': lambda x: 'floor (%s )' % x,
+        'floor': lambda x: 'floor(%s)' % x,
     }
 
     aggregates = {
         'avg': lambda *x: 'avg(%s)' % x,
-        'count': lambda *x: 'count(%s)' % ', '.join(x),
+        'count': lambda *x: 'count(%s)' % ', '.join(x or ['*']),
         'max': lambda *x: 'max(%s)' % x,
         'min': lambda *x: 'min(%s)' % x,
         'sum': lambda *x: 'sum(%s)' % x,
@@ -1795,9 +1792,9 @@ class Expression(object):
         self.view = view
         # Populate env with view fields
         self.env = self.base_env(view.table)
-        self.builtins = Expression.builtins.copy()
+        self.builtins = {'from': self._sub_select}
+        self.builtins.update(Expression.builtins)
         self.builtins.update(Expression.aggregates)
-        self.builtins['from'] = self._sub_select
         # Inject user-defined aliases
         self.parent = parent
 
@@ -1826,10 +1823,11 @@ class Expression(object):
     def parse(self, exp):
         lexer = shlex.shlex(exp)
         lexer.wordchars += '.!=<>:{}-'
-        ast = self.read(list(lexer))
+        tokens = list(lexer)
+        ast = self.read(tokens)
         return ast
 
-    def read(self, tokens, top_level=True):
+    def read(self, tokens, top_level=True, first=False):
         if len(tokens) == 0:
             raise SyntaxError('unexpected EOF while reading')
         token = tokens.pop(0)
@@ -1840,9 +1838,11 @@ class Expression(object):
                 from_ = tokens.pop(0)  # pop off 'from'
                 table = tokens.pop(0)
                 exp = Expression(View(table), parent=self)
-                L.append(ExpressionSymbol(from_, exp))
+                L.append(ExpressionSymbol(from_, exp, first=True))
+            first = True
             while tokens[0] != ')':
-                L.append(exp.read(tokens, top_level=False))
+                L.append(exp.read(tokens, top_level=False, first=first))
+                first = False
             tokens.pop(0)  # pop off ')'
             if tokens and top_level:
                 raise ValueError('Unexpected tokens after ending ")"')
@@ -1854,9 +1854,14 @@ class Expression(object):
             if desc != token and desc[0] == '(':
                 return self.parse(desc)
 
-        return self.atom(token)
+        return self.atom(token, first=first)
 
-    def atom(self, token):
+    def atom(self, token, first=False):
+        '''
+        Parse the token and try to identify it as param, int, float or
+        symbol. The 'first' argument tells if the token if the first item
+        in the expression (aka just after a '(').
+        '''
         for q in ('"', "'"):
             if token[0] == q and token[-1] == q:
                 return token[1:-1]
@@ -1871,17 +1876,16 @@ class Expression(object):
         try:
             return float(token)
         except ValueError:
-            return ExpressionSymbol(token, self)
+            return ExpressionSymbol(token, self, first=first)
 
 
 class ExpressionSymbol:
 
-    def __init__(self, token, exp):
+    def __init__(self, token, exp, first=False):
         self.token = token
         self.params = []
         self.ref = None
         self.builtin = None
-
         ref = None
         if self.token.startswith('_parent.'):  # XXX replace with '_.' ?
             tail = self.token
@@ -1893,18 +1897,13 @@ class ExpressionSymbol:
                 ref = parent.ref_set.add(tail)
             except KeyError:
                 pass
+        elif first:
+            self.builtin = exp.builtins.get(self.token.lower(), self.token)
+            return
         elif self.token in exp.env:
             val = exp.env[self.token]
             ref = exp.ref_set.add(val.desc)
-        elif self.token.lower() in exp.builtins:
-            self.builtin = exp.builtins[self.token.lower()]
-            return
         else:
-            # XXX use a leading dot to "force" to bypass builtins (for
-            # example ".floor" to express the floor column and not the
-            # floor operator. Another solution would consist of always
-            # identifying the first token of an expression as a
-            # builtins
             try:
                 ref = exp.ref_set.add(self.token)
             except KeyError:
