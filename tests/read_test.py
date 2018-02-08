@@ -149,7 +149,7 @@ def test_field_eval(session):
 
 def test_aggregation(session):
     # Count
-    view = View('country', ['(count *)'])
+    view = View('country', ['(count)'])
     res = view.read().all()
     assert res == [(3,)]
 
@@ -174,12 +174,12 @@ def test_aggregation(session):
     assert res == [(2,)]
 
     # Aggregates & grouping
-    view = View('team', ['name', '(count *)'])
+    view = View('team', ['name', '(count)'])
     res = view.read(groupby='name').all()
     assert res == [('Blue', 2), ('Red', 1)]
 
     # Aggregates all fields
-    view = View('team', ['(max name)', '(count *)'])
+    view = View('team', ['(max name)', '(count)'])
     res = view.read().all()
     assert res == [('Red', 3)]
 
@@ -189,13 +189,13 @@ def test_aggregation(session):
     assert res == [('Red',), ('Blue',)]
 
     # Aggregates & auto-grouping
-    view = View('team', ['name', '(count *)'])
+    view = View('team', ['name', '(count)'])
     res = view.read().all()
     assert res == [('Blue', 2), ('Red', 1)]
 
     # Group on expression
     view = View('team', {
-        'cnt': '(count *)',
+        'cnt': '(count)',
         'country_match': '(in country 1 2)',
     })
 
@@ -206,7 +206,7 @@ def test_aggregation(session):
         assert c == 3
 
     # Group on several fields
-    view = View('team', '(count *)')
+    view = View('team', '(count)')
     res = view.read(groupby=['name', 'country']).all()
     for c, in res:
         assert c == 1
@@ -218,12 +218,12 @@ def test_m2o(session):
 
 def test_cast(session):
     # Test int -> char conversion
-    view = View('country', ['(cast id varchar)'])
+    view = View('country', ['(cast id (varchar))'])
     for i, in view.read():
         assert isinstance(i, str)
 
     # Test int -> float conversion
-    view = View('country', ['(cast id float)'])
+    view = View('country', ['(cast id (float))'])
     for i, in view.read():
         assert isinstance(i, float)
 
@@ -234,7 +234,7 @@ def test_cast(session):
         'team.name',
         'registration_code']).write(members)
 
-    view = View('member', ['(cast "1" integer)'])
+    view = View('member', ['(cast "1" (integer))'])
     for x, in view.read():
         assert isinstance(x, int)
 
@@ -243,17 +243,17 @@ def test_cast(session):
         return
 
     # Test int -> bool conversion
-    view = View('country', ['(cast id bool)'])
+    view = View('country', ['(cast id (bool))'])
     for i, in view.read():
         assert isinstance(i, bool)
 
     # Test timestamp -> date conversion
-    view = View('member', ['(cast created_at date)'])
+    view = View('member', ['(cast created_at (date))'])
     for x, in view.read():
         assert isinstance(x, date)
 
     # Test str -> timestamp conversion
-    view = View('member', ['(cast "1970-01-01" timestamp)'])
+    view = View('member', ['(cast "1970-01-01" (timestamp))'])
     for x, in view.read():
         assert isinstance(x, datetime)
 

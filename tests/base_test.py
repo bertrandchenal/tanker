@@ -59,6 +59,9 @@ yaml_def = '''
 - table: kitchensink
   columns:
     index: integer
+    "true": bool
+    "false": bool
+    "null": varchar
     integer: integer
     bigint: bigint
     float: float
@@ -70,6 +73,9 @@ yaml_def = '''
     bool_array: bool[]
     ts_array: timestamp[][]
     char_array: varchar[][][]
+    floor: float
+    epoch: timestamp
+    year: timestamp
   key:
     - index
 '''
@@ -157,6 +163,17 @@ def test_one(session):
     fltr = '(= name "Prussia")'
     assert expected == View('country', ['name']).read(fltr).one()
 
+def test_chain(session):
+    expected = ['Belgium', 'France', 'Holland']
+    res = sorted(View('country', ['name']).read().chain())
+    assert expected == res
+
+    expected = ['Blue', 'Belgium', 'Blue', 'France', 'Red', 'Belgium']
+    view = View('team', ['name', 'country.name'])
+    res = view.read(order=['name', 'country.name']).chain()
+    assert expected == list(res)
+
+
 def test_link(session):
     member = Table.get('member')
     country = Table.get('country')
@@ -186,53 +203,3 @@ def test_link(session):
         '[<Column licensees O2M>, <Column member M2O>]]'
     )
     assert str(country.link(member)) == expected
-
-def test_kitchensink(session):
-    record = {
-        'index': 1,
-        'integer': 1,
-        'bigint': 10000000000,
-        'float': 1.0,
-        'bool': True,
-        'timestamp': datetime(1970, 1, 1),
-        'date': date(1970, 1, 1),
-        'varchar': 'varchar',
-        'int_array': [1,2],
-        'bool_array': [True, False],
-        'ts_array': [
-            [datetime(1970, 1, 1), datetime(1970, 1, 2)],
-            [datetime(1970, 1, 3), datetime(1970, 1, 4)],
-        ],
-        'char_array': [
-            [['ham', 'spam'], ['foo', 'bar']],
-            [['foo', 'bar'], [None, None]],
-        ],
-    }
-
-
-    # Write actual values
-    ks_view = View('kitchensink')
-    ks_view.write([record])
-    res = list(ks_view.read().dict())[0]
-    for k, v in record.items():
-        if ctx.flavor == 'sqlite' and k.endswith('array'):
-            # Array support with sqlite is incomplete
-            continue
-        assert res[k] == v
-
-    # Filters
-    for k, v in record.items():
-        if isinstance(v, list):
-            continue
-        res = ks_view.read('(= %s {})' % k, args=[v]).all()
-        assert len(res) == 1
-
-    # Write nulls
-    for k in record:
-        if k == 'index':
-            continue
-        record[k] = None
-    ks_view.write([record])
-    res = list(ks_view.read().dict())[0]
-    for k, v in record.items():
-        assert res[k] == v
