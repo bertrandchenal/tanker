@@ -44,7 +44,7 @@ else:
 if not PY2:
     basestring = (str, bytes)
 
-__version__ = '0.6.5'
+__version__ = '0.7'
 
 COLUMN_TYPE = (
     'BIGINT',
