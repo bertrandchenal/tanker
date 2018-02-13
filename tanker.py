@@ -1817,6 +1817,9 @@ class Expression(object):
     def base_env(self, table, ref_set=None):
         env = {}
         for field in self.view.fields:
+            if field.name in table._column_dict:
+                # Do not mask existing columns
+                continue
             env[field.name] = field
         return env
 
@@ -1900,9 +1903,6 @@ class ExpressionSymbol:
         elif first:
             self.builtin = exp.builtins.get(self.token.lower(), self.token)
             return
-        elif self.token in exp.env:
-            val = exp.env[self.token]
-            ref = exp.ref_set.add(val.desc)
         else:
             try:
                 ref = exp.ref_set.add(self.token)

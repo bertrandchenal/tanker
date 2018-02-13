@@ -297,3 +297,13 @@ def test_distinct(session):
     expected = sorted(set(view.read().all()))
     res = sorted(view.read(distinct=True).all())
     assert res == expected
+
+def test_recursion(session):
+    # Part of the expression is member of the env (env is bases on
+    # view fields names)
+    fields = {
+        'name': '(max name)'
+    }
+    view = View('team', fields)
+    res, = view.read().all()
+    assert res[0] == 'Red'
