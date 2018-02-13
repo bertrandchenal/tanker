@@ -83,3 +83,22 @@ def test_function(session):
     keys, values = zip(*list(output_record.items()))
     res =  View('kitchensink', keys).read().all()
     assert res[0] == values
+
+def test_env(session):
+    # Part of the expression is member of the env (env is bases on
+    # view fields names)
+    fields = {
+        'name': '(max name)'
+    }
+    view = View('team', fields)
+    res, = view.read().all()
+    assert res[0] == 'Red'
+
+    # Alias is used in order
+    fields = {
+        'first_name': 'name'
+    }
+    view = View('team', fields)
+    fltr = '(= first_name "Blue")'
+    res, = view.read(fltr, order='first_name', limit=1).all()
+    assert res[0] == 'Blue'

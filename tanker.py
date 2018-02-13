@@ -1903,6 +1903,9 @@ class ExpressionSymbol:
         elif first:
             self.builtin = exp.builtins.get(self.token.lower(), self.token)
             return
+        elif self.token in exp.env:
+            val = exp.env[self.token]
+            ref = exp.ref_set.add(val.desc)
         else:
             try:
                 ref = exp.ref_set.add(self.token)
