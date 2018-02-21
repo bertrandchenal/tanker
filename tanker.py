@@ -55,6 +55,7 @@ COLUMN_TYPE = (
     'M2O',
     'O2M',
     'TIMESTAMP',
+    'TIMESTAMPTZ',
     'VARCHAR',
 )
 QUOTE_SEPARATION = re.compile(r"(.*?)('.*?')", re.DOTALL)
@@ -107,21 +108,30 @@ def paginate(iterators, size=None):
             raise StopIteration
         yield page
 
-TIMESTAMP_FMT = [
-    '%Y-%m-%d %H:%M:%S',
-    '%Y-%m-%dT%H:%M:%S',
-]
-DATE_FMT = [
-    '%Y-%m-%d',
-]
+TIME_FMT = {
+    'TIMESTAMP': [
+        '%Y-%m-%d %H:%M:%S',
+        '%Y-%m-%dT%H:%M:%S',
+    ],
+    'TIMESTAMPTZ': [
+        '%Y-%m-%d %H:%M:%S%z',
+        '%Y-%m-%dT%H:%M:%S%z',
+    ],
+    'DATE': [
+        '%Y-%m-%d',
+    ],
+}
 def strptime(val, kind):
-    kind_fmt = TIMESTAMP_FMT if kind == 'timestamp' else DATE_FMT
-    for fmt in kind_fmt:
+    for fmt in TIME_FMT[kind]:
         try:
-            return datetime.strptime(val, fmt)
+            res = datetime.strptime(val, fmt)
         except ValueError:
             continue
-    raise ValueError('Unable to parse "%s" as datetime' % val)
+        if kind == 'DATE':
+            return res.date()
+        return res
+
+    raise ValueError('Unable to parse "%s" as %s' % (val, kind.lower()))
 
 
 class TankerThread(Thread):
@@ -935,7 +945,7 @@ class View(object):
                     # Handle update of fk by id
                     yield map(int, data[idx[0]])
                 else:
-                    # Resole foreign key reference
+                    # Resolve foreign key reference
                     fmt_cols = lambda a: tuple(
                         a[0].col.format(a[1], astype=a[0].ctype))
                     values = map(fmt_cols, zip(fields, values))
@@ -1046,7 +1056,7 @@ class View(object):
                 'fields': ', '.join('"%s"' % c.name for c in self.field_map),
                 'values': ', '.join('%s' for _ in self.field_map),
             }
-            executemany(qr, zip(*data))
+            executemany(qr, list(zip(*data)))
 
         # Create join conditions
         join_cond = []
@@ -1193,7 +1203,7 @@ class View(object):
             'join_cond': ' AND '.join(join_cond),
             'join_type': 'LEFT' if insert else 'INNER',
             'upd_fields': ', '.join(upd_fields),
-            'idx': ', '.join(self.key_cols),
+            'idx': ', '.join('"%s"' % k for k in self.key_cols),
         }
         cur = TankerCursor(self, qr).execute()
         return cur.rowcount
@@ -1591,7 +1601,7 @@ class Column:
                         value = value.encode(ctx.encoding)
                 yield value
 
-        elif astype == 'TIMESTAMP':
+        elif astype in ('TIMESTAMP', 'TIMESTAMPTZ'):
             for value in values:
                 if not value:
                     yield None
@@ -1611,7 +1621,7 @@ class Column:
                         value = EPOCH + timedelta(seconds=ts/1e9)
                     yield value
                 elif isinstance(value, basestring):
-                    yield strptime(value, 'timestamp')
+                    yield strptime(value, astype)
                 else:
                     raise ValueError(
                         'Unexpected value "%s" for type "%s"' % (
@@ -1635,7 +1645,7 @@ class Column:
                         value = date(*dt.timetuple()[:3])
                     yield value
                 elif isinstance(value, basestring):
-                    yield strptime(value, 'date')
+                    yield strptime(value, astype)
                 else:
                     raise ValueError(
                         'Unexpected value "%s" for type "%s"' % (

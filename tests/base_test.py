@@ -1,10 +1,9 @@
-from datetime import datetime, date
 import os
 
 import pytest
 
 from tanker import (connect, create_tables, View, logger, yaml_load, fetch,
-                    save, execute, Table, LRU, ctx)
+                    save, execute, Table)
 
 
 DB_URIS = [
@@ -78,6 +77,14 @@ yaml_def = '''
     year: timestamp
   key:
     - index
+
+- table: timeseries
+  columns:
+    timestamp: timestamp
+    timestamptz: timestamptz
+    date: date
+  index:
+    - timestamp
 '''
 
 
