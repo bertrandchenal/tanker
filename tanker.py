@@ -1920,10 +1920,8 @@ class ExpressionSymbol:
             try:
                 ref = exp.ref_set.add(self.token)
             except KeyError:
-                pass
+                self.builtin = self.token
 
-        if not ref:
-            raise ValueError('"%s" not understood' % self.token)
         self.ref = ref
 
     def eval(self):
