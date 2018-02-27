@@ -1123,7 +1123,8 @@ class View(object):
         ) as join_cond:
             rowcounts = {}
             if self.ctx.flavor == 'sqlite':
-                self._sqlite_upsert(join_cond, insert, update)
+                cnt = self._sqlite_upsert(join_cond, insert, update)
+                rowcounts['upsert'] = cnt
             elif ctx.legacy_pg:
                 if insert:
                     cnt = self._insert(join_cond)
