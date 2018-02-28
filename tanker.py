@@ -596,7 +596,8 @@ class Context:
                 continue
             logger.info('Populate %s' % table.name)
             view = View(table.name, fields=list(table.values[0].keys()))
-            view.write(table.values)
+            view.write(table.values, disable_acl=True)
+
 
 def log_sql(query, params=None, exception=False):
     if not exception and logger.getEffectiveLevel() > logging.DEBUG:
