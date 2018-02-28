@@ -226,8 +226,10 @@ class Pool:
     def __exit__(self, exc_type, exc_value, traceback):
         connection = CTX_STACK.pop()
         if exc_value:
+            logger.debug('ROLLBACK')
             connection.rollback()
         else:
+            logger.debug('COMMIT')
             connection.commit()
         if self.flavor == 'postgresql':
             self.pg_pool.putconn(connection)
@@ -1123,7 +1125,8 @@ class View(object):
         ) as join_cond:
             rowcounts = {}
             if self.ctx.flavor == 'sqlite':
-                self._sqlite_upsert(join_cond, insert, update)
+                cnt = self._sqlite_upsert(join_cond, insert, update)
+                rowcounts['upsert'] = cnt
             elif ctx.legacy_pg:
                 if insert:
                     cnt = self._insert(join_cond)
@@ -1152,6 +1155,9 @@ class View(object):
         qr_cols = [f.name for f in self.field_map]
         other_cols = [col.name for col in self.table.own_columns \
                       if col.name not in qr_cols]
+        # TODO use separate insert and update. And use multi column
+        # update (only with sqlite >= 3.15, see
+        # https://stackoverflow.com/a/47753166)
         qr = 'INSERT OR REPLACE INTO "%(main)s" (%(fields)s) %(select)s'
         select = 'SELECT %(tmp_fields)s FROM tmp '\
                  '%(join_type)s JOIN "%(main_table)s" ON ( %(join_cond)s)'
