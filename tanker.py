@@ -226,8 +226,10 @@ class Pool:
     def __exit__(self, exc_type, exc_value, traceback):
         connection = CTX_STACK.pop()
         if exc_value:
+            logger.debug('ROLLBACK')
             connection.rollback()
         else:
+            logger.debug('COMMIT')
             connection.commit()
         if self.flavor == 'postgresql':
             self.pg_pool.putconn(connection)
