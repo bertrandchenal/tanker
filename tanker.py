@@ -778,13 +778,7 @@ class View(object):
         self.ctx = ctx
         self.table = Table.get(table)
         if fields is None:
-            fields = []
-            for col in self.table.own_columns:
-                if col.ctype == 'M2O':
-                    ft = col.get_foreign_table()
-                    fields.extend('.'.join((col.name, i)) for i in ft.key)
-                else:
-                    fields.append(col.name)
+            fields = list(self.table.default_fields())
         if isinstance(fields, basestring):
             fields = [[fields, fields]]
         elif isinstance(fields, dict):
@@ -1480,6 +1474,15 @@ class Table:
 
     def __repr__(self):
         return '<Table %s>' % self.name
+
+    def default_fields(self):
+        for col in self.own_columns:
+            if col.ctype == 'M2O':
+                ft = col.get_foreign_table()
+                for i in ft.key:
+                    yield '.'.join((col.name, i))
+            else:
+                yield col.name
 
     def link(self, dest):
         '''
