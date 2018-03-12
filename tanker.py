@@ -1594,6 +1594,10 @@ class Column:
             for array in values:
                 yield self.format_array(array, astype, array_dim)
 
+        elif astype == 'FLOAT':
+            for v in map(skip_none(float), values):
+                yield v
+
         elif astype in ('INTEGER', 'BIGINT'):
             for v in map(skip_none(int), values):
                 yield v
