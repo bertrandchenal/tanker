@@ -1053,7 +1053,7 @@ class View(object):
                 'fields': ', '.join('"%s"' % c.name for c in self.field_map),
                 'values': ', '.join('%s' for _ in self.field_map),
             }
-            executemany(qr, list(zip(*data)))
+            executemany(qr, zip(*data))
 
         # Create join conditions
         join_cond = []
