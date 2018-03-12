@@ -1876,7 +1876,7 @@ class Expression(object):
             return AST(L, exp)
         elif token == ')':
             raise SyntaxError('unexpected )')
-        elif token in self.env:
+        elif token in self.env and not first:
             desc = self.env[token].desc
             if desc != token and desc[0] == '(':
                 return self.parse(desc)

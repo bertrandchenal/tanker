@@ -94,6 +94,15 @@ def test_env(session):
     res, = view.read().all()
     assert res[0] == 'Red'
 
+    #First member if an s-expression should be shielded from env
+    fields = {
+        'max': '(max name)'
+    }
+    view = View('team', fields)
+    res, = view.read().all()
+    assert res[0] == 'Red'
+
+
     # Alias is used in order
     fields = {
         'first_name': 'name'
