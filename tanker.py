@@ -351,9 +351,11 @@ class Context:
             columns.append(new_col)
         # Instanciating the table adds it to current registry
         Table(name=table_def['table'], columns=columns,
-              values=values,
               key=table_def.get('key', table_def.get('index')),
-              unique=table_def.get('unique'))
+              unique=table_def.get('unique'),
+              values=values,
+              use_index=table_def.get('use-index'),
+        )
 
     def reset_cache(self, table=None):
         if table is None:
@@ -506,12 +508,19 @@ class Context:
         # First we collect db info
         self.introspect_db()
 
+        # Discover which table are referenced
+        referenced = set(col.foreign_table for t in self.registry.values()
+                         for col in t.columns if col.ctype == 'M2O')
+
         # Create tables and simple columns
         for table in self.registry.values():
             if table.name in self.db_tables:
                 continue
-            id_type = 'INTEGER' if self.flavor == 'sqlite' else 'SERIAL'
-            col_defs = ['id %s PRIMARY KEY' % id_type]
+            col_defs = ['id %(type)s%(pk)s' % {
+                'type': 'INTEGER' if self.flavor == 'sqlite' else 'SERIAL',
+                'pk': ' PRIMARY KEY' if table.name in referenced else '',
+            }]
+
             for col in table.columns:
                 if col.ctype in ('M2O', 'O2M') or col.name == 'id':
                     continue
@@ -520,6 +529,7 @@ class Context:
 
             qr = 'CREATE TABLE "%s" (%s)' % (table.name, ', '.join(col_defs))
             execute(qr)
+
             self.db_tables.add(table.name)
             logger.info('Table "%s" created', table.name)
 
@@ -566,13 +576,24 @@ class Context:
         for table in self.registry.values():
             if not table.key:
                 continue
-            idx = 'unique_index_%s' % table.name
+
+            use_brin = self.flavor == 'postgresql' and table.use_index == 'BRIN'
+            if use_brin:
+                idx = 'brin_index_%s' % table.name
+            else:
+                idx = 'unique_index_%s' % table.name
+
             if idx in self.db_indexes:
                 continue
             self.db_indexes.add(idx)
+
             cols = ', '.join('"%s"' % c for c in table.key)
-            qr = 'CREATE UNIQUE INDEX "%s" ON "%s" (%s)' % (
-                idx, table.name, cols)
+
+            if use_brin:
+                tpl = 'CREATE INDEX "%s" ON "%s" USING BRIN (%s)'
+            else:
+                tpl = 'CREATE UNIQUE INDEX "%s" ON "%s" (%s)'
+            qr =  tpl % (idx, table.name, cols)
             execute(qr)
 
         # Add unique constrains (not supported by sqlite)
@@ -1122,7 +1143,7 @@ class View(object):
             if self.ctx.flavor == 'sqlite':
                 cnt = self._sqlite_upsert(join_cond, insert, update)
                 rowcounts['upsert'] = cnt
-            elif ctx.legacy_pg:
+            elif ctx.legacy_pg or self.table.use_index == 'BRIN':
                 if insert:
                     cnt = self._insert(join_cond)
                     rowcounts['insert'] = cnt
@@ -1421,11 +1442,16 @@ class TankerCursor:
 
 class Table:
 
-    def __init__(self, name, columns, key=None, unique=None, values=None):
+    def __init__(self, name, columns, key=None, unique=None, values=None,
+                 use_index=None):
         self.name = name
         self.columns = columns[:]
         self.unique = unique or []
         self.values = values
+        self.use_index = use_index.upper() if use_index else 'BTREE'
+        if not self.use_index in ('BRIN', 'BTREE'):
+            msg = 'Value "%s" not supported for use-index'
+            raise ValueError(msg % use_index)
 
         # Add implicit id column
         if 'id' not in [c.name for c in self.columns]:

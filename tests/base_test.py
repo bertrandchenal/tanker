@@ -46,6 +46,7 @@ yaml_def = '''
     - registration_code
   defaults:
     created_at: current_timestamp
+  use-index: brin
 
 - table: licensee
   columns:
