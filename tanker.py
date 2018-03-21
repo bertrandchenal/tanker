@@ -1643,7 +1643,7 @@ class Column:
 
         elif astype in ('TIMESTAMP', 'TIMESTAMPTZ'):
             for value in values:
-                if not value:
+                if value is None:
                     yield None
                 elif isinstance(value, datetime):
                     yield value
@@ -1669,7 +1669,7 @@ class Column:
 
         elif astype == 'DATE':
             for value in values:
-                if not value:
+                if value is None:
                     yield None
                 elif isinstance(value, date):
                     yield value
