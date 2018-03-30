@@ -2126,6 +2126,8 @@ def cli():
                         '(instead of stdin/stdout)')
     parser.add_argument('--yaml', help='Enable YAML input / ouput '
                         '(defaults to csv)', action='store_true')
+    parser.add_argument('--ascii-table', '-t', help='Enable ascii table output',
+                        action='store_true')
     parser.add_argument('-d', '--debug', help='Enable debugging',
                         action='store_true')
 
@@ -2137,6 +2139,24 @@ def cli():
 
     with connect(cfg):
         cli_main(args)
+
+
+def ascii_table(headers, rows, sep=' '):
+    # Convert content as strings
+    rows = [map(str, row) for row in rows]
+    # Compute lengths
+    lengths = (len(h) for h in headers)
+    for row in rows:
+        lengths = map(max, (len(i) for i in row), lengths)
+    lengths = list(lengths)
+    # Define row formatter
+    fmt = lambda xs: sep.join(x.ljust(l) for x, l in zip(xs, lengths)) + '\n'
+    # Output content
+    top = fmt(headers)
+    yield top
+    yield fmt('-' * l for l in lengths)
+    for row in rows:
+        yield fmt(row)
 
 
 def cli_input_data(args):
@@ -2165,7 +2185,6 @@ def cli_input_data(args):
 
     return fields, data
 
-
 def cli_main(args):
     action = args.action[0]
     table = args.table[0] if args.table else None
@@ -2190,6 +2209,11 @@ def cli_main(args):
                 list(res.dict()),
                 default_flow_style=False)
             )
+
+        elif args.ascii_table:
+            headers = [f.name for f in view.fields]
+            for line in ascii_table(headers, res):
+                fh.write(line)
         else:
             writer = csv.writer(fh)
             writer.writerow([f.name for f in view.fields])
