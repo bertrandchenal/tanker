@@ -11,8 +11,10 @@ DB_URIS = [
     'postgresql:///tanker_test',
     'postgresql:///tanker_test#test_schema',
 ]
-logger.setLevel('DEBUG' if pytest.config.getoption('verbose')
-                else 'WARNING')
+
+verbose = pytest.config.getoption('verbose', 0) > 0
+logger.setLevel('DEBUG' if verbose else 'WARNING')
+
 
 # Tables definitions can be written in yaml
 yaml_def = '''
