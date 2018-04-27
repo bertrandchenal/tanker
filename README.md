@@ -272,6 +272,8 @@ dictionary to map dataframe columns to database columns.
 
 Some ideas, in no particular order:
 
+  - Add a view.insert method that bypass tmp table and write directly
+    to the actual table
   - Split `acl_rules` into `acl_read` and `acl_write`. Apply also acl
     on joined table (not only on the main table of the view)
   - Support for version column (probably a write timestamp)
