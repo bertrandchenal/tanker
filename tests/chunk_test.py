@@ -1,11 +1,11 @@
-from tanker import View, Expression
+from tanker import Table, Expression
 from .base_test import session
 
 def test_expand(session):
     # Test formatting features
-    view = View('team')
+    tbl = Table.get('team')
     qr = '(in {} {spam!r} {foo:>5})'
-    ast = Expression(view).parse(qr)
+    ast = Expression(tbl).parse(qr)
     qr = ast.eval(
         args=['ham'],
         kwargs={'spam': 'spam', 'foo': 'foo'})

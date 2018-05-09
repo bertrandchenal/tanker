@@ -1,10 +1,9 @@
-import pytest
-from tanker import Table, View, Column, Expression, ctx
+from tanker import Table, View, Expression, ctx
 from .base_test import session
 
 
 def test_bitwise_operators(session):
-    exp = Expression(View('member'))
+    exp = Expression(Table.get('member'))
     ops =  ('<', '>', '<=', '>=', '!=', 'like', 'ilike', 'is', 'isnot')
     for op in ops:
         ast = exp.parse('(%s name "foo")' % op)
@@ -17,7 +16,7 @@ def test_bitwise_operators(session):
 
 
 def test_cast(session):
-    exp = Expression(View('member'))
+    exp = Expression(Table.get('member'))
     ast = exp.parse('(cast id (varchar))')
     res = ast.eval()
     assert res == 'CAST ("member"."id" AS varchar)'
@@ -25,7 +24,7 @@ def test_cast(session):
 
 
 def test_other_operators(session):
-    exp = Expression(View('member'))
+    exp = Expression(Table.get('member'))
     ops = {
         'and': 'AND',
         'or': 'OR',
@@ -48,19 +47,19 @@ def test_other_operators(session):
 
 
 def test_in_notin(session):
-    exp = Expression(View('member'))
+    exp = Expression(Table.get('member'))
     for op in ('in', 'notin'):
         res = exp.parse('(%s name 1 2)' % op).eval()
 
 
 def test_not(session):
-    exp = Expression(View('member'))
+    exp = Expression(Table.get('member'))
     res = exp.parse('(not (= name 1))').eval()
     assert res == 'not "member"."name" = %s'
 
 
 def test_select(session):
-    exp = Expression(View('member'))
+    exp = Expression(Table.get('member'))
     ast = exp.parse('(select 1)')
     res = ast.eval()
     assert res == 'SELECT %s'
@@ -68,7 +67,7 @@ def test_select(session):
 
 
 def test_from(session):
-    exp = Expression(View('team'))
+    exp = Expression(Table.get('team'))
     ast = exp.parse('(FROM member (SELECT id name _parent.name))')
     res = ast.eval()
     assert res == 'SELECT "member"."id", "member"."name", "team"."name" FROM "member"'
@@ -76,7 +75,7 @@ def test_from(session):
 
 
 def test_join(session):
-    exp = Expression(View('member'))
+    exp = Expression(Table.get('member'))
     ast = exp.parse('(= team.name "spam-team")')
     assert ast.eval() == '"team_0"."name" = %s'
     assert ast.params == ['spam-team']
@@ -92,7 +91,7 @@ def test_join(session):
 
 
 def test_exists(session):
-    exp = Expression(View('team'))
+    exp = Expression(Table.get('team'))
     ast = exp.parse('(exists 1)')
     assert ast.eval() == 'EXISTS (%s)'
     assert ast.params == [1]
@@ -113,7 +112,7 @@ def test_exists(session):
 def test_multi_parent(session):
     if ctx.pg_schema:
         return
-    exp = Expression(View('country'))
+    exp = Expression(Table.get('country'))
     ast = exp.parse('''
      (from team (select country) (where (in id
        (from member (select team) (where (= team _parent.id)
@@ -132,7 +131,7 @@ def test_multi_parent(session):
 def test_subexpression_join(session):
     if ctx.pg_schema:
         return
-    exp = Expression(View('team'))
+    exp = Expression(Table.get('team'))
     ast = exp.parse('(exists 1)')
     assert ast.eval() == 'EXISTS (%s)'
     assert ast.params == [1]
@@ -157,20 +156,19 @@ def test_subexpression_join(session):
 def test_subselect(session):
     if ctx.pg_schema:
         return
-    view = View('team')
     cond = (
         '(in id '
           '(from member (select team) '
           '(where (= name "Bob"))))'
         )
-    ast = Expression(view).parse(cond)
+    ast = Expression(Table.get('team')).parse(cond)
     expected = ('"team"."id" in ('
                 'SELECT "member"."team" FROM "member" WHERE "member"."name" = %s)')
     assert ast.eval() == expected
 
 
 def test_field(session):
-    exp = Expression(View('team'))
+    exp = Expression(Table.get('team'))
     assert exp.parse('name').eval() == '"team"."name"'
     assert exp.parse('country.name').eval() == '"country_0"."name"'
     assert exp.parse('members.team.name').eval() == '"team_2"."name"'
@@ -181,7 +179,7 @@ def test_env(session):
     view = View('member', {
         'created_date': '(cast created_at (date))',
     })
-    exp = Expression(view)
+    exp = Expression(view.table, base_env=view.base_env())
     expected = 'CAST ("member"."created_at" AS date)'
     assert exp.parse('(cast created_at (date))').eval() == expected
     assert exp.parse('created_date').eval() == expected
@@ -190,11 +188,11 @@ def test_env(session):
 def test_table_alias(session):
     if ctx.pg_schema:
         return
-    exp = Expression(View('team'), table_alias='tmp')
+    exp = Expression(Table.get('team'), table_alias='tmp')
     ast = exp.parse('name')
     assert ast.eval() == '"tmp"."name"'
 
-    exp = Expression(View('team'), table_alias='tmp')
+    exp = Expression(Table.get('team'), table_alias='tmp')
     ast = exp.parse('(= country.name "foo")')
     join = next(exp.ref_set.get_sql_joins())
     expected = ('LEFT JOIN "country" AS "country_0" '
@@ -203,7 +201,7 @@ def test_table_alias(session):
 
     # This kind of expression will probably actually fail later (in
     # the default use case, the id column is not created in tmp)
-    exp = Expression(View('team'), table_alias='tmp')
+    exp = Expression(Table.get('team'), table_alias='tmp')
     ast = exp.parse('(= members.name "foo")')
     join = next(exp.ref_set.get_sql_joins())
     expected = ('LEFT JOIN "member" AS "member_0" '

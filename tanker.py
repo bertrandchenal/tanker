@@ -723,7 +723,8 @@ class ViewField:
 
         elif '.' in desc:
             ftype = 'INTEGER'
-            self.ref = ReferenceSet(table).get_ref(desc)
+            exp = Expression(table)
+            self.ref = ReferenceSet(exp).get_ref(desc)
             remote_col = self.ref.remote_table.get_column(
                 self.ref.remote_field)
             ctype = remote_col.ctype
@@ -847,30 +848,14 @@ class View(object):
     def get_field(self, name):
         return self.field_dict.get(name)
 
-    def _build_filter_cond(self, exp, *filters):
-        res = []
-        for fltr in filters:
-            if not fltr:
+    def base_env(self):
+        base_env = {}
+        for field in self.fields:
+            if field.name in self.table._column_dict:
+                # Do not mask existing columns
                 continue
-
-            # filters can be a dict
-            if isinstance(fltr, dict):
-                # Add simple equal conditions
-                for key, val in fltr.items():
-                    ast = exp.parse('(= %s {}) ' % key)
-                    ast.args = [val]
-                    res.append(ast)
-                continue
-
-            # Filters can be a query string or a list of query string
-            if isinstance(fltr, basestring):
-                fltr = [fltr]
-            # Parse expression filters
-            for line in fltr:
-                ast = exp.parse(line)
-                res.append(ast)
-
-        return list(interleave(' AND ', res))
+            base_env[field.name] = field
+        return base_env
 
     def read(self, filters=None, args=None, order=None, groupby=None,
              limit=None, distinct=False, offset=None, disable_acl=False):
@@ -882,7 +867,8 @@ class View(object):
         if not disable_acl:
             acl_filters = self.ctx.cfg.get('acl_rules', {}).get(self.table.name)
 
-        exp = Expression(self)
+        # Inject fields name in base env and create expression
+        exp = Expression(self.table, disable_acl=disable_acl, base_env=self.base_env())
 
         # Add select fields
         statement = '(select-distinct %s)' if distinct else '(select %s)'
@@ -901,7 +887,7 @@ class View(object):
                 aggregates.append(pos)
 
         # Add filters
-        filter_chunks = self._build_filter_cond(exp, filters, acl_filters)
+        filter_chunks = exp._build_filter_cond(filters, acl_filters)
         if filter_chunks:
             filter_chunks = ['WHERE'] + filter_chunks
 
@@ -994,8 +980,9 @@ class View(object):
         if data and filters:
             raise ValueError('Deletion by both data and filter not supported')
 
-        exp = Expression(self, table_alias=table_alias)
-        filter_chunks = self._build_filter_cond(exp, filters)
+        exp = Expression(self.table, table_alias=table_alias,
+                         base_env=self.base_env())
+        filter_chunks = exp._build_filter_cond(filters)
 
         if data:
             # Transform rows into columns
@@ -1316,8 +1303,8 @@ class View(object):
         acl_filters = None
         if not disable_acl:
             acl_filters = self.ctx.cfg.get('acl_rules', {}).get(self.table.name)
-        exp = Expression(self)
-        filter_chunks = self._build_filter_cond(exp, filters, acl_filters)
+        exp = Expression(self.table, base_env=self.base_env())
+        filter_chunks = exp._build_filter_cond(filters, acl_filters)
         join_chunks = [exp.ref_set]
 
         if filter_chunks:
@@ -1715,18 +1702,20 @@ class Reference:
 
 class ReferenceSet:
 
-    def __init__(self, table, table_alias=None, parent=None):
+    def __init__(self, exp, table_alias=None, parent=None, disable_acl=False):
         '''
         A ReferenceSet helps to 'browse' across table by joining them. The
         ReferenceSet hold the set of joins that has to be done to
         resolve the cols that were added through the add() method.
         '''
-        self.table = table
-        self.table_alias = table_alias or table.name
+        self.exp = exp
+        self.table = exp.table
+        self.table_alias = table_alias or self.table.name
         self.joins = OrderedDict()
         self.references = []
         self.parent = parent
         self.children = []
+        self.disable_acl = disable_acl
         if parent:
             parent.children.append(self)
 
@@ -1738,10 +1727,16 @@ class ReferenceSet:
     def get_sql_joins(self):
         for key, alias in self.joins.items():
             left_table, right_table, left_col, right_col = key
-            yield 'LEFT JOIN "%s" AS "%s" ON ("%s"."%s" = "%s"."%s")' % (
-                right_table, alias, left_table, left_col, alias,
-                right_col
-            )
+            join = 'LEFT JOIN "%s" AS "%s"' % (right_table, alias)
+            cond = '"%s"."%s" = "%s"."%s"' % (
+                left_table, left_col, alias, right_col)
+            # # TODO inject acl_cond in join cond
+            # if not self.disable_acl:
+            #     acl_filters = ctx.cfg.get('acl_rules', {}).get(right_table)
+            #     exp = Expression(Table.get(right_table), parent=self.exp)
+            #     acl_cond = exp._build_filter_cond(acl_filters)
+            yield join + ' ON (' + cond + ')'
+
 
     def get_ref(self, desc, table=None, alias=None):
         table = table or self.table
@@ -1838,10 +1833,11 @@ class Expression(object):
         'sum': lambda *x: 'sum(%s)' % x,
     }
 
-    def __init__(self, view, ref_set=None, parent=None, table_alias=None):
-        self.view = view
-        # Populate env with view fields
-        self.env = self.base_env(view.table)
+    def __init__(self, table, ref_set=None, parent=None, table_alias=None,
+                 disable_acl=False, base_env=None):
+        assert isinstance(table, Table)
+        self.table = table
+        self.env = base_env or {}
         self.builtins = {'from': self._sub_select}
         self.builtins.update(Expression.builtins)
         self.builtins.update(Expression.aggregates)
@@ -1851,8 +1847,8 @@ class Expression(object):
         # Add refset
         if not ref_set:
             parent_rs = parent and parent.ref_set
-            ref_set = ReferenceSet(view.table, table_alias=table_alias,
-                                   parent=parent_rs)
+            ref_set = ReferenceSet(self, table_alias=table_alias,
+                                   parent=parent_rs, disable_acl=disable_acl)
         self.ref_set = ref_set
 
     def _sub_select(self, *items):
@@ -1863,15 +1859,6 @@ class Expression(object):
 
         items = (select, from_, joins, tail)
         return ' '.join(it for it in items if it)
-
-    def base_env(self, table, ref_set=None):
-        env = {}
-        for field in self.view.fields:
-            if field.name in table._column_dict:
-                # Do not mask existing columns
-                continue
-            env[field.name] = field
-        return env
 
     def parse(self, exp):
         lexer = shlex.shlex(exp)
@@ -1889,8 +1876,8 @@ class Expression(object):
             exp = self
             if tokens[0].upper() == 'FROM':
                 from_ = tokens.pop(0)  # pop off 'from'
-                table = tokens.pop(0)
-                exp = Expression(View(table), parent=self)
+                tbl_name = tokens.pop(0)
+                exp = Expression(Table.get(tbl_name), parent=self)
                 L.append(ExpressionSymbol(from_, exp, first=True))
             first = True
             while tokens[0] != ')':
@@ -1930,6 +1917,31 @@ class Expression(object):
             return float(token)
         except ValueError:
             return ExpressionSymbol(token, self, first=first)
+
+    def _build_filter_cond(self, *filters):
+        res = []
+        for fltr in filters:
+            if not fltr:
+                continue
+
+            # filters can be a dict
+            if isinstance(fltr, dict):
+                # Add simple equal conditions
+                for key, val in fltr.items():
+                    ast = self.parse('(= %s {}) ' % key)
+                    ast.args = [val]
+                    res.append(ast)
+                continue
+
+            # Filters can be a query string or a list of query string
+            if isinstance(fltr, basestring):
+                fltr = [fltr]
+            # Parse expression filters
+            for line in fltr:
+                ast = self.parse(line)
+                res.append(ast)
+
+        return list(interleave(' AND ', res))
 
 
 class ExpressionSymbol:
