@@ -278,8 +278,8 @@ Some ideas, in no particular order:
     on joined table (not only on the main table of the view)
   - Support for version column (probably a write timestamp)
   - Be able to introspect existing db (without yaml schema then)
-  - Add support for other 'ON CONFLICT' action (mainly update a given
-    field, like validity date)
+  - Add support for other 'ON CONFLICT' action (like incrementing a
+    version column, or appening to an array)
   - Support for table constraints
-  - Allow to excute complete queries with s-expressions (select,
+  - Allow to execute complete queries with s-expressions (select,
     update, insert and delete).
