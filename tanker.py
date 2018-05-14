@@ -13,6 +13,7 @@ except ImportError:
 import argparse
 import csv
 import io
+import json
 import logging
 import os
 import re
@@ -57,6 +58,7 @@ COLUMN_TYPE = (
     'TIMESTAMP',
     'TIMESTAMPTZ',
     'VARCHAR',
+    'JSONB'
 )
 QUOTE_SEPARATION = re.compile(r"(.*?)('.*?')", re.DOTALL)
 NAMED_RE = re.compile(r"%\(([^\)]+)\)s")
@@ -1035,7 +1037,7 @@ class View(object):
         # Fill tmp
         if self.ctx.flavor == 'postgresql':
             buff = BuffIO()
-            writer = csv.writer(buff, delimiter='\t')
+            writer = csv.writer(buff, delimiter='\x01', quotechar='\x02')
             # postgresql COPY doesn't like line feed
             repl = lambda x: x.replace(
                 '\n', '\\n').replace(
@@ -1052,7 +1054,7 @@ class View(object):
             for row in zip(*data):
                 writer.writerow(row)
             buff.seek(0)
-            copy_from(buff, 'tmp', null='',
+            copy_from(buff, 'tmp', sep='\x01', null='',
                       columns=['"%s"' % c.name for c in self.field_map])
 
         else:
@@ -1677,6 +1679,14 @@ class Column:
                     raise ValueError(
                         'Unexpected value "%s" for type "%s"' % (
                             value, astype))
+        elif astype == 'JSONB':
+            for value in values:
+                if value is None:
+                    yield None
+                elif isinstance(value, basestring):
+                    yield value
+                else:
+                    yield json.dumps(value)
         else:
             for v in values:
                 yield v
@@ -1804,6 +1814,7 @@ class Expression(object):
         '>': lambda x, y: '%s > %s' % (x, y),
         '<': lambda x, y: '%s < %s' % (x, y),
         '!=': lambda x, y: '%s != %s' % (x, y),
+        '->>': lambda x, y: '%s ->> %s' % (x, y),
         'like': lambda x, y: '%s like %s' % (x, y),
         'ilike': lambda x, y: '%s ilike %s' % (x, y),
         'in': lambda *xs: ('%%s in (%s)' % (

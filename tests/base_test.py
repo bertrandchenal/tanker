@@ -78,6 +78,7 @@ yaml_def = '''
     floor: float
     epoch: timestamp
     year: timestamp
+    jsonb: jsonb
   key:
     - index
 

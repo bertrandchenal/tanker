@@ -292,6 +292,18 @@ def test_array(session):
     assert len(res) == 2
 
 
+def test_jsonb(session):
+    if ctx.flavor == 'sqlite':
+        return
+    data = [(1, {'ham': 'spam'})]
+    view = View('kitchensink', ['index', 'jsonb'])
+    view.write(data)
+
+    flrt = '(= "spam" (->> jsonb "ham"))'
+    res = view.read(flrt).all()
+    assert len(res) == 1
+    assert res[0][1]['ham'] == 'spam'
+
 def test_distinct(session):
     view = View('team', ['country.name'])
     expected = sorted(set(view.read().all()))
