@@ -2110,10 +2110,17 @@ def connect(cfg=None, action=None):
         return pool
     if action == 'enter':
         return pool.__enter__()
-    elif action == 'exit':
+    elif action == 'leave':
         return pool.__exit__(None, None, None)
     else:
         ValueError('Unexpected value "%s" for action parameter' % action)
+
+# Little helpers
+def enter(db_uri=None, schema=None):
+    return connect({'db_uri': db_uri, 'schema': schema}, 'enter')
+
+def leave(db_uri=None):
+    return connect({'db_uri': db_uri, 'schema': schema}, 'leave')
 
 
 def yaml_load(stream):
