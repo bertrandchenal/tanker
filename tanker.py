@@ -1648,6 +1648,10 @@ class Column:
                         value = None
                     else:
                         value = EPOCH + timedelta(seconds=ts/1e9)
+                        if astype == 'TIMESTAMPTZ':
+                            # tolist as given us utc naive timestamp
+                            from pytz import utc
+                            value = value.replace(tzinfo=utc)
                     yield value
                 elif isinstance(value, basestring):
                     yield strptime(value, astype)
