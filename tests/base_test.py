@@ -72,6 +72,7 @@ yaml_def = '''
     date: date
     varchar: varchar
     int_array: integer[]
+    float_array: float[]
     bool_array: bool[]
     ts_array: timestamp[][]
     char_array: varchar[][][]

@@ -151,6 +151,14 @@ class TankerThread(Thread):
         super(TankerThread, self).run()
 
 
+def convert_array(kind):
+    def converter(s):
+        # Strip { and }
+        s = s[1:-1]
+        return [kind(i) for i in s.decode('utf-8').split(',')]
+    return converter
+
+
 class Pool:
 
     _pools = {}
@@ -169,6 +177,11 @@ class Pool:
                 'detect_types': sqlite3.PARSE_DECLTYPES,
                 'isolation_level': 'DEFERRED',
             }
+            sqlite3.register_converter("JSONB", json.loads)
+            sqlite3.register_converter("INTEGER[]", convert_array(int))
+            sqlite3.register_converter("FLOAT[]", convert_array(float))
+            sqlite3.register_converter(
+                "BOOL[]", convert_array(lambda x: x == 'True'))
 
         elif self.flavor == 'postgresql':
             self.pg_schema = uri.fragment
@@ -1555,8 +1568,6 @@ class Column:
         while self.base_type.endswith('[]'):
             self.base_type = self.base_type[:-2]
             self.array_dim += 1
-        if self.array_dim and ctx.flavor == 'sqlite':
-            self.ctype = 'BLOB'
         if self.array_dim and self.base_type in ('O2M', 'M2O'):
             msg = 'Array type is not supported on "%s" (for column "%s")'
             raise ValueError(msg % (self.base_type, name))

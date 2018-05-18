@@ -274,12 +274,24 @@ def test_like_ilike(session):
 
 
 def test_array(session):
+    data = {
+        'int': [(1, [1, 2])],
+        'float': [(1, [1.0, 2.0])],
+        'bool': [(1, [True, False])],
+        # TODO add timestamp & date
+    }
+    for kind in data:
+        print(kind)
+        datum = data[kind]
+        view = View('kitchensink', ['index', '%s_array' % kind])
+        view.write(datum)
+        res = view.read().all()
+        assert res == datum
+
     if ctx.flavor == 'sqlite':
         return
-    data = [(1, [1, 2])]
-    view = View('kitchensink', ['index', 'int_array'])
-    view.write(data)
 
+    # postgres-specific operations
     flrt = '(= 1 (any int_array))'
     res = view.read(flrt).all()
     assert len(res) == 1
@@ -293,12 +305,16 @@ def test_array(session):
 
 
 def test_jsonb(session):
-    if ctx.flavor == 'sqlite':
-        return
     data = [(1, {'ham': 'spam'})]
     view = View('kitchensink', ['index', 'jsonb'])
     view.write(data)
 
+    res = view.read().all()
+    assert res[0][1]['ham'] == 'spam'
+
+    if ctx.flavor == 'sqlite':
+        return
+    # postgres-specific operator
     flrt = '(= "spam" (->> jsonb "ham"))'
     res = view.read(flrt).all()
     assert len(res) == 1
