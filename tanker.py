@@ -1857,6 +1857,9 @@ class Expression(object):
         'max': lambda *x: 'max(%s)' % x,
         'min': lambda *x: 'min(%s)' % x,
         'sum': lambda *x: 'sum(%s)' % x,
+        'bool_and': lambda *x: 'bool_and(%s)' % x,
+        'bool_or': lambda *x: 'bool_or(%s)' % x,
+        'every': lambda *x: 'every(%s)' % x,
     }
 
     def __init__(self, table, ref_set=None, parent=None, table_alias=None,
