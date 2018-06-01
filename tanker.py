@@ -65,6 +65,7 @@ NAMED_RE = re.compile(r"%\(([^\)]+)\)s")
 EPOCH = datetime(1970, 1, 1)
 LRU_SIZE = 10000
 LRU_PAGE_SIZE = 100
+DEFAULT_DB_URI = 'sqlite:///:memory:'
 
 all_none = lambda xs: all(x is None for x in xs)
 skip_none = (lambda fn: (
@@ -141,7 +142,7 @@ class TankerThread(Thread):
     def __init__(self, *args, **kwargs):
         if CTX_STACK._local.contexts:
             # Capture current context if any
-            self.stack = [ctx.copy()]
+            self.stack = [ctx.clone()]
         else:
             self.stack = []
         super(TankerThread, self).__init__(*args, **kwargs)
@@ -163,9 +164,9 @@ class Pool:
 
     _pools = {}
 
-    def __init__(self, db_uri, cfg):
+    def __init__(self, cfg):
+        db_uri = cfg.get('db_uri', DEFAULT_DB_URI)
         self.cfg = cfg
-        self.registry = OrderedDict()
         uri = urlparse(db_uri)
         dbname = uri.path[1:]
         self.flavor = uri.scheme
@@ -207,7 +208,7 @@ class Pool:
             raise ValueError('Unsupported scheme "%s" in uri "%s"' % (
                 uri.scheme, uri))
 
-    def __enter__(self):
+    def enter(self):
         if self.flavor == 'sqlite':
             connection = sqlite3.connect(*self.conn_args, **self.conn_kwargs)
             connection.text_factory = str
@@ -221,26 +222,10 @@ class Pool:
                 cur.execute('SET search_path TO %s' % self.pg_schema)
         else:
             raise ValueError('Unexpected flavor "%s"' % self.flavor)
+        return connection
 
-        new_ctx = CTX_STACK.push(connection, self)
-
-        # Load schema as yaml if a string is given
-        schema = self.cfg and self.cfg.get('schema')
-        if isinstance(schema, basestring):
-            schema = yaml_load(schema)
-        if not schema:
-            schema = new_ctx.introspect_db(auto=True)
-
-        # Makes new_ctx init the pool registry if still empty
-        if not self.registry and schema:
-            for table_def in schema:
-                new_ctx.register(table_def)
-
-        return new_ctx
-
-    def __exit__(self, exc_type, exc_value, traceback):
-        connection = CTX_STACK.pop()
-        if exc_value:
+    def leave(self, connection, exc=None):
+        if exc:
             logger.debug('ROLLBACK')
             connection.rollback()
         else:
@@ -248,6 +233,8 @@ class Pool:
             connection.commit()
         if self.flavor == 'postgresql':
             self.pg_pool.putconn(connection)
+        else:
+            connection.close()
 
     @classmethod
     def disconnect(cls):
@@ -262,13 +249,13 @@ class Pool:
 
     @classmethod
     def get_pool(cls, cfg):
-        db_uri = cfg.get('db_uri', 'sqlite:///:memory:')
+        db_uri = cfg.get('db_uri', DEFAULT_DB_URI)
         pool = cls._pools.get(db_uri)
         if pool:
             # Return existing pool for current db if any
             return pool
 
-        pool = Pool(db_uri, cfg)
+        pool = Pool(cfg)
         cls._pools[db_uri] = pool
         return pool
 
@@ -281,17 +268,18 @@ class ContextStack:
     def reset(self, contexts):
         self._local.contexts = contexts
 
-    def push(self, connection, pool):
+    def push(self, cfg):
         if not hasattr(self._local, 'contexts'):
             self._local.contexts = []
 
-        new_ctx = Context(connection, pool)
+        new_ctx = Context(cfg)
         self._local.contexts.append(new_ctx)
+        new_ctx.enter()
         return new_ctx
 
-    def pop(self):
-        popped_ctx = self._local.contexts.pop()
-        return popped_ctx.connection
+    def pop(self, exc=None):
+        popped = self._local.contexts.pop()
+        popped.leave(exc)
 
     def active_context(self):
         return self._local.contexts[-1]
@@ -305,36 +293,60 @@ class ShallowContext:
 
 class Context:
 
-    def __init__(self, connection, pool):
-        self.flavor = pool.flavor
-        self.pg_schema = pool.pg_schema
-        self.encoding = pool.cfg.get('encoding', 'utf-8')
-        self.connection = connection
-        if self.flavor == 'postgresql':
-            self.legacy_pg = connection.server_version < 90500
-        self.cfg = pool.cfg
+    _registries = {}
+
+    def __init__(self, cfg):
+        self.db_uri = cfg.get('db_uri', DEFAULT_DB_URI)
+        self.encoding = cfg.get('encoding', 'utf-8')
+        self.cfg = cfg
         self.aliases = {'null': None}
         self._fk_cache = {}
         self.db_tables = set()
         self.db_columns = defaultdict(OrderedDict)
         self.db_constraints = set()
         self.db_indexes = set()
-        # Share pool registry
-        self.pool = pool
-        self.registry = pool.registry
 
-    def copy(self):
+    def enter(self):
+        # Share pool registry
+        self.pool = Pool.get_pool(self.cfg)
+        self.connection = self.pool.enter()
+        self.flavor = self.pool.flavor
+        self.pg_schema = self.pool.pg_schema
+        if self.flavor == 'postgresql':
+            self.legacy_pg = self.connection.server_version < 90500
+
+        self.registry = Context._registries.get(self.db_uri)
+        if not self.registry:
+            # Load schema as yaml if a string is given
+            schema = self.cfg.get('schema')
+            if isinstance(schema, basestring):
+                schema = yaml_load(schema)
+            if not schema:
+                schema = self.introspect_db(auto=True)
+            # Register tables
+            self.registry = OrderedDict()
+            for table_def in schema:
+                table = self.register(table_def)
+                self.registry[table.name] = table
+            Context._registries[self.db_uri] = self.registry
+
+    def leave(self, exc=None):
+        self.pool.leave(self.connection, exc)
+
+    def clone(self):
         '''
-        Create a clone of self, will trigger instanciation of a new cursor
+        Create a copy of self, will trigger instanciation of a new cursor
         (the connection is shared)
         '''
-        new_ctx = Context(self.connection, self.pool)
+        new_ctx = Context(self.cfg)
         new_ctx.aliases = self.aliases
         new_ctx.db_columns = self.db_columns
         new_ctx.db_tables = self.db_tables
         new_ctx.db_constraints = self.db_constraints
         new_ctx.db_indexes = self.db_indexes
         new_ctx.registry = self.registry
+        new_ctx.flavor = self.flavor
+        new_ctx.connection = self.connection
         new_ctx.cfg = self.cfg.copy()
         return new_ctx
 
@@ -364,8 +376,8 @@ class Context:
             new_col = Column(
                 col_name, col_type, default=defaults.get(col_name))
             columns.append(new_col)
-        # Instanciating the table adds it to current registry
-        Table(name=table_def['table'], columns=columns,
+
+        return Table(name=table_def['table'], columns=columns,
               key=table_def.get('key', table_def.get('index')),
               unique=table_def.get('unique'),
               values=values,
@@ -1486,8 +1498,6 @@ class Table:
         #               '("%s" in table "%s")'
         #         raise ValueError(msg % (col, self.name))
 
-        self.ctx = ctx
-        self.ctx.registry[name] = self
 
     def get_column(self, name):
         try:
@@ -1849,6 +1859,8 @@ class Expression(object):
         'cast': lambda x, y: 'CAST (%s AS %s)' % (x, y),
         'extract': lambda x, y: 'EXTRACT (%s FROM %s)' % (x, y),
         'floor': lambda x: 'floor(%s)' % x,
+        'true': lambda: '1' if ctx.flavor == 'sqlite' else 'true',
+        'false': lambda: '0' if ctx.flavor == 'sqlite' else 'false',
     }
 
     aggregates = {
@@ -2119,22 +2131,31 @@ class AST(object):
 
 
 def connect(cfg=None, action=None):
-    pool = Pool.get_pool(cfg or {})
     if not action:
-        return pool
+        @contextmanager
+        def cm(cfg):
+            new_ctx = CTX_STACK.push(cfg)
+            exc = None
+            try:
+                yield new_ctx
+            except Exception as e:
+                exc = e
+            CTX_STACK.pop(exc)
+        return cm(cfg)
     if action == 'enter':
-        return pool.__enter__()
+        return CTX_STACK.push(cfg)
     elif action == 'leave':
-        return pool.__exit__(None, None, None)
+        CTX_STACK.pop()
     else:
-        ValueError('Unexpected value "%s" for action parameter' % action)
+        raise ValueError('Unexpected value "%s" for action parameter' % action)
+
 
 # Little helpers
 def enter(db_uri=None, schema=None):
     return connect({'db_uri': db_uri, 'schema': schema}, 'enter')
 
 def leave(db_uri=None):
-    return connect({'db_uri': db_uri, 'schema': schema}, 'leave')
+    return connect({'db_uri': db_uri}, 'leave')
 
 
 def yaml_load(stream):

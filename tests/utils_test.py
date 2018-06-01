@@ -62,7 +62,7 @@ def test_manual_conn(session):
     cfg = {'db_uri': session, 'schema': SCHEMA}
     connect(cfg, 'enter')
     country_view.write([['Prussia']])
-    connect(cfg, 'exit')
+    connect(cfg, 'leave')
 
     # Makes sure result is not lost
     with connect(cfg):

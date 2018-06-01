@@ -281,7 +281,6 @@ def test_array(session):
         # TODO add timestamp & date
     }
     for kind in data:
-        print(kind)
         datum = data[kind]
         view = View('kitchensink', ['index', '%s_array' % kind])
         view.write(datum)

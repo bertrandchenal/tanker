@@ -3,7 +3,7 @@ import os
 import pytest
 
 from tanker import (connect, create_tables, View, logger, yaml_load, fetch,
-                    save, execute, Table)
+                    save, execute, Table, Pool)
 
 
 DB_URIS = [
