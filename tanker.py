@@ -2138,9 +2138,8 @@ def connect(cfg=None, action=None):
             exc = None
             try:
                 yield new_ctx
-            except Exception as e:
-                exc = e
-            CTX_STACK.pop(exc)
+            finally:
+                CTX_STACK.pop(exc)
         return cm(cfg)
     if action == 'enter':
         return CTX_STACK.push(cfg)
