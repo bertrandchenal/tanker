@@ -9,7 +9,6 @@ def test_no_insert(session):
         ('Blue', 'Belgium'),
     ], insert=False)
 
-
     expected = [('Red', 'Belgium',),
                 ('Blue', 'Belgium',),
                 ('Blue', 'France',)]
@@ -49,10 +48,11 @@ def test_no_fields(session):
 
 def test_purge(session):
     team_view = View('team', ['name', 'country.name'])
-    team_view.write([
+    cnt = team_view.write([
         ('Orange', 'Holland'), # this is an insert
         ('Blue', 'France'),    # belgium is missing
     ], purge=True, insert=False, update=False)
+    assert cnt['deleted'] == 2
 
     expected = [('Blue', 'France',)]
     res = team_view.read()
@@ -155,7 +155,8 @@ def test_update_filters(session):
         ('001', 'BOB'),
         ('003', 'TRUDY'),
     ]
-    member_view.write(data, filters=fltr)
+    cnt = member_view.write(data, filters=fltr)
+    assert cnt['filtered'] == 1
     expected = [
         ('001', 'BOB', ),
         ('002', 'Alice'),
@@ -179,7 +180,9 @@ def test_sneaky_update_filters(session):
     data = [
         ('001', 'Trudy'), # This supposed to update 001 from Bob to Trudy
     ]
-    member_view.write(data, filters=fltr)
+    cnt = member_view.write(data, filters=fltr)
+    assert cnt['filtered'] == 1
+
     expected = [
         # 001 is lost!
         ('002', 'Alice'),
@@ -205,7 +208,9 @@ def test_insert_filters(session):
         ('004', 'Carol'),
         ('005', 'Dan'),
     ]
-    member_view.write(data, filters=fltr)
+    cnt = member_view.write(data, filters=fltr)
+    assert cnt['filtered'] == 1
+
     expected = [
         ('001', 'Bob', ),
         ('002', 'Alice'),

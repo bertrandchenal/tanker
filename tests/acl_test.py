@@ -26,10 +26,11 @@ def test_write(session):
 
     # Test that main table is filtered
     view = View('member', ['registration_code', 'name'])
-    res = view.write([
+    cnt = view.write([
         ('001', 'UPDATED'),
         ('002', 'UPDATED'),
      ])
+    assert cnt['filtered'] == 1
 
     cur = execute('SELECT registration_code, name FROM member')
     res = list(cur)

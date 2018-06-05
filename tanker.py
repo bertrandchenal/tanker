@@ -840,6 +840,8 @@ class View(object):
         self.fields = [ViewField(name.strip(), desc, self.table)
                        for name, desc in fields]
         self.field_dict = dict((f.name, f) for f in self.fields)
+        self.upd_filter_cnt = None
+        self.ins_filter_cnt = None
 
         # field_map hold relation between fields given by the user and
         # the one from the db, field_idx keep their corresponding
@@ -1102,21 +1104,24 @@ class View(object):
             acl = self.ctx.cfg.get('acl_rules', {})
             filters += acl.get(self.table.name, [])
 
+        self.upd_filter_cnt = 0
+        self.ins_filter_cnt = 0
         if filters:
             # Filter is based on existing line in self.table, so it
             # only affect updates (and not inserts)
             # (We introduced acl in filters, so we disable them)
-            self._purge(join_cond, filters, disable_acl=True, action='update',
-                        args=args)
-
+            self.upd_filter_cnt = self._purge(
+                join_cond, filters, disable_acl=True, action='update',
+                args=args)
         yield join_cond
 
         if filters:
             # Delete inserted lines that do not match the filters
-            # (We introduced acl in filters, so we disable them)
-            self._purge(join_cond, filters, disable_acl=True, action='insert',
-                        args=args)
-
+            # (updated lines have already been deleted with the
+            # previous _purge with action=update)
+            self.ins_filter_cnt = self._purge(
+                join_cond, filters, disable_acl=True, action='insert',
+                args=args)
         # Clean tmp table
         execute('DROP TABLE tmp')
 
@@ -1127,6 +1132,10 @@ class View(object):
         be inserted.  if update is true, existing line will be
         updated. If purge is true existing line that are not present
         in data (and that match filters) will be deleted.
+
+        Returns a dict containing the amount of line _not_ written
+        (because of the filter) and the amount of deleted lines (ex:
+        `{'filtered': 10, 'deleted': 3}`)
         '''
 
         # Handle list of dict and dataframes
@@ -1145,37 +1154,31 @@ class View(object):
                 data = [[] for _ in self.fields]
         # Format values
         data = list(self.format(data))
-
         if isinstance(filters, basestring):
             filters = [filters]
 
         # Launch upsert
+        rowcounts = {}
         with self._prepare_write(
                 data, filters=filters, disable_acl=disable_acl, args=args
         ) as join_cond:
-            rowcounts = {}
             if self.ctx.flavor == 'sqlite':
-                cnt = self._sqlite_upsert(join_cond, insert, update)
-                rowcounts['upsert'] = cnt
+                self._sqlite_upsert(join_cond, insert, update)
             elif ctx.legacy_pg or self.table.use_index == 'BRIN':
                 if insert:
-                    cnt = self._insert(join_cond)
-                    rowcounts['insert'] = cnt
+                    self._insert(join_cond)
                 if update:
-                    cnt = self._update(join_cond)
-                    rowcounts['update'] = cnt
+                    self._update(join_cond)
             else:
                 # ON-CONFLICT is available since postgres 9.5
-                cnt = self._pg_upsert(join_cond, insert=insert,
-                                      update=update)
-                rowcounts['upsert'] = cnt
-
+                self._pg_upsert(join_cond, insert=insert, update=update)
             if purge:
                 cnt = self._purge(join_cond, filters, disable_acl,
                                   action='purge', args=args)
-                rowcounts['delete'] = cnt
+                rowcounts['deleted'] = cnt
 
-        # Clean cache for current table
+        rowcounts['filtered'] = self.ins_filter_cnt + self.upd_filter_cnt
+
         self.ctx.reset_cache(self.table.name)
         return rowcounts
 
@@ -1241,8 +1244,7 @@ class View(object):
             'upd_fields': ', '.join(upd_fields),
             'idx': ', '.join('"%s"' % k for k in self.key_cols),
         }
-        cur = TankerCursor(self, qr).execute()
-        return cur.rowcount
+        return TankerCursor(self, qr).execute()
 
     def _insert(self, join_cond):
         qr = 'INSERT INTO "%(main)s" (%(fields)s) %(select)s'
