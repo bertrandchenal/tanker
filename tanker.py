@@ -964,7 +964,7 @@ class View(object):
         if limit is not None:
             all_chunks += ['LIMIT %s' % int(limit)]
         if offset is not None:
-            all_chunks += ['OFFSET %s' % int(limit)]
+            all_chunks += ['OFFSET %s' % int(offset)]
 
         return TankerCursor(self, all_chunks, args=args)
 
