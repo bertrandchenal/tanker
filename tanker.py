@@ -1590,7 +1590,7 @@ class Column:
                 return 'INTEGER PRIMARY KEY'
 
             id_def = 'SERIAL'
-            if self.table.name in ctx.referenced:
+            if self.table.name not in ctx.referenced:
                 id_def += ' PRIMARY KEY'
             return id_def
 
