@@ -305,6 +305,7 @@ class Context:
         self.db_columns = defaultdict(OrderedDict)
         self.db_constraints = set()
         self.db_indexes = set()
+        self.referenced = set()
 
     def enter(self):
         # Share pool registry
@@ -529,27 +530,24 @@ class Context:
             for name, data_type in self.db_columns[table_name].items():
                 pass # TODO populate schema
 
+        # Discover which table are referenced
+        self.referenced = set(col.foreign_table for t in self.registry.values()
+                              for col in t.columns if col.ctype == 'M2O')
+
         return schema
 
     def create_tables(self):
         # First we collect db info
         self.introspect_db()
 
-        # Discover which table are referenced
-        referenced = set(col.foreign_table for t in self.registry.values()
-                         for col in t.columns if col.ctype == 'M2O')
-
         # Create tables and simple columns
         for table in self.registry.values():
             if table.name in self.db_tables:
                 continue
-            col_defs = ['id %(type)s%(pk)s' % {
-                'type': 'INTEGER' if self.flavor == 'sqlite' else 'SERIAL',
-                'pk': ' PRIMARY KEY' if table.name in referenced else '',
-            }]
 
+            col_defs = []
             for col in table.columns:
-                if col.ctype in ('M2O', 'O2M') or col.name == 'id':
+                if col.ctype in ('M2O', 'O2M'):
                     continue
                 col_defs.append('"%s" %s' % (col.name, col.sql_definition()))
                 self.db_columns[table.name][col.name] = col.ctype
@@ -1471,7 +1469,7 @@ class Table:
 
         # Add implicit id column
         if 'id' not in [c.name for c in self.columns]:
-            self.columns.append(Column('id', 'INTEGER'))
+            self.columns.insert(0, Column('id', 'INTEGER'))
         self.own_columns = [c for c in self.columns
                             if c.name != 'id' and c.ctype != 'O2M']
 
@@ -1493,7 +1491,7 @@ class Table:
         for col in self.key:
             if col not in self._column_dict:
                 raise ValueError('Key column "%s" does not exist' % col)
-        # # Forbid array types in ey
+        # # Forbid array types in key
         # for col in self.key:
         #     if col.array_dim:
         #         msg = 'Array type is not allowed on key column '\
@@ -1587,6 +1585,15 @@ class Column:
             raise ValueError('Unexpected type %s for column %s' % (ctype, name))
 
     def sql_definition(self):
+        if self.name == 'id':
+            if ctx.flavor == 'sqlite':
+                return 'INTEGER PRIMARY KEY'
+
+            id_def = 'SERIAL'
+            if self.table.name in ctx.referenced:
+                id_def += ' PRIMARY KEY'
+            return id_def
+
         # Simple field
         if not self.fk:
             if self.default:
