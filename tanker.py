@@ -2220,7 +2220,7 @@ def cli():
 
 def ascii_table(headers, rows, sep=' '):
     # Convert content as strings
-    rows = [map(str, row) for row in rows]
+    rows = [list(map(str, row)) for row in rows]
     # Compute lengths
     lengths = (len(h) for h in headers)
     for row in rows:
@@ -2294,8 +2294,7 @@ def cli_main(args):
         else:
             writer = csv.writer(fh)
             writer.writerow([f.name for f in view.fields])
-            writer.writerows(res)
-
+            writer.writerows(res.all())
     elif action == 'delete':
         View(table, fields).delete(filters=args.filter, data=data)
 
