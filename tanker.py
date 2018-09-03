@@ -577,6 +577,8 @@ class Context:
                     'name': col.name,
                     'def': col.sql_definition(),
                 }
+                # TODO: column should be NOT NULL if part of the key
+                # (if not the ON CONLICT clause is not triggered)
                 execute(qr % params)
                 if not(self.flavor == 'sqlite' and col.ctype == 'M2O'):
                     continue
