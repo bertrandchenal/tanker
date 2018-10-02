@@ -894,7 +894,7 @@ class View(object):
 
         acl_filters = None
         if not disable_acl:
-            acl_filters = self.ctx.cfg.get('acl_rules', {}).get(self.table.name)
+            acl_filters = self.ctx.cfg.get('acl-read', {}).get(self.table.name)
 
         # Inject fields name in base env and create expression
         exp = Expression(self.table, disable_acl=disable_acl, base_env=self.base_env())
@@ -1101,7 +1101,7 @@ class View(object):
         # Apply filters if any
         if not disable_acl:
             filters = filters or []
-            acl = self.ctx.cfg.get('acl_rules', {})
+            acl = self.ctx.cfg.get('acl-write', {})
             filters += acl.get(self.table.name, [])
 
         self.upd_filter_cnt = 0
@@ -1331,7 +1331,7 @@ class View(object):
         # Build filters
         acl_filters = None
         if not disable_acl:
-            acl_filters = self.ctx.cfg.get('acl_rules', {}).get(self.table.name)
+            acl_filters = self.ctx.cfg.get('acl-write', {}).get(self.table.name)
         exp = Expression(self.table, base_env=self.base_env())
         filter_chunks = exp._build_filter_cond(filters, acl_filters)
         join_chunks = [exp.ref_set]
@@ -1778,7 +1778,7 @@ class ReferenceSet:
                 left_table, left_col, alias, right_col)
             # # TODO inject acl_cond in join cond
             # if not self.disable_acl:
-            #     acl_filters = ctx.cfg.get('acl_rules', {}).get(right_table)
+            #     acl_filters = ctx.cfg.get('acl-read', {}).get(right_table)
             #     exp = Expression(Table.get(right_table), parent=self.exp)
             #     acl_cond = exp._build_filter_cond(acl_filters)
             yield join + ' ON (' + cond + ')'

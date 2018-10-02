@@ -2,16 +2,18 @@ from tanker import View, ctx, execute
 from .base_test import session
 
 
-def inject(table, rules):
+def inject(table, kind, rules):
     # Inject acl rules on the live context, this simplify tests
-    ctx.cfg['acl_rules'] = {table: rules}
+    assert kind in ('acl-read', 'acl-write')
+    ctx.cfg[kind] = {table: rules}
 
 def reset(table):
-    # Inject acl rules on the live context, this simplify tests
-    ctx.cfg['acl_rules'] = {table: []}
+    # Remove all acl rules
+    ctx.cfg['acl-read'] = {table: []}
+    ctx.cfg['acl-write'] = {table: []}
 
 def test_read(session):
-    inject('country', ['(= name "Belgium")'])
+    inject('country', 'acl-read', ['(= name "Belgium")'])
 
     # Test that main table is filtered
     res = View('country', ['name']).read().all()
@@ -22,7 +24,7 @@ def test_read(session):
     # assert res == [('Belgium',), ('Belgium',)]
 
 def test_write(session):
-    inject('member', ['(= registration_code "001")'])
+    inject('member', 'acl-write', ['(= registration_code "001")'])
 
     # Test that main table is filtered
     view = View('member', ['registration_code', 'name'])
