@@ -65,6 +65,7 @@ def test_function(session):
         return
 
     input_record = {
+        'index': 1,
         'floor': 1.1,
         'epoch': datetime(1970, 1, 1),
         'year': datetime(1970, 1, 1),

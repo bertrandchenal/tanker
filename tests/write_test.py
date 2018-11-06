@@ -1,6 +1,11 @@
-from tanker import View
+from itertools import product
+import psycopg2
+import pytest
+import sqlite3
 
+from tanker import View, ctx
 from .base_test import session, check, members
+
 
 def test_no_insert(session):
     team_view = View('team', ['name', 'country.name'])
@@ -139,6 +144,7 @@ def test_purge_filters(session):
     res = team_view.read()
     check(expected, res)
 
+
 def test_update_filters(session):
     # init members
     full_view = View('member', [
@@ -220,6 +226,7 @@ def test_insert_filters(session):
     res = member_view.read()
     check(expected, res)
 
+
 def test_filter_args(session):
     # init members
     full_view = View('member', [
@@ -245,3 +252,22 @@ def test_filter_args(session):
     ]
     res = member_view.read()
     check(expected, res)
+
+
+
+# bogus_values = [None, 0, '', '0'] * 2
+# fk_field = ['country'] * 4 +  ['country.name'] * 4
+params = list(product([None, 0, '', '0'], ['country', 'country.name']))
+@pytest.mark.parametrize("bogus_value,fk_field", params)
+def test_null_key(session, bogus_value, fk_field):
+    '''
+    Insertion should fail if any value part of the key is null
+    (because null != null in sql).
+    '''
+    view = View('team', ['name', fk_field])
+    row = ['Pink', bogus_value]
+
+    expected = (psycopg2.IntegrityError, sqlite3.IntegrityError, ValueError, TypeError)
+    with pytest.raises(Exception) as exc:
+        view.write([row])
+    assert isinstance(exc.value, expected)

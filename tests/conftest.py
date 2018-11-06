@@ -3,8 +3,9 @@ import psycopg2
 
 from tanker import Pool
 
+
 @pytest.yield_fixture(scope='session', autouse=True)
-def db(request):
+def _db(request):
     conn = psycopg2.connect(dbname='postgres')
     conn.autocommit = True
     cursor = conn.cursor()

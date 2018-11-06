@@ -6,13 +6,15 @@ from tanker import (connect, create_tables, View, logger, yaml_load, fetch,
                     save, execute, Table, Pool)
 
 
-DB_URIS = [
-    'sqlite:///test.db',
-    'postgresql:///tanker_test',
-    'postgresql:///tanker_test#test_schema',
+DB_PARAMS = [
+    {'uri': 'sqlite:///test.db', 'auto': False},
+    {'uri': 'postgresql:///tanker_test','auto': False},
+    {'uri': 'postgresql:///tanker_test#test_schema', 'auto': False},
+    {'uri': 'sqlite:///test.db', 'auto': True},
+    {'uri': 'postgresql:///tanker_test', 'auto': True},
 ]
 
-verbose = pytest.config.getoption('verbose', 0) > 0
+verbose = pytest.config.getoption('verbose', 0) > 1
 logger.setLevel('DEBUG' if verbose else 'WARNING')
 
 
@@ -106,22 +108,22 @@ members = [
 ]
 
 
-@pytest.yield_fixture(scope='function', params=DB_URIS)
+@pytest.yield_fixture(scope='function', params=DB_PARAMS)
 def session(request):
     cfg = {
-        'db_uri': request.param,
+        'db_uri': request.param['uri'],
         'schema': SCHEMA,
     }
 
-    is_sqlite = request.param.startswith('sqlite')
-    use_schema = '#' in request.param
+    is_sqlite = request.param['uri'].startswith('sqlite')
+    use_schema = '#' in request.param['uri']
 
     # DB cleanup
     if is_sqlite and os.path.isfile('test.db'):
         os.unlink('test.db')
     else:
         with connect(cfg):
-            to_clean = [t['table'] for t in SCHEMA]
+            to_clean = [t['table'] for t in SCHEMA] + ['tmp']
             for table in to_clean:
                 if use_schema:
                     table = 'test_schema.' + table
@@ -130,10 +132,15 @@ def session(request):
                     qr += ' CASCADE'
                 execute(qr)
 
+    # Create tables
     with connect(cfg):
         create_tables()
+
+    if request.param['auto']:
+        cfg.pop('schema')
+    with connect(cfg, _auto_rollback=True):
         View('team', ['name', 'country.name']).write(teams)
-        yield request.param
+        yield request.param['uri']
 
 
 def check(expected, result, check_order=False):

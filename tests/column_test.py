@@ -2,11 +2,11 @@ from itertools import product
 
 import pytest
 from tanker import View, Expression
-from .base_test import DB_URIS
+from .base_test import DB_PARAMS
 
-
+db_uris = [p['uri'] for p in DB_PARAMS]
 COL_TYPES = ['integer', 'timestamp']
-PARAMS = product(COL_TYPES, DB_URIS)
+PARAMS = product(COL_TYPES, db_uris)
 
 @pytest.yield_fixture(scope='function', params=PARAMS)
 def session(request):

@@ -108,7 +108,7 @@ def paginate(iterators, size=None):
     while True:
         page = list(islice(rows, size or LRU_PAGE_SIZE))
         if not page:
-            raise StopIteration
+            break
         yield page
 
 TIME_FMT = {
@@ -329,7 +329,13 @@ class Context:
             for table_def in schema:
                 table = self.register(table_def)
                 self.registry[table.name] = table
+
             Context._registries[self.db_uri] = self.registry
+        # Discover which table are referenced
+        if not self.referenced:
+            self.referenced = set(col.foreign_table
+                                  for t in self.registry.values()
+                                  for col in t.columns if col.ctype == 'M2O')
 
     def leave(self, exc=None):
         self.pool.leave(self.connection, exc)
@@ -346,6 +352,7 @@ class Context:
         new_ctx.db_constraints = self.db_constraints
         new_ctx.db_indexes = self.db_indexes
         new_ctx.registry = self.registry
+        new_ctx.referenced = self.referenced
         new_ctx.flavor = self.flavor
         new_ctx.connection = self.connection
         new_ctx.cfg = self.cfg.copy()
@@ -497,9 +504,6 @@ class Context:
             #  sqlite> PRAGMA foreign_key_list(member);
             #  id|seq|table|from|to|on_update|on_delete|match
             #  0|0|team|team|id|NO ACTION|NO ACTION|NONE
-            type_map = {
-                # TODO
-            }
             qr = 'PRAGMA foreign_key_list(%s)'
             for table_name in self.db_tables:
                 cur = execute(qr % table_name)
@@ -507,6 +511,7 @@ class Context:
                     (table_name, r[3]): (r[2], r[4]) for r in cur})
 
         elif self.flavor == 'postgresql':
+            # Extract fk
             qr = '''
             SELECT
               tc.table_name,
@@ -524,15 +529,85 @@ class Context:
             foreign_keys.update({
                 (r[0], r[1]): (r[2], r[3]) for r in cur})
 
+        # Extract unique indexes
+        if self.flavor == 'sqlite':
+            keys = defaultdict(list)
+            list_qr = "PRAGMA index_list('%s')"
+            info_qr = "PRAGMA index_info('%s')"
+            for table in self.db_tables:
+                for _, idx_name, uniq, _, _ in execute(list_qr % table):
+                    if not uniq:
+                        continue
+                by_pos = lambda x: x[0]
+                rows = sorted(execute(info_qr % idx_name), key=by_pos)
+                keys[table] = [r[2] for r in rows]
 
-        schema = defaultdict(OrderedDict)
+        elif self.flavor == 'postgresql':
+            qr = '''
+            SELECT
+              t.relname as table_name,
+              i.relname as index_name,
+              a.attname as column_name,
+              ix.indkey as idx_col,
+              a.attnum as col_pos
+            FROM
+              pg_class t,
+              pg_class i,
+              pg_index ix,
+              pg_attribute a
+            WHERE
+              t.oid = ix.indrelid
+              AND i.oid = ix.indexrelid
+              AND a.attrelid = t.oid
+              AND a.attnum = ANY(ix.indkey)
+              AND t.relkind = 'r'
+              AND ix.indisunique
+              AND not ix.indisprimary
+            '''
+            rows = list(execute(qr))
+            # Sort by index size and column position in index
+            col_pos = lambda x: (
+                len(x[3].split()),
+                x[3].split().index(str(x[4]))
+            )
+            rows = sorted(rows, key=col_pos)
+            keys = defaultdict(list)
+            indexes = {}
+            for table, index_name, col_name, _, _ in rows:
+                if table in indexes:
+                    # Keep only first unique index
+                    if indexes[table] != index_name:
+                        continue
+                else:
+                    indexes[table] = index_name
+                keys[table].append(col_name)
+
+        # Glue everything together in schema
+        type_map = {
+            'character varying': 'varchar',
+            'timestamp without time zone': 'timestamp',
+            'double precision': 'float',
+            'boolean': 'bool',
+            'text': 'varchar',
+            'bigint': 'bigint',
+            'integer': 'integer',
+            'date': 'date',
+        }
+        schema = []
         for table_name in self.db_tables:
+            table_cfg = {
+                'table': table_name,
+                'columns': OrderedDict(),
+                'key': keys.get(table_name, 'id'),
+            }
+            schema.append(table_cfg)
             for name, data_type in self.db_columns[table_name].items():
-                pass # TODO populate schema
-
-        # Discover which table are referenced
-        self.referenced = set(col.foreign_table for t in self.registry.values()
-                              for col in t.columns if col.ctype == 'M2O')
+                if (table_name, name) in foreign_keys:
+                    remote_table, remote_col = foreign_keys[table_name, name]
+                    col_def = 'M2O %s.%s' % (remote_table, remote_col)
+                else:
+                    col_def = type_map.get(data_type, data_type)
+                table_cfg['columns'][name] = col_def
 
         return schema
 
@@ -1047,13 +1122,16 @@ class View(object):
         # An id column is needed to enable filters (and for sqlite
         # REPLACE)
         extra_id = 'id' not in self.field_dict
-        not_null = lambda n: 'NOT NULL' if n in self.key_fields else ''
+        not_null = lambda fields: (
+            'NOT NULL'
+            if any(f in self.key_fields for f in fields)
+            else '')
         # Create tmp
         qr = 'CREATE TEMPORARY TABLE tmp (%s)'
         col_defs = ', '.join('"%s" %s %s' % (
             col.name,
             fields[0].ftype,
-            not_null(col.name))
+            not_null(fields))
             for col, fields in self.field_map.items())
         if extra_id:
             id_type = 'INTEGER' if ctx.flavor == 'sqlite' else 'SERIAL'
@@ -1592,7 +1670,8 @@ class Column:
                 return 'INTEGER PRIMARY KEY'
 
             id_def = 'SERIAL'
-            if self.table.name not in ctx.referenced:
+            if self.table.name in ctx.referenced:
+                # (index on 'id' col is not needed if not part of fk)
                 id_def += ' PRIMARY KEY'
             return id_def
 
@@ -1868,6 +1947,7 @@ class Expression(object):
         'select': lambda *x: 'SELECT ' + ', '.join(x),
         'select-distinct': lambda *x: 'SELECT DISTINCT ' + ', '.join(x),
         'cast': lambda x, y: 'CAST (%s AS %s)' % (x, y),
+        'date_trunc': lambda x, y: 'date_trunc(%s, %s)' % (x, y),
         'extract': lambda x, y: 'EXTRACT (%s FROM %s)' % (x, y),
         'floor': lambda x: 'floor(%s)' % x,
         'true': lambda: '1' if ctx.flavor == 'sqlite' else 'true',
@@ -2141,7 +2221,7 @@ class AST(object):
         return '<AST [%s]>' % ' '.join(map(str, self.atoms))
 
 
-def connect(cfg=None, action=None):
+def connect(cfg=None, action=None, _auto_rollback=False):
     if not action:
         @contextmanager
         def cm(cfg):
@@ -2150,7 +2230,7 @@ def connect(cfg=None, action=None):
             try:
                 yield new_ctx
             finally:
-                CTX_STACK.pop(exc)
+                CTX_STACK.pop(exc or _auto_rollback)
         return cm(cfg)
     if action == 'enter':
         return CTX_STACK.push(cfg)
@@ -2214,7 +2294,8 @@ def cli():
     if args.debug:
         logger.setLevel('DEBUG')
     cfg = yaml_load(open(args.config))
-    cfg['schema'] = yaml_load(open(os.path.expanduser(cfg['schema'])))
+    if cfg.get('schema'):
+        cfg['schema'] = yaml_load(open(os.path.expanduser(cfg['schema'])))
 
     with connect(cfg):
         cli_main(args)
