@@ -201,8 +201,10 @@ class Pool:
             if uri.port:
                 con_info += "port='%s' " % uri.port
 
-            pool_size = cfg.get('pg_pool_size', 10)
-            self.pg_pool = ThreadedConnectionPool(1, pool_size, con_info)
+            self.pg_pool = ThreadedConnectionPool(
+                cfg.get('pg_min_pool_size', 1),
+                cfg.get('pg_max_pool_size', 10),
+                con_info)
 
         else:
             raise ValueError('Unsupported scheme "%s" in uri "%s"' % (
