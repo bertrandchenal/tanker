@@ -308,6 +308,7 @@ class Context:
     def enter(self):
         # Share pool registry
         self.pool = Pool.get_pool(self.cfg)
+        self.connection = self.pool.enter()
         self.flavor = self.pool.flavor
         self.pg_schema = self.pool.pg_schema
         if self.flavor == 'postgresql':
