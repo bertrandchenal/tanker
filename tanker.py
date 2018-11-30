@@ -218,10 +218,6 @@ class Pool:
             connection.execute('PRAGMA journal_mode=wal')
         elif self.flavor == 'postgresql':
             connection = self.pg_pool.getconn()
-            if self.pg_schema:
-                cur = connection.cursor()
-                cur.execute('CREATE SCHEMA IF NOT EXISTS %s' % self.pg_schema)
-                cur.execute('SET search_path TO %s' % self.pg_schema)
         else:
             raise ValueError('Unexpected flavor "%s"' % self.flavor)
         return connection
@@ -312,7 +308,6 @@ class Context:
     def enter(self):
         # Share pool registry
         self.pool = Pool.get_pool(self.cfg)
-        self.connection = self.pool.enter()
         self.flavor = self.pool.flavor
         self.pg_schema = self.pool.pg_schema
         if self.flavor == 'postgresql':
@@ -614,6 +609,11 @@ class Context:
         return schema
 
     def create_tables(self):
+        # Make sur schema exists
+        if self.pg_schema:
+            execute('CREATE SCHEMA IF NOT EXISTS %s' % self.pg_schema)
+            execute('SET search_path TO %s' % self.pg_schema)
+
         # First we collect db info
         self.introspect_db()
 
