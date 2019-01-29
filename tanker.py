@@ -2268,7 +2268,7 @@ def yaml_load(stream):
 
 def cli():
     parser = argparse.ArgumentParser(description='Tanker CLI')
-    parser.add_argument('action', help='info, read, write, init or delete',
+    parser.add_argument('action', help='info, read, write, delete or version',
                         nargs=1)
     parser.add_argument('table', help='Table to query',
                         nargs='*')
@@ -2296,10 +2296,13 @@ def cli():
     args = parser.parse_args()
     if args.debug:
         logger.setLevel('DEBUG')
+    if args.action[0] == 'version':
+        print(__version__)
+        return
+
     cfg = yaml_load(open(args.config))
     if cfg.get('schema'):
         cfg['schema'] = yaml_load(open(os.path.expanduser(cfg['schema'])))
-
     with connect(cfg):
         cli_main(args)
 
