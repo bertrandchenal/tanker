@@ -175,7 +175,7 @@ def test_aggregation(session):
 
     # Aggregates & grouping
     view = View('team', ['name', '(count)'])
-    res = view.read(groupby='name').all()
+    res = view.read(groupby='name', order='name').all()
     assert res == [('Blue', 2), ('Red', 1)]
 
     # Aggregates all fields
@@ -190,7 +190,7 @@ def test_aggregation(session):
 
     # Aggregates & auto-grouping
     view = View('team', ['name', '(count)'])
-    res = view.read().all()
+    res = view.read(order='name').all()
     assert res == [('Blue', 2), ('Red', 1)]
 
     # Group on expression

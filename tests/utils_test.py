@@ -67,3 +67,24 @@ def test_manual_conn(session):
     # Makes sure result is not lost
     with connect(cfg):
         assert country_view.read({'name': 'Prussia'}).one()[0] == 'Prussia'
+
+def test_create_table(session):
+    table_def = {
+        'table': 'sponsor',
+        'columns': {
+            'name': 'varchar',
+            'country': 'm2o country.id',
+            'type': 'varchar',
+        },
+        'key': ['name' ,'country'],
+        'values':[{
+            'name': 'ACME-2000',
+            'country.name': 'Belgium',
+            'type': 'gold',
+        }],
+    }
+    ctx.introspect_db()
+    table = ctx.register(table_def)
+    ctx.create_table(table)
+    rows = View('sponsor').read().all()
+    assert rows == [('ACME-2000', 'Belgium', 'gold')]
