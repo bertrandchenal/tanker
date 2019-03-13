@@ -3,12 +3,12 @@
 Tanker is a Python database library targeting analytic operations but
 it also fits most transactional processing.
 
-As its core it's mainly a query builder that simplify greatly the join
-operations. It also comes with an way to automatically create the
+As its core it's mainly a query builder that simplify greatly join
+operations. It also comes with a way to automatically create the
 database tables based on your schema definition.
 
 Currently Postgresql and Sqlite are supported and the API is made to
-seamlessly integrate with pandas DataFrames.
+seamlessly integrate pandas DataFrames.
 
 
 ## Licence
@@ -202,12 +202,10 @@ regrouped in a conjunction, equivalent to `(and item1 item2 ...)`.
 ### Query arguments
 
 To facilitate the building of queries and more importantly to prevent
-sql-injection, you can use arguments. They use the syntax of Python
-own
-[string format method](https://docs.python.org/2/library/stdtypes.html#str.format),
+sql injections you can use arguments. They use the syntax of Python
+own [string format method](https://docs.python.org/2/library/stdtypes.html#str.format),
 and will make use of the DB-API's parameter substitution (see for
-example
-[the sqlite documentation](https://docs.python.org/2/library/sqlite3.html)):
+example [the sqlite documentation](https://docs.python.org/2/library/sqlite3.html)):
 
     cond = '(= name {name})'
     rows = team_view.read(cond).args(name='Blue')
