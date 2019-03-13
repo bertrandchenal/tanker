@@ -1,7 +1,7 @@
 from collections import OrderedDict, defaultdict
 from contextlib import contextmanager
 from datetime import datetime, date, timedelta
-from itertools import chain, islice
+from itertools import chain, islice, groupby
 from string import Formatter
 from threading import Thread
 try:
@@ -325,8 +325,7 @@ class Context:
             # Register tables
             self.registry = OrderedDict()
             for table_def in schema:
-                table = self.register(table_def)
-                self.registry[table.name] = table
+                self.register(table_def)
 
             Context._registries[self.db_uri] = self.registry
         # Discover which table are referenced
@@ -375,6 +374,11 @@ class Context:
             return query
 
     def register(self, table_def):
+        table_name = table_def['table']
+        table = self.registry.get(table_name)
+        if table is not None:
+            return table
+
         values = table_def.get('values')
         defaults = table_def.get('defaults', {})
         columns = []
@@ -383,12 +387,15 @@ class Context:
                 col_name, col_type, default=defaults.get(col_name))
             columns.append(new_col)
 
-        return Table(name=table_def['table'], columns=columns,
-              key=table_def.get('key', table_def.get('index')),
-              unique=table_def.get('unique'),
-              values=values,
-              use_index=table_def.get('use-index'),
+        table = Table(
+            name=table_name, columns=columns,
+            key=table_def.get('key', table_def.get('index')),
+            unique=table_def.get('unique'),
+            values=values,
+            use_index=table_def.get('use-index'),
         )
+        self.registry[table_name] = table
+        return table
 
     def reset_cache(self, table=None):
         if table is None:
@@ -455,28 +462,39 @@ class Context:
             yield res
 
     def introspect_db(self, auto=False):
+        '''
+        Collect info from existing db. this populate self.db_table,
+        self.db_indexes, self.db_columns and self.db_constraints.
+
+        if `auto` is True, build automatically the schema (and so
+        query the db to get foreign keys and unique indexes)
+        '''
+
         # Collect table info
         if self.flavor == 'sqlite':
             qr = "SELECT name FROM sqlite_master WHERE type = 'table'"
         elif self.flavor == 'postgresql':
             qr = "SELECT table_name FROM information_schema.tables " \
                  "WHERE table_schema = '%s'" % (self.pg_schema or 'public')
-        self.db_tables.update(name for name, in execute(qr))
+        self.db_tables = set(name for name, in execute(qr))
 
         # Collect columns
-        for table_name in self.db_tables:
-            if self.flavor == 'sqlite':
+        self.db_columns = {}
+        if self.flavor == 'sqlite':
+            for table_name in self.db_tables:
                 qr = 'PRAGMA table_info("%s")' % table_name
                 cursor = execute(qr)
                 current_cols = {x[1]: x[2] for x in cursor}
-            elif self.flavor == 'postgresql':
-                qr = '''
-                 SELECT column_name, data_type
-                FROM information_schema.columns
-                WHERE table_name = '%s' ''' % table_name
-                cursor = execute(qr)
-                current_cols = {x[0]: x[1] for x in cursor}
-            self.db_columns[table_name] = current_cols
+                self.db_columns[table_name] = current_cols
+        elif self.flavor == 'postgresql':
+            qr = '''
+            SELECT table_name, column_name, data_type
+            FROM information_schema.columns ORDER BY table_name
+            '''
+            cursor = execute(qr)
+            for t, cols in groupby(cursor, key=lambda x: x[0]):
+                current_cols = {x[1]: x[2] for x in cols}
+                self.db_columns[t] = current_cols
 
         # Collect indexes
         if self.flavor == 'sqlite':
@@ -609,6 +627,126 @@ class Context:
 
         return schema
 
+    def create_table(self, table, full=True):
+        '''
+        Create table in database (if it doesn't already exist) based on
+        `table` object. If full is true, also create columns, indexes
+        and sync values.
+        '''
+        if table.name in self.db_tables:
+            return
+
+        self.db_tables.add(table.name)
+        self.db_columns[table.name] = {}
+        col_defs = []
+        for col in table.columns:
+            if col.ctype in ('M2O', 'O2M'):
+                continue
+            col_def = col.sql_definition()
+            if col in table.key:
+                col_def += ' NOT NULL'
+            col_defs.append('"%s" %s' % (col.name, col_def))
+            self.db_columns[table.name][col.name] = col.ctype
+
+        qr = 'CREATE TABLE "%s" (%s)' % (table.name, ', '.join(col_defs))
+        execute(qr)
+
+        logger.info('Table "%s" created', table.name)
+
+        if not full:
+            return
+
+        self.add_columns(table)
+        self.create_index(table)
+        self.sync_data(table)
+
+
+    def add_columns(self, table):
+        '''
+        Alter database table to add missing columns (wrt to `table`
+        object)
+        '''
+        table_cols = self.db_columns[table.name]
+        # Execute alter table queries
+        table = self.registry[table.name]
+        for col in table.own_columns:
+            if col.name in table_cols:
+                continue
+            table_cols[col.name] = col.ctype
+            qr = 'ALTER TABLE "%(table)s" '\
+                 'ADD COLUMN "%(name)s" %(def)s %(not_null)s'
+            not_null = 'NOT NULL' if col in table.key else ''
+            params = {
+                'table': table.name,
+                'name': col.name,
+                'def': col.sql_definition(),
+                'not_null': not_null,
+            }
+            # TODO: column should be NOT NULL if part of the key
+            # (if not the ON CONLICT clause is not triggered)
+            execute(qr % params)
+            if not(self.flavor == 'sqlite' and col.ctype == 'M2O'):
+                continue
+            # the on delete cascade is not enabled for sqlite
+            # because the 'INSERT OR REPLACE' operation execute a
+            # delete and thus execute the delete cascade. But it
+            # does not execute triggers (see
+            # https://stackoverflow.com/a/32554601)
+            execute(
+                'CREATE TRIGGER on_delete_trigger_%(table)s_%(col)s '
+                'AFTER DELETE ON %(remote)s '
+                'BEGIN '
+                'DELETE FROM %(table)s '
+                'WHERE %(table)s.%(col)s=OLD.id;'
+                'END' % {
+                    'remote': col.foreign_table,
+                    'table': table.name,
+                    'col': col.name,
+                })
+
+    def create_index(self, table):
+        # Add unique constrains (not supported by sqlite)
+        if self.flavor != 'sqlite':
+            unique_qr = 'ALTER TABLE "%s" ADD CONSTRAINT %s UNIQUE (%s)'
+            for cols in table.unique:
+                cons_name = 'unique_' + '_'.join(cols)
+                if len(cons_name) > 63:
+                    msg = 'Constrain name "%s" is too big'
+                    ValueError(msg % cons_name)
+                if cons_name in self.db_constraints:
+                    continue
+                self.db_constraints.add(cons_name)
+                cons_cols = ', '.join(cols)
+                execute(unique_qr % (table.name, cons_name, cons_cols))
+
+        if not table.key:
+            return
+
+        use_brin = self.flavor == 'postgresql' and table.use_index == 'BRIN'
+        if use_brin:
+            idx = 'brin_index_%s' % table.name
+        else:
+            idx = 'unique_index_%s' % table.name
+
+        if idx in self.db_indexes:
+            return
+        self.db_indexes.add(idx)
+
+        cols = ', '.join('"%s"' % c for c in table.key)
+        if use_brin:
+            tpl = 'CREATE INDEX "%s" ON "%s" USING BRIN (%s)'
+        else:
+            tpl = 'CREATE UNIQUE INDEX "%s" ON "%s" (%s)'
+        qr =  tpl % (idx, table.name, cols)
+        execute(qr)
+
+    def sync_data(self, table):
+        if not table.values:
+            return
+        logger.info('Populate %s' % table.name)
+        view = View(table.name, fields=list(table.values[0].keys()))
+        view.write(table.values, disable_acl=True)
+
     def create_tables(self):
         # Make sur schema exists
         if self.pg_schema:
@@ -620,110 +758,19 @@ class Context:
 
         # Create tables and simple columns
         for table in self.registry.values():
-            if table.name in self.db_tables:
-                continue
-
-            col_defs = []
-            for col in table.columns:
-                if col.ctype in ('M2O', 'O2M'):
-                    continue
-                col_defs.append('"%s" %s' % (col.name, col.sql_definition()))
-                self.db_columns[table.name][col.name] = col.ctype
-
-            qr = 'CREATE TABLE "%s" (%s)' % (table.name, ', '.join(col_defs))
-            execute(qr)
-
-            self.db_tables.add(table.name)
-            logger.info('Table "%s" created', table.name)
+           self.create_table(table, full=False)
 
         # Add columns
-        for table_name in self.db_tables:
-            if table_name not in self.registry:
-                continue
-            table_cols = self.db_columns[table_name]
-
-            # Execute alter table queries
-            table = self.registry[table_name]
-            for col in table.own_columns:
-                if col.name in table_cols:
-                    continue
-                table_cols[col.name] = col.ctype
-                qr = 'ALTER TABLE "%(table)s" '\
-                     'ADD COLUMN "%(name)s" %(def)s'
-                params = {
-                    'table': table.name,
-                    'name': col.name,
-                    'def': col.sql_definition(),
-                }
-                # TODO: column should be NOT NULL if part of the key
-                # (if not the ON CONLICT clause is not triggered)
-                execute(qr % params)
-                if not(self.flavor == 'sqlite' and col.ctype == 'M2O'):
-                    continue
-                # the on delete cascade is not enabled for sqlite
-                # because the 'INSERT OR REPLACE' operation execute a
-                # delete and thus execute the delete cascade. But it
-                # does not execute triggers (see
-                # https://stackoverflow.com/a/32554601)
-                execute(
-                    'CREATE TRIGGER on_delete_trigger_%(table)s_%(col)s '
-                    'AFTER DELETE ON %(remote)s '
-                    'BEGIN '
-                    'DELETE FROM %(table)s '
-                    'WHERE %(table)s.%(col)s=OLD.id;'
-                    'END' % {
-                        'remote': col.foreign_table,
-                        'table': table.name,
-                        'col': col.name,
-                    })
+        for table in self.registry.values():
+            self.add_columns(table)
 
         # Create indexes
         for table in self.registry.values():
-            if not table.key:
-                continue
-
-            use_brin = self.flavor == 'postgresql' and table.use_index == 'BRIN'
-            if use_brin:
-                idx = 'brin_index_%s' % table.name
-            else:
-                idx = 'unique_index_%s' % table.name
-
-            if idx in self.db_indexes:
-                continue
-            self.db_indexes.add(idx)
-
-            cols = ', '.join('"%s"' % c for c in table.key)
-
-            if use_brin:
-                tpl = 'CREATE INDEX "%s" ON "%s" USING BRIN (%s)'
-            else:
-                tpl = 'CREATE UNIQUE INDEX "%s" ON "%s" (%s)'
-            qr =  tpl % (idx, table.name, cols)
-            execute(qr)
-
-        # Add unique constrains (not supported by sqlite)
-        if self.flavor != 'sqlite':
-            unique_qr = 'ALTER TABLE "%s" ADD CONSTRAINT %s UNIQUE (%s)'
-            for table in self.registry.values():
-                for cols in table.unique:
-                    cons_name = 'unique_' + '_'.join(cols)
-                    if len(cons_name) > 63:
-                        msg = 'Constrain name "%s" is too big'
-                        ValueError(msg % cons_name)
-                    if cons_name in self.db_constraints:
-                        continue
-                    self.db_constraints.add(cons_name)
-                    cons_cols = ', '.join(cols)
-                    execute(unique_qr % (table.name, cons_name, cons_cols))
+            self.create_index(table)
 
         # Add pre-defined data
         for table in self.registry.values():
-            if not table.values:
-                continue
-            logger.info('Populate %s' % table.name)
-            view = View(table.name, fields=list(table.values[0].keys()))
-            view.write(table.values, disable_acl=True)
-
+            self.sync_data(table)
 
 def log_sql(query, params=None, exception=False):
     if not exception and logger.getEffectiveLevel() > logging.DEBUG:

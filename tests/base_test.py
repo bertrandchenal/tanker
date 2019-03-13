@@ -3,7 +3,7 @@ import os
 import pytest
 
 from tanker import (connect, create_tables, View, logger, yaml_load, fetch,
-                    save, execute, Table, Pool)
+                    save, execute, Table)
 
 
 DB_PARAMS = [
@@ -12,6 +12,7 @@ DB_PARAMS = [
     {'uri': 'postgresql:///tanker_test#test_schema', 'auto': False},
     {'uri': 'sqlite:///test.db', 'auto': True},
     {'uri': 'postgresql:///tanker_test', 'auto': True},
+
 ]
 
 verbose = pytest.config.getoption('verbose', 0) > 1
@@ -123,7 +124,7 @@ def session(request):
         os.unlink('test.db')
     else:
         with connect(cfg):
-            to_clean = [t['table'] for t in SCHEMA] + ['tmp']
+            to_clean = [t['table'] for t in SCHEMA] + ['tmp', 'sponsor']
             for table in to_clean:
                 if use_schema:
                     table = 'test_schema.' + table
@@ -138,6 +139,7 @@ def session(request):
 
     if request.param['auto']:
         cfg.pop('schema')
+
     with connect(cfg, _auto_rollback=True):
         View('team', ['name', 'country.name']).write(teams)
         yield request.param['uri']
