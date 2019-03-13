@@ -640,10 +640,12 @@ class Context:
         self.db_columns[table.name] = {}
         col_defs = []
         for col in table.columns:
+            # TODO we may consider m2o here if the target table is
+            # already in db
             if col.ctype in ('M2O', 'O2M'):
                 continue
             col_def = col.sql_definition()
-            if col in table.key:
+            if col.name in table.key:
                 col_def += ' NOT NULL'
             col_defs.append('"%s" %s' % (col.name, col_def))
             self.db_columns[table.name][col.name] = col.ctype
@@ -674,16 +676,17 @@ class Context:
                 continue
             table_cols[col.name] = col.ctype
             qr = 'ALTER TABLE "%(table)s" '\
-                 'ADD COLUMN "%(name)s" %(def)s %(not_null)s'
-            not_null = 'NOT NULL' if col in table.key else ''
+                 'ADD COLUMN "%(name)s" %(def)s'
+            col_def = col.sql_definition()
+            if col.name in table.key and self.flavor != 'sqlite':
+                # FIXME sqlite does not allow to add not null columns
+                # without a default value (even on empty tables!)
+                col_def += ' NOT NULL'
             params = {
                 'table': table.name,
                 'name': col.name,
-                'def': col.sql_definition(),
-                'not_null': not_null,
+                'def': col_def,
             }
-            # TODO: column should be NOT NULL if part of the key
-            # (if not the ON CONLICT clause is not triggered)
             execute(qr % params)
             if not(self.flavor == 'sqlite' and col.ctype == 'M2O'):
                 continue
