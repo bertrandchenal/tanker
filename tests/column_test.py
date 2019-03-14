@@ -1,7 +1,6 @@
 from itertools import product
 
 import pytest
-from tanker import View, Expression
 from .base_test import DB_PARAMS
 
 db_uris = [p['uri'] for p in DB_PARAMS]

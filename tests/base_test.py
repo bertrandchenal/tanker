@@ -12,7 +12,8 @@ DB_PARAMS = [
     {'uri': 'postgresql:///tanker_test#test_schema', 'auto': False},
     {'uri': 'sqlite:///test.db', 'auto': True},
     {'uri': 'postgresql:///tanker_test', 'auto': True},
-
+    # {'uri': 'crdb://root@localhost:26257/tanker_test', 'auto': False},
+    # {'uri': 'crdb://root@localhost:26257/tanker_test', 'auto': True},
 ]
 
 verbose = pytest.config.getoption('verbose', 0) > 1
@@ -77,8 +78,8 @@ yaml_def = '''
     int_array: integer[]
     float_array: float[]
     bool_array: bool[]
-    ts_array: timestamp[][]
-    char_array: varchar[][][]
+    ts_array: timestamp[]
+    char_array: varchar[]
     floor: float
     epoch: timestamp
     year: timestamp

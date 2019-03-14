@@ -20,16 +20,9 @@ def test_reserved_words(session):
         'varchar': 'varchar',
         'int_array': [1,2],
         'bool_array': [True, False],
-        'ts_array': [
-            [datetime(1970, 1, 1), datetime(1970, 1, 2)],
-            [datetime(1970, 1, 3), datetime(1970, 1, 4)],
-        ],
-        'char_array': [
-            [['ham', 'spam'], ['foo', 'bar']],
-            [['foo', 'bar'], [None, None]],
-        ],
+        'ts_array': [datetime(1970, 1, 1), datetime(1970, 1, 2)],
+        'char_array': ['ham', 'spam'],
     }
-
 
     # Write actual values
     ks_view = View('kitchensink')

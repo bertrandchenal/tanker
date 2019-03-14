@@ -9,7 +9,7 @@ try:
     from urlparse import urlparse
 except ImportError:
     # PY3
-    from urllib.parse import urlparse
+    from urllib.parse import urlparse, urlunparse
 import argparse
 import csv
 import io
@@ -22,6 +22,7 @@ import sqlite3
 import sys
 import textwrap
 import threading
+import uuid
 try:
     import pandas
 except ImportError:
@@ -205,6 +206,16 @@ class Pool:
                 cfg.get('pg_min_pool_size', 1),
                 cfg.get('pg_max_pool_size', 10),
                 con_info)
+        elif self.flavor == 'crdb':
+            if psycopg2 is None:
+                raise ImportError(
+                    'Cannot connect to "%s" without psycopg2 package '
+                    'installed' % db_uri)
+            # transform crdb into postgreql in uri scheme to please
+            # psycopg2
+            uri_parts = list(uri)
+            uri_parts[0] = 'postgresql'
+            self.db_uri = urlunparse(uri_parts)
 
         else:
             raise ValueError('Unsupported scheme "%s" in uri "%s"' % (
@@ -216,6 +227,8 @@ class Pool:
             connection.text_factory = str
             connection.execute('PRAGMA foreign_keys=ON')
             connection.execute('PRAGMA journal_mode=wal')
+        elif self.flavor == 'crdb':
+            connection = psycopg2.connect(self.db_uri)
         elif self.flavor == 'postgresql':
             connection = self.pg_pool.getconn()
         else:
@@ -311,6 +324,7 @@ class Context:
         self.connection = self.pool.enter()
         self.flavor = self.pool.flavor
         self.pg_schema = self.pool.pg_schema
+        self.legacy_pg = False
         if self.flavor == 'postgresql':
             self.legacy_pg = self.connection.server_version < 90500
 
@@ -356,22 +370,21 @@ class Context:
         return new_ctx
 
     def _prepare_query(self, query):
-        if self.flavor == 'postgresql':
+        if self.flavor != 'sqlite':
             return query
 
-        if self.flavor == 'sqlite':
-            # Tranform named params: %(foo)s -> :foo
-            query = NAMED_RE.sub(r':\1', query)
+        # Tranform named params: %(foo)s -> :foo
+        query = NAMED_RE.sub(r':\1', query)
 
-            # Transform positional params: %s -> ?. s/ilike/like.
-            buf = ''
-            for nquote, quote in QUOTE_SEPARATION.findall(query + "''"):
-                nquote = nquote.replace('?', '??')
-                nquote = nquote.replace('%s', '?')
-                nquote = nquote.replace('ilike', 'like')
-                buf += nquote + quote
-            query = buf[:-2]
-            return query
+        # Transform positional params: %s -> ?. s/ilike/like.
+        buf = ''
+        for nquote, quote in QUOTE_SEPARATION.findall(query + "''"):
+            nquote = nquote.replace('?', '??')
+            nquote = nquote.replace('%s', '?')
+            nquote = nquote.replace('ilike', 'like')
+            buf += nquote + quote
+        query = buf[:-2]
+        return query
 
     def register(self, table_def):
         table_name = table_def['table']
@@ -473,7 +486,7 @@ class Context:
         # Collect table info
         if self.flavor == 'sqlite':
             qr = "SELECT name FROM sqlite_master WHERE type = 'table'"
-        elif self.flavor == 'postgresql':
+        else:
             qr = "SELECT table_name FROM information_schema.tables " \
                  "WHERE table_schema = '%s'" % (self.pg_schema or 'public')
         self.db_tables = set(name for name, in execute(qr))
@@ -486,7 +499,7 @@ class Context:
                 cursor = execute(qr)
                 current_cols = {x[1]: x[2] for x in cursor}
                 self.db_columns[table_name] = current_cols
-        elif self.flavor == 'postgresql':
+        else:
             qr = '''
             SELECT table_name, column_name, data_type
             FROM information_schema.columns ORDER BY table_name
@@ -499,7 +512,7 @@ class Context:
         # Collect indexes
         if self.flavor == 'sqlite':
             qr = "SELECT name FROM sqlite_master WHERE type = 'index'"
-        elif self.flavor == 'postgresql':
+        else:
             schema = self.pg_schema or 'public'
             qr = "SELECT indexname FROM pg_indexes " \
                  "WHERE schemaname = '%s'" % schema
@@ -526,7 +539,7 @@ class Context:
                 foreign_keys.update({
                     (table_name, r[3]): (r[2], r[4]) for r in cur})
 
-        elif self.flavor == 'postgresql':
+        else:
             # Extract fk
             qr = '''
             SELECT
@@ -558,7 +571,7 @@ class Context:
                 rows = sorted(execute(info_qr % idx_name), key=by_pos)
                 keys[table] = [r[2] for r in rows]
 
-        elif self.flavor == 'postgresql':
+        else:
             qr = '''
             SELECT
               t.relname as table_name,
@@ -837,10 +850,10 @@ def executemany(query, params):
     return cursor
 
 
-def copy_from(buff, table, **kwargs):
-    log_sql('"COPY FROM" called on table %s' % table)
+def copy_from(qr, buff):
+    log_sql(qr)
     cursor = ctx.connection.cursor()
-    cursor.copy_from(buff, table, **kwargs)
+    cursor.copy_expert(qr, buff)
     return cursor
 
 
@@ -1148,10 +1161,11 @@ class View(object):
             with self._prepare_write(data) as join_cond:
                 qr = 'DELETE FROM "%(main)s" WHERE id %(op)s (' \
                      'SELECT "%(main)s".id FROM "%(main)s" ' \
-                     'INNER JOIN tmp on %(join_cond)s)'
+                     'INNER JOIN %(tmp_table)s on %(join_cond)s)'
                 qr = qr % {
                     'main': self.table.name,
                     'op': 'NOT IN' if swap else 'IN',
+                    'tmp_table': self.tmp_table,
                     'join_cond': ' AND '.join(join_cond),
                 }
                 cur = execute(qr)
@@ -1180,7 +1194,12 @@ class View(object):
             if any(f in self.key_fields for f in fields)
             else '')
         # Create tmp
-        qr = 'CREATE TEMPORARY TABLE tmp (%s)'
+        if ctx.flavor == 'crdb':
+            self.tmp_table = 'tmp_' + uuid.uuid4().hex
+            qr = 'CREATE TABLE %s (%s)'
+        else:
+            self.tmp_table = 'tmp'
+            qr = 'CREATE TEMPORARY TABLE %s (%s)'
         col_defs = ', '.join('"%s" %s %s' % (
             col.name,
             fields[0].ftype,
@@ -1189,45 +1208,43 @@ class View(object):
         if extra_id:
             id_type = 'INTEGER' if ctx.flavor == 'sqlite' else 'SERIAL'
             col_defs += ', id %s PRIMARY KEY' % id_type
-        qr = qr % col_defs
+        qr = qr % (self.tmp_table, col_defs)
         execute(qr)
 
         # Fill tmp
-        if self.ctx.flavor == 'postgresql':
-            buff = BuffIO()
-            writer = csv.writer(buff, delimiter='\x01', quotechar='\x02')
-            # postgresql COPY doesn't like line feed
-            repl = lambda x: x.replace(
-                '\n', '\\n').replace(
-                '\t', '\\t').replace(
-                '\r', '\\r')
-            clean = lambda x: repl(x) if isinstance(x, str) else x
-            # Clean by column
-            for pos, c in enumerate(self.field_map):
-                if c.ctype != 'VARCHAR':
-                    continue
-                data[pos] = [clean(v) for v in data[pos]]
-
-            # Append to writer by row
-            for row in zip(*data):
-                writer.writerow(row)
-            buff.seek(0)
-            copy_from(buff, 'tmp', sep='\x01', null='',
-                      columns=['"%s"' % c.name for c in self.field_map])
-
-        else:
-            qr = 'INSERT INTO tmp (%(fields)s) VALUES (%(values)s)'
+        if self.ctx.flavor == 'sqlite':
+            qr = 'INSERT INTO %(tmp_table)s (%(fields)s) VALUES (%(values)s)'
             qr = qr % {
+                'tmp_table': self.tmp_table,
                 'fields': ', '.join('"%s"' % c.name for c in self.field_map),
                 'values': ', '.join('%s' for _ in self.field_map),
             }
             executemany(qr, zip(*data))
+        else:
+            columns = ', '.join('"%s"' % c.name for c in self.field_map)
+            buff = BuffIO()
+            if self.ctx.flavor == 'crdb':
+                writer = csv.writer(buff, delimiter='\t', quotechar='"')
+                qr = 'COPY %s (%s) FROM STDIN' % (self.tmp_table, columns)
+            else:
+                writer = csv.writer(buff, delimiter=',', quotechar='"')
+                qr = 'COPY %s (%s) FROM STDIN WITH (FORMAT csv)' % (
+                    self.tmp_table, columns)
+            # Append to writer by row
+            for row in zip(*data):
+                writer.writerow(row)
+            buff.seek(0)
+            copy_from(qr, buff)
 
         # Create join conditions
         join_cond = []
         for name in self.key_cols:
-            join_cond.append('tmp."%s" = "%s"."%s"' % (
-                name, self.table.name, name))
+            join_cond.append('%s."%s" = "%s"."%s"' % (
+                self.tmp_table,
+                name,
+                self.table.name,
+                name
+            ))
 
         # Apply filters if any
         if not disable_acl:
@@ -1254,7 +1271,7 @@ class View(object):
                 join_cond, filters, disable_acl=True, action='insert',
                 args=args)
         # Clean tmp table
-        execute('DROP TABLE tmp')
+        execute('DROP TABLE %s' % self.tmp_table)
 
     def write(self, data, purge=False, insert=True, update=True, filters=None,
               disable_acl=False, args=None):
@@ -1295,7 +1312,8 @@ class View(object):
         ) as join_cond:
             if self.ctx.flavor == 'sqlite':
                 self._sqlite_upsert(join_cond, insert, update)
-            elif ctx.legacy_pg or self.table.use_index == 'BRIN':
+            elif self.ctx.flavor == 'postgresql' and (
+                    ctx.legacy_pg or self.table.use_index == 'BRIN'):
                 if insert:
                     self._insert(join_cond)
                 if update:
@@ -1325,7 +1343,7 @@ class View(object):
         qr = 'INSERT OR REPLACE INTO "%(main)s" (%(fields)s) %(select)s'
         select = 'SELECT %(tmp_fields)s FROM tmp '\
                  '%(join_type)s JOIN "%(main_table)s" ON ( %(join_cond)s)'
-        tmp_fields = ', '.join('tmp."%s"' % c for c in qr_cols)
+        tmp_fields = ', '.join('%s."%s"' % (self.tmp_table, c) for c in qr_cols)
         if other_cols:
             tmp_fields += ', '
             tmp_fields += ', '.join('"%s"."%s"' % (self.table.name, f)\
@@ -1349,7 +1367,8 @@ class View(object):
         return cur.rowcount
 
     def _pg_upsert(self, join_cond, insert, update):
-        tmp_fields = ', '.join('tmp."%s"' % f.name for f in self.field_map)
+        tmp_fields = ', '.join('%s."%s"' % (self.tmp_table, f.name)
+                               for f in self.field_map)
         main_fields = ', '.join('"%s"' % f.name for f in self.field_map)
         upd_fields = []
         for f in self.field_map:
@@ -1359,7 +1378,7 @@ class View(object):
 
         qr = (
             'INSERT INTO "%(main)s" (%(main_fields)s) '
-            'SELECT %(tmp_fields)s FROM tmp '
+            'SELECT %(tmp_fields)s FROM %(tmp_table)s '
             '%(join_type)s JOIN "%(main)s" ON ( %(join_cond)s) ')
         if upd_fields and update:
             qr += 'ON CONFLICT (%(idx)s) DO UPDATE SET %(upd_fields)s'
@@ -1370,6 +1389,7 @@ class View(object):
             'main': self.table.name,
             'main_fields': main_fields,
             'tmp_fields': tmp_fields,
+            'tmp_table': self.tmp_table,
             'join_cond': ' AND '.join(join_cond),
             'join_type': 'LEFT' if insert else 'INNER',
             'upd_fields': ', '.join(upd_fields),
@@ -1379,7 +1399,7 @@ class View(object):
 
     def _insert(self, join_cond):
         qr = 'INSERT INTO "%(main)s" (%(fields)s) %(select)s'
-        select = 'SELECT %(tmp_fields)s FROM tmp '\
+        select = 'SELECT %(tmp_fields)s FROM %(tmp_table)s '\
                  'LEFT JOIN "%(main)s" ON ( %(join_cond)s) ' \
                  'WHERE %(where_cond)s'
 
@@ -1388,9 +1408,11 @@ class View(object):
         for name in self.key_cols:
             where_cond.append('%s."%s" IS NULL' % (self.table.name, name))
 
-        tmp_fields = ', '.join('tmp."%s"' % f.name for f in self.field_map)
+        tmp_fields = ', '.join('%s."%s"' % (self.tmp_table, f.name)
+                               for f in self.field_map)
         select = select % {
             'tmp_fields': tmp_fields,
+            'tmp_table': self.tmp_table,
             'main': self.table.name,
             'join_cond': ' AND '.join(join_cond),
             'where_cond': ' AND '.join(where_cond),
@@ -1411,9 +1433,11 @@ class View(object):
 
         where = ' AND '.join(join_cond)
         qr = 'UPDATE "%(main)s" SET '
-        qr += ', ' .join('"%s" = tmp."%s"' % (n, n) for n in update_cols)
-        qr += ' FROM tmp WHERE %(where)s'
+        qr += ', ' .join('"%s" = %s."%s"' % (n, self.tmp_table, n)
+                         for n in update_cols)
+        qr += ' FROM %(tmp_table)s WHERE %(where)s'
         qr = qr % {
+            'tmp_table': self.tmp_table,
             'main': self.table.name,
             'where': where,
         }
@@ -1432,7 +1456,7 @@ class View(object):
         insert = action == 'insert'
         update = action == 'update'
         main = self.table.name
-        tmp = 'tmp'
+        tmp = self.tmp_table
         if update:
             assert bool(filters), 'filters is nedded to purge on tmp'
             main, tmp = tmp, main
@@ -1737,10 +1761,17 @@ class Column:
         if self.ctype == 'O2M':
             return None
         # M2O
-        table = Table.get(self.foreign_table).name
-        cascade = 'ON DELETE CASCADE' if ctx.flavor == 'postgresql' else ''
-        return 'INTEGER REFERENCES "%s" ("%s") %s' % (
-            table, self.foreign_col, cascade)
+        if ctx.flavor == 'crdb':
+            # TODO crdb does support this: ALTER TABLE orders ADD
+            # CONSTRAINT customer_fk FOREIGN KEY (customer_id)
+            # REFERENCES customers (id) ON DELETE CASCADE; So we
+            # should call it after the columns is added
+            return 'INTEGER'
+        else:
+            table = Table.get(self.foreign_table).name
+            cascade = '' if ctx.flavor == 'sqlite' else 'ON DELETE CASCADE'
+            return 'INTEGER REFERENCES "%s" ("%s") %s' % (
+                table, self.foreign_col, cascade)
 
     def get_foreign_table(self):
         if not self.foreign_table:
@@ -1759,6 +1790,8 @@ class Column:
                 self.format_array(v, astype=astype, array_dim=array_dim-1)
                 for v in array)
         items = ','.join(items)
+        # XXX https://github.com/cockroachdb/cockroach/issues/33429:
+        # cockroach seems to choke on arrays
         return '{%s}' % items
 
     def format(self, values, astype=None, array_dim=None):
