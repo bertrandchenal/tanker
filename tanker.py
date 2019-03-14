@@ -1312,15 +1312,17 @@ class View(object):
         ) as join_cond:
             if self.ctx.flavor == 'sqlite':
                 self._sqlite_upsert(join_cond, insert, update)
-            elif self.ctx.flavor == 'postgresql' and (
-                    ctx.legacy_pg or self.table.use_index == 'BRIN'):
-                if insert:
-                    self._insert(join_cond)
-                if update:
-                    self._update(join_cond)
-            else:
-                # ON-CONFLICT is available since postgres 9.5
+            if self.ctx.flavor == 'crdb':
                 self._pg_upsert(join_cond, insert=insert, update=update)
+            if self.ctx.flavor == 'postgresql':
+                if ctx.legacy_pg or self.table.use_index == 'BRIN':
+                    if insert:
+                        self._insert(join_cond)
+                    if update:
+                        self._update(join_cond)
+                else:
+                    # ON-CONFLICT is available since postgres 9.5
+                    self._pg_upsert(join_cond, insert=insert, update=update)
             if purge:
                 cnt = self._purge(join_cond, filters, disable_acl,
                                   action='purge', args=args)
