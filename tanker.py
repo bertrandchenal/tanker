@@ -621,6 +621,9 @@ class Context:
             'bigint': 'bigint',
             'integer': 'integer',
             'date': 'date',
+            'real': 'float',
+            'smallint': 'integer',
+            'numeric': 'float',
         }
         schema = []
         for table_name in self.db_tables:
@@ -634,8 +637,10 @@ class Context:
                 if (table_name, name) in foreign_keys:
                     remote_table, remote_col = foreign_keys[table_name, name]
                     col_def = 'M2O %s.%s' % (remote_table, remote_col)
-                else:
-                    col_def = type_map.get(data_type, data_type)
+                elif data_type in type_map:
+                    col_def = type_map[data_type]
+                elif data_type.upper() not in COLUMN_TYPE:
+                    continue # We don't know what to do with this type
                 table_cfg['columns'][name] = col_def
 
         return schema
