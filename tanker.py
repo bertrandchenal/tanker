@@ -743,7 +743,8 @@ class Context:
         if not table.key:
             return
 
-        use_brin = self.flavor == 'postgresql' and table.use_index == 'BRIN'
+        use_brin = (self.flavor == 'postgresql' and not self.legacy_pg
+                    and table.use_index == 'BRIN')
         if use_brin:
             idx = 'brin_index_%s' % table.name
         else:
