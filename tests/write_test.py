@@ -51,7 +51,7 @@ def test_no_fields(session):
     check(expected, res)
 
 
-def test_purge(session):
+def test_simple_purge(session):
     team_view = View('team', ['name', 'country.name'])
     cnt = team_view.write([
         ('Orange', 'Holland'), # this is an insert
@@ -60,6 +60,28 @@ def test_purge(session):
     assert cnt['deleted'] == 2
 
     expected = [('Blue', 'France',)]
+    res = team_view.read()
+    check(expected, res)
+
+
+def test_filter_purge(session):
+    team_view = View('team', ['name', 'country.name'])
+    cnt = team_view.write([
+        ('Purple', 'France'),  # Add french team
+    ])
+
+    fltr = "(= country.name 'Belgium')"   # Restrict purge to belgium
+    cnt = team_view.write([
+        ('Red', 'Belgium'),  #  ('Blue', 'Belgium') is removed
+        ('Blue', 'France'),
+    ], purge=True,  filters=fltr)
+    assert cnt['deleted'] == 1
+
+    expected = [
+        ('Red', 'Belgium'),
+        ('Blue', 'France'),
+        ('Purple', 'France'),
+    ]
     res = team_view.read()
     check(expected, res)
 
