@@ -66,21 +66,17 @@ def test_simple_purge(session):
 
 def test_filter_purge(session):
     team_view = View('team', ['name', 'country.name'])
-    cnt = team_view.write([
-        ('Purple', 'France'),  # Add french team
-    ])
-
     fltr = "(= country.name 'Belgium')"   # Restrict purge to belgium
     cnt = team_view.write([
         ('Red', 'Belgium'),  #  ('Blue', 'Belgium') is removed
-        ('Blue', 'France'),
+        ('Blue', 'France'),  # already in db
+        ('Purple', 'France'),  # new row (but must be ignored)
     ], purge=True,  filters=fltr)
     assert cnt['deleted'] == 1
 
     expected = [
         ('Red', 'Belgium'),
         ('Blue', 'France'),
-        ('Purple', 'France'),
     ]
     res = team_view.read()
     check(expected, res)
