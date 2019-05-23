@@ -664,13 +664,13 @@ class Context:
                 continue
             col_def = col.sql_definition()
             if col.name in table.key:
-                col_def += ' NOT NULL'
+                col_def += ' NOT NULL' # XXX allow nullable but fall  back to
+                                       # pg_legacy writes to avoid duplicates
             col_defs.append('"%s" %s' % (col.name, col_def))
             self.db_columns[table.name][col.name] = col.ctype
 
         qr = 'CREATE TABLE "%s" (%s)' % (table.name, ', '.join(col_defs))
         execute(qr)
-
         logger.info('Table "%s" created', table.name)
 
         if not full:
