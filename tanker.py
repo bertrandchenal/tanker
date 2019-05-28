@@ -497,7 +497,7 @@ class Context:
             for table_name in self.db_tables:
                 qr = 'PRAGMA table_info("%s")' % table_name
                 cursor = execute(qr)
-                current_cols = {x[1]: x[2] for x in cursor}
+                current_cols = {x[1]: x[2].upper() for x in cursor}
                 self.db_columns[table_name] = current_cols
         else:
             qr = '''
@@ -506,7 +506,7 @@ class Context:
             '''
             cursor = execute(qr)
             for t, cols in groupby(cursor, key=lambda x: x[0]):
-                current_cols = {x[1]: x[2] for x in cols}
+                current_cols = {x[1]: x[2].upper() for x in cols}
                 self.db_columns[t] = current_cols
 
         # Collect indexes
@@ -613,17 +613,17 @@ class Context:
 
         # Glue everything together in schema
         type_map = {
-            'character varying': 'varchar',
-            'timestamp without time zone': 'timestamp',
-            'double precision': 'float',
-            'boolean': 'bool',
-            'text': 'varchar',
-            'bigint': 'bigint',
-            'integer': 'integer',
-            'date': 'date',
-            'real': 'float',
-            'smallint': 'integer',
-            'numeric': 'float',
+            'CHARACTER VARYING': 'varchar',
+            'TIMESTAMP WITHOUT TIME ZONE': 'timestamp',
+            'DOUBLE PRECISION': 'float',
+            'BOOLEAN': 'bool',
+            'TEXT': 'varchar',
+            'BIGINT': 'bigint',
+            'INTEGER': 'integer',
+            'DATE': 'date',
+            'REAL': 'float',
+            'SMALLINT': 'integer',
+            'NUMERIC': 'float',
         }
         schema = []
         for table_name in self.db_tables:
@@ -639,7 +639,7 @@ class Context:
                     col_def = 'M2O %s.%s' % (remote_table, remote_col)
                 elif data_type in type_map:
                     col_def = type_map[data_type]
-                elif data_type.upper() not in COLUMN_TYPE:
+                elif data_type not in COLUMN_TYPE:
                     continue # We don't know what to do with this type
                 table_cfg['columns'][name] = col_def
 
@@ -667,7 +667,7 @@ class Context:
                 col_def += ' NOT NULL' # XXX allow nullable but fall  back to
                                        # pg_legacy writes to avoid duplicates
             col_defs.append('"%s" %s' % (col.name, col_def))
-            self.db_columns[table.name][col.name] = col.ctype
+            self.db_columns[table.name][col.name] = col.ctype.upper()
 
         qr = 'CREATE TABLE "%s" (%s)' % (table.name, ', '.join(col_defs))
         execute(qr)
