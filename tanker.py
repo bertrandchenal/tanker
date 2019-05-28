@@ -2011,7 +2011,7 @@ class Expression(object):
 
     builtins = {
         '+': lambda *xs: '(%s)' % ' + '.join(xs),
-        '-': lambda *xs: '(%s)' % ' - '.join(xs),
+        '-': lambda *xs: '- %s' % xs[0] if len(xs) == 1 else '(%s)' % ' - '.join(xs),
         '*': lambda *xs: '(%s)' % ' * '.join(xs),
         '/': lambda *xs: '(%s)' % ' / '.join(xs),
         'and': lambda *xs: '(%s)' % ' AND '.join(xs),
