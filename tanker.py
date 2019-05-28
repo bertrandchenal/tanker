@@ -2322,7 +2322,7 @@ class AST(object):
             if isinstance(atom, AST):
                 if atom.is_aggregate():
                     return True
-            if atom.token in Expression.aggregates:
+            if getattr(atom, 'token', None) in Expression.aggregates:
                 return True
         return False
 
