@@ -231,6 +231,10 @@ class Pool:
             connection = psycopg2.connect(self.db_uri)
         elif self.flavor == 'postgresql':
             connection = self.pg_pool.getconn()
+            if self.pg_schema:
+                qr = 'SET search_path TO %s' % self.pg_schema
+                connection.cursor().execute(qr)
+
         else:
             raise ValueError('Unexpected flavor "%s"' % self.flavor)
         return connection
@@ -773,7 +777,6 @@ class Context:
         # Make sur schema exists
         if self.pg_schema:
             execute('CREATE SCHEMA IF NOT EXISTS %s' % self.pg_schema)
-            execute('SET search_path TO %s' % self.pg_schema)
 
         # First we collect db info
         self.introspect_db()
