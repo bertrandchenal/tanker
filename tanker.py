@@ -668,8 +668,12 @@ class Context:
                 continue
             col_def = col.sql_definition()
             if col.name in table.key:
-                col_def += ' NOT NULL' # XXX allow nullable but fall  back to
-                                       # pg_legacy writes to avoid duplicates
+                col_def += ' NOT NULL' # XXX allow nullable but fall
+                                       # back to pg_legacy writes to
+                                       # avoid duplicates (and adapt
+                                       # join_cond in _prepare_query
+                                       # to use 'left = right or left
+                                       # is null and right is null')
             col_defs.append('"%s" %s' % (col.name, col_def))
             self.db_columns[table.name][col.name] = col.ctype.upper()
 
@@ -1315,9 +1319,12 @@ class View(object):
 
         # Launch upsert
         rowcounts = {}
-        with self._prepare_write(
-                data, filters=filters, disable_acl=disable_acl, args=args
-        ) as join_cond:
+        kwargs = {
+            'filters': filters,
+            'disable_acl': disable_acl,
+            'args':args,
+        }
+        with self._prepare_write(data, **kwargs) as join_cond:
             if self.ctx.flavor == 'sqlite':
                 self._sqlite_upsert(join_cond, insert, update)
             if self.ctx.flavor == 'crdb':
