@@ -1058,8 +1058,7 @@ class View(object):
         for pos, atom in enumerate(select_ast.atoms[1:]):
             if not isinstance(atom, AST):
                 continue
-            head = atom.atoms[0]
-            if head.token in Expression.aggregates:
+            if atom.is_aggregate():
                 aggregates.append(pos)
 
         # Add filters
@@ -2314,6 +2313,15 @@ class AST(object):
     def __repr__(self):
         return '<AST [%s]>' % ' '.join(map(str, self.atoms))
 
+
+    def is_aggregate(self):
+        for atom in self.atoms:
+            if isinstance(atom, AST):
+                if atom.is_aggregate():
+                    return True
+            if atom.token in Expression.aggregates:
+                return True
+        return False
 
 def connect(cfg=None, action=None, _auto_rollback=False):
     if not action:
