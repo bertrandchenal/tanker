@@ -2389,7 +2389,12 @@ def cli():
                         '(defaults to csv)', action='store_true')
     parser.add_argument('--ascii-table', '-t', help='Enable ascii table output',
                         action='store_true')
+    parser.add_argument('--vbar', help='Vertical bar plot',
+                        action='store_true')
+    parser.add_argument('--tic', help='Tic character to use for plot')
     parser.add_argument('-d', '--debug', help='Enable debugging',
+                        action='store_true')
+    parser.add_argument('-H', '--hide-headers', help='Hide headers',
                         action='store_true')
 
     args = parser.parse_args()
@@ -2406,22 +2411,60 @@ def cli():
         cli_main(args)
 
 
-def ascii_table(headers, rows, sep=' '):
+def ascii_table(rows, headers=None, sep=' '):
     # Convert content as strings
     rows = [list(map(str, row)) for row in rows]
     # Compute lengths
-    lengths = (len(h) for h in headers)
+    lengths = (len(h) for h in (headers or rows[0]))
     for row in rows:
         lengths = map(max, (len(i) for i in row), lengths)
     lengths = list(lengths)
     # Define row formatter
     fmt = lambda xs: sep.join(x.ljust(l) for x, l in zip(xs, lengths)) + '\n'
     # Output content
-    top = fmt(headers)
-    yield top
-    yield fmt('-' * l for l in lengths)
+    if headers:
+        top = fmt(headers)
+        yield top
+        yield fmt('-' * l for l in lengths)
     for row in rows:
         yield fmt(row)
+
+
+def vbar(rows, fields, plot_width=80, tic=None):
+    tic = tic or '•'
+    if not rows:
+        return
+    if not isinstance(rows[0][-1], (float, int)):
+        err = 'Last column must be numeric'
+        logger.error(err)
+        return
+
+    labels, values = zip(*((r[:-1], r[-1]) for r in rows))
+    labels = [str(' / '.join(l)) for l in labels]
+    label_len = max(len(l) for l in labels)
+    value_max = max(max(v for v in values), 0)
+    value_min = min(min(v for v in values), 0)
+    value_width =  max(len(f' {value_min:.2f}'),
+                       len(f'{value_max:.2f}'))
+    delta = (value_max - value_min) or 1
+    scale = delta / plot_width
+
+    if value_min < 0:
+        left_pane = round(-value_min / scale)
+    else:
+        left_pane = 0
+
+    for label, value in zip(labels, values):
+        yield f'{label:<{label_len}} {value:>{value_width}.2f} '
+        if value < 0:
+            nb_tics = -round(value/scale)
+            line = ' ' * (left_pane - nb_tics) + tic * nb_tics + '|\n'
+            yield line
+        else:
+            pos = round(value/scale)
+            yield ' ' * left_pane + '|' + tic * pos + '\n'
+
+    yield ''
 
 
 def cli_input_data(args):
@@ -2464,6 +2507,7 @@ def cli_main(args):
             limit=args.limit,
             offset=args.offset,
         )
+
         if args.file:
             fh = open(args.file, 'w')
         else:
@@ -2474,15 +2518,20 @@ def cli_main(args):
                 list(res.dict()),
                 default_flow_style=False)
             )
-
         elif args.ascii_table:
-            headers = [f.name for f in view.fields]
-            for line in ascii_table(headers, res):
+            headers = None if args.hide_headers \
+                      else [f.name for f in view.fields]
+            for line in ascii_table(res, headers=headers):
+                fh.write(line)
+        elif args.vbar:
+            for line in vbar(list(res), view.fields, tic=args.tic):
                 fh.write(line)
         else:
             writer = csv.writer(fh)
-            writer.writerow([f.name for f in view.fields])
+            if not args.hide_headers:
+                writer.writerow([f.name for f in view.fields])
             writer.writerows(res.all())
+
     elif action == 'delete':
         View(table, fields).delete(filters=args.filter, data=data)
 
