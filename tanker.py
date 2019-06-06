@@ -571,9 +571,10 @@ class Context:
                 for _, idx_name, uniq, _, _ in execute(list_qr % table):
                     if not uniq:
                         continue
-                by_pos = lambda x: x[0]
-                rows = sorted(execute(info_qr % idx_name), key=by_pos)
-                keys[table] = [r[2] for r in rows]
+                    by_pos = lambda x: x[0]
+                    rows = sorted(execute(info_qr % idx_name), key=by_pos)
+                    keys[table] = [r[2] for r in rows]
+                    break
 
         else:
             qr = '''
