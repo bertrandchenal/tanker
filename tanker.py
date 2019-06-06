@@ -537,7 +537,7 @@ class Context:
             #  sqlite> PRAGMA foreign_key_list(member);
             #  id|seq|table|from|to|on_update|on_delete|match
             #  0|0|team|team|id|NO ACTION|NO ACTION|NONE
-            qr = 'PRAGMA foreign_key_list(%s)'
+            qr = 'PRAGMA foreign_key_list("%s")'
             for table_name in self.db_tables:
                 cur = execute(qr % table_name)
                 foreign_keys.update({
