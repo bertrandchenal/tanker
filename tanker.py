@@ -2056,6 +2056,7 @@ class Expression(object):
         'floor': lambda x: 'floor(%s)' % x,
         'true': lambda: '1' if ctx.flavor == 'sqlite' else 'true',
         'false': lambda: '0' if ctx.flavor == 'sqlite' else 'false',
+        'strftime': lambda x, y : 'strftime(%s, %s)' % (x, y),
     }
 
     aggregates = {
