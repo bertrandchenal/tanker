@@ -723,11 +723,11 @@ class Context:
             # does not execute triggers (see
             # https://stackoverflow.com/a/32554601)
             execute(
-                'CREATE TRIGGER on_delete_trigger_%(table)s_%(col)s '
-                'AFTER DELETE ON %(remote)s '
+                'CREATE TRIGGER "on_delete_trigger_%(table)s_%(col)s" '
+                'AFTER DELETE ON "%(remote)s" '
                 'BEGIN '
-                'DELETE FROM %(table)s '
-                'WHERE %(table)s.%(col)s=OLD.id;'
+                'DELETE FROM "%(table)s" '
+                'WHERE "%(table)s.%(col)s"=OLD.id;'
                 'END' % {
                     'remote': col.foreign_table,
                     'table': table.name,
