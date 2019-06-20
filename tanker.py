@@ -2059,6 +2059,7 @@ class Expression(object):
         'strftime': lambda x, y : 'strftime(%s, %s)' % (x, y),
     }
 
+
     aggregates = {
         'avg': lambda *x: 'avg(%s)' % x,
         'count': lambda *x: 'count(%s)' % ', '.join(x or ['*']),
@@ -2452,7 +2453,7 @@ def vbar(rows, fields, plot_width=80, tic=None):
         return
 
     labels, values = zip(*((r[:-1], r[-1]) for r in rows))
-    labels = [str(' / '.join(l)) for l in labels]
+    labels = [str(' / '.join(map(str, l))) for l in labels]
     label_len = max(len(l) for l in labels)
     value_max = max(max(v for v in values), 0)
     value_min = min(min(v for v in values), 0)
