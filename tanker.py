@@ -621,6 +621,7 @@ class Context:
             'CHARACTER VARYING': 'varchar',
             'TIMESTAMP WITHOUT TIME ZONE': 'timestamp',
             'DOUBLE PRECISION': 'float',
+            'REAL': 'float',
             'BOOLEAN': 'bool',
             'TEXT': 'varchar',
             'BIGINT': 'bigint',
