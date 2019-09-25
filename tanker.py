@@ -231,6 +231,10 @@ class Pool:
             connection = psycopg2.connect(self.db_uri)
         elif self.flavor == 'postgresql':
             connection = self.pg_pool.getconn()
+            if self.pg_schema:
+                qr = 'SET search_path TO %s' % self.pg_schema
+                connection.cursor().execute(qr)
+
         else:
             raise ValueError('Unexpected flavor "%s"' % self.flavor)
         return connection
@@ -497,7 +501,7 @@ class Context:
             for table_name in self.db_tables:
                 qr = 'PRAGMA table_info("%s")' % table_name
                 cursor = execute(qr)
-                current_cols = {x[1]: x[2] for x in cursor}
+                current_cols = {x[1]: x[2].upper() for x in cursor}
                 self.db_columns[table_name] = current_cols
         else:
             qr = '''
@@ -506,7 +510,7 @@ class Context:
             '''
             cursor = execute(qr)
             for t, cols in groupby(cursor, key=lambda x: x[0]):
-                current_cols = {x[1]: x[2] for x in cols}
+                current_cols = {x[1]: x[2].upper() for x in cols}
                 self.db_columns[t] = current_cols
 
         # Collect indexes
@@ -533,7 +537,7 @@ class Context:
             #  sqlite> PRAGMA foreign_key_list(member);
             #  id|seq|table|from|to|on_update|on_delete|match
             #  0|0|team|team|id|NO ACTION|NO ACTION|NONE
-            qr = 'PRAGMA foreign_key_list(%s)'
+            qr = 'PRAGMA foreign_key_list("%s")'
             for table_name in self.db_tables:
                 cur = execute(qr % table_name)
                 foreign_keys.update({
@@ -567,9 +571,10 @@ class Context:
                 for _, idx_name, uniq, _, _ in execute(list_qr % table):
                     if not uniq:
                         continue
-                by_pos = lambda x: x[0]
-                rows = sorted(execute(info_qr % idx_name), key=by_pos)
-                keys[table] = [r[2] for r in rows]
+                    by_pos = lambda x: x[0]
+                    rows = sorted(execute(info_qr % idx_name), key=by_pos)
+                    keys[table] = [r[2] for r in rows]
+                    break
 
         else:
             qr = '''
@@ -613,17 +618,18 @@ class Context:
 
         # Glue everything together in schema
         type_map = {
-            'character varying': 'varchar',
-            'timestamp without time zone': 'timestamp',
-            'double precision': 'float',
-            'boolean': 'bool',
-            'text': 'varchar',
-            'bigint': 'bigint',
-            'integer': 'integer',
-            'date': 'date',
-            'real': 'float',
-            'smallint': 'integer',
-            'numeric': 'float',
+            'CHARACTER VARYING': 'varchar',
+            'TIMESTAMP WITHOUT TIME ZONE': 'timestamp',
+            'DOUBLE PRECISION': 'float',
+            'REAL': 'float',
+            'BOOLEAN': 'bool',
+            'TEXT': 'varchar',
+            'BIGINT': 'bigint',
+            'INTEGER': 'integer',
+            'DATE': 'date',
+            'REAL': 'float',
+            'SMALLINT': 'integer',
+            'NUMERIC': 'float',
         }
         ## TODO convert ARRAY SOMETHING into SOMETHING[]
 
@@ -641,7 +647,7 @@ class Context:
                     col_def = 'M2O %s.%s' % (remote_table, remote_col)
                 elif data_type in type_map:
                     col_def = type_map[data_type]
-                elif data_type.upper() not in COLUMN_TYPE:
+                elif data_type not in COLUMN_TYPE:
                     continue # We don't know what to do with this type
                 table_cfg['columns'][name] = col_def
 
@@ -666,13 +672,17 @@ class Context:
                 continue
             col_def = col.sql_definition()
             if col.name in table.key:
-                col_def += ' NOT NULL'
+                col_def += ' NOT NULL' # XXX allow nullable but fall
+                                       # back to pg_legacy writes to
+                                       # avoid duplicates (and adapt
+                                       # join_cond in _prepare_query
+                                       # to use 'left = right or left
+                                       # is null and right is null')
             col_defs.append('"%s" %s' % (col.name, col_def))
-            self.db_columns[table.name][col.name] = col.ctype
+            self.db_columns[table.name][col.name] = col.ctype.upper()
 
         qr = 'CREATE TABLE "%s" (%s)' % (table.name, ', '.join(col_defs))
         execute(qr)
-
         logger.info('Table "%s" created', table.name)
 
         if not full:
@@ -716,11 +726,11 @@ class Context:
             # does not execute triggers (see
             # https://stackoverflow.com/a/32554601)
             execute(
-                'CREATE TRIGGER on_delete_trigger_%(table)s_%(col)s '
-                'AFTER DELETE ON %(remote)s '
+                'CREATE TRIGGER "on_delete_trigger_%(table)s_%(col)s" '
+                'AFTER DELETE ON "%(remote)s" '
                 'BEGIN '
-                'DELETE FROM %(table)s '
-                'WHERE %(table)s.%(col)s=OLD.id;'
+                'DELETE FROM "%(table)s" '
+                'WHERE "%(table)s.%(col)s"=OLD.id;'
                 'END' % {
                     'remote': col.foreign_table,
                     'table': table.name,
@@ -775,7 +785,6 @@ class Context:
         # Make sur schema exists
         if self.pg_schema:
             execute('CREATE SCHEMA IF NOT EXISTS %s' % self.pg_schema)
-            execute('SET search_path TO %s' % self.pg_schema)
 
         # First we collect db info
         self.introspect_db()
@@ -1060,8 +1069,7 @@ class View(object):
         for pos, atom in enumerate(select_ast.atoms[1:]):
             if not isinstance(atom, AST):
                 continue
-            head = atom.atoms[0]
-            if head.token in Expression.aggregates:
+            if atom.is_aggregate():
                 aggregates.append(pos)
 
         # Add filters
@@ -1315,9 +1323,12 @@ class View(object):
 
         # Launch upsert
         rowcounts = {}
-        with self._prepare_write(
-                data, filters=filters, disable_acl=disable_acl, args=args
-        ) as join_cond:
+        kwargs = {
+            'filters': filters,
+            'disable_acl': disable_acl,
+            'args':args,
+        }
+        with self._prepare_write(data, **kwargs) as join_cond:
             if self.ctx.flavor == 'sqlite':
                 self._sqlite_upsert(join_cond, insert, update)
             if self.ctx.flavor == 'crdb':
@@ -2014,7 +2025,7 @@ class Expression(object):
 
     builtins = {
         '+': lambda *xs: '(%s)' % ' + '.join(xs),
-        '-': lambda *xs: '(%s)' % ' - '.join(xs),
+        '-': lambda *xs: '- %s' % xs[0] if len(xs) == 1 else '(%s)' % ' - '.join(xs),
         '*': lambda *xs: '(%s)' % ' * '.join(xs),
         '/': lambda *xs: '(%s)' % ' / '.join(xs),
         'and': lambda *xs: '(%s)' % ' AND '.join(xs),
@@ -2048,7 +2059,9 @@ class Expression(object):
         'floor': lambda x: 'floor(%s)' % x,
         'true': lambda: '1' if ctx.flavor == 'sqlite' else 'true',
         'false': lambda: '0' if ctx.flavor == 'sqlite' else 'false',
+        'strftime': lambda x, y : 'strftime(%s, %s)' % (x, y),
     }
+
 
     aggregates = {
         'avg': lambda *x: 'avg(%s)' % x,
@@ -2317,6 +2330,15 @@ class AST(object):
         return '<AST [%s]>' % ' '.join(map(str, self.atoms))
 
 
+    def is_aggregate(self):
+        for atom in self.atoms:
+            if isinstance(atom, AST):
+                if atom.is_aggregate():
+                    return True
+            if getattr(atom, 'token', None) in Expression.aggregates:
+                return True
+        return False
+
 def connect(cfg=None, action=None, _auto_rollback=False):
     if not action:
         @contextmanager
@@ -2383,7 +2405,12 @@ def cli():
                         '(defaults to csv)', action='store_true')
     parser.add_argument('--ascii-table', '-t', help='Enable ascii table output',
                         action='store_true')
+    parser.add_argument('--vbar', help='Vertical bar plot',
+                        action='store_true')
+    parser.add_argument('--tic', help='Tic character to use for plot')
     parser.add_argument('-d', '--debug', help='Enable debugging',
+                        action='store_true')
+    parser.add_argument('-H', '--hide-headers', help='Hide headers',
                         action='store_true')
 
     args = parser.parse_args()
@@ -2400,22 +2427,60 @@ def cli():
         cli_main(args)
 
 
-def ascii_table(headers, rows, sep=' '):
+def ascii_table(rows, headers=None, sep=' '):
     # Convert content as strings
     rows = [list(map(str, row)) for row in rows]
     # Compute lengths
-    lengths = (len(h) for h in headers)
+    lengths = (len(h) for h in (headers or rows[0]))
     for row in rows:
         lengths = map(max, (len(i) for i in row), lengths)
     lengths = list(lengths)
     # Define row formatter
     fmt = lambda xs: sep.join(x.ljust(l) for x, l in zip(xs, lengths)) + '\n'
     # Output content
-    top = fmt(headers)
-    yield top
-    yield fmt('-' * l for l in lengths)
+    if headers:
+        top = fmt(headers)
+        yield top
+        yield fmt('-' * l for l in lengths)
     for row in rows:
         yield fmt(row)
+
+
+def vbar(rows, fields, plot_width=80, tic=None):
+    tic = tic or '•'
+    if not rows:
+        return
+    if not isinstance(rows[0][-1], (float, int)):
+        err = 'Last column must be numeric'
+        logger.error(err)
+        return
+
+    labels, values = zip(*((r[:-1], r[-1]) for r in rows))
+    labels = [str(' / '.join(map(str, l))) for l in labels]
+    label_len = max(len(l) for l in labels)
+    value_max = max(max(v for v in values), 0)
+    value_min = min(min(v for v in values), 0)
+    value_width =  max(len(f' {value_min:.2f}'),
+                       len(f'{value_max:.2f}'))
+    delta = (value_max - value_min) or 1
+    scale = delta / plot_width
+
+    if value_min < 0:
+        left_pane = round(-value_min / scale)
+    else:
+        left_pane = 0
+
+    for label, value in zip(labels, values):
+        yield f'{label:<{label_len}} {value:>{value_width}.2f} '
+        if value < 0:
+            nb_tics = -round(value/scale)
+            line = ' ' * (left_pane - nb_tics) + tic * nb_tics + '|\n'
+            yield line
+        else:
+            pos = round(value/scale)
+            yield ' ' * left_pane + '|' + tic * pos + '\n'
+
+    yield ''
 
 
 def cli_input_data(args):
@@ -2458,6 +2523,7 @@ def cli_main(args):
             limit=args.limit,
             offset=args.offset,
         )
+
         if args.file:
             fh = open(args.file, 'w')
         else:
@@ -2468,15 +2534,20 @@ def cli_main(args):
                 list(res.dict()),
                 default_flow_style=False)
             )
-
         elif args.ascii_table:
-            headers = [f.name for f in view.fields]
-            for line in ascii_table(headers, res):
+            headers = None if args.hide_headers \
+                      else [f.name for f in view.fields]
+            for line in ascii_table(res, headers=headers):
+                fh.write(line)
+        elif args.vbar:
+            for line in vbar(list(res), view.fields, tic=args.tic):
                 fh.write(line)
         else:
             writer = csv.writer(fh)
-            writer.writerow([f.name for f in view.fields])
+            if not args.hide_headers:
+                writer.writerow([f.name for f in view.fields])
             writer.writerows(res.all())
+
     elif action == 'delete':
         View(table, fields).delete(filters=args.filter, data=data)
 
