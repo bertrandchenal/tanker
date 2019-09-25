@@ -625,6 +625,8 @@ class Context:
             'smallint': 'integer',
             'numeric': 'float',
         }
+        ## TODO convert ARRAY SOMETHING into SOMETHING[]
+
         schema = []
         for table_name in self.db_tables:
             table_cfg = {
