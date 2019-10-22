@@ -4,8 +4,9 @@ Tanker is a Python database library targeting analytic operations but
 it also fits most transactional processing.
 
 As its core it's mainly a query builder that simplify greatly join
-operations. It also comes with a way to automatically create the
-database tables based on your schema definition.
+operations. It comes with a way to automatically create the database
+tables based on your schema definition and it can also introspect
+existing db and infer the needed metadata.
 
 Currently Postgresql and Sqlite are supported and the API is made to
 seamlessly integrate pandas DataFrames.
@@ -44,7 +45,7 @@ to the database and creates the tables.
 
     cfg = {
         'db_uri': 'sqlite:///test.db',
-        'schema': open('schema.yaml').read(),
+        'schema': yaml_load(open('schema.yaml')),
     }
     with connect(cfg):
         create_tables()
@@ -89,7 +90,8 @@ And read it back.
 
 And `countries_copy` should be identical to `countries`. As `.read()`
 returns the database cursor, the `.all()` allows to fetch all the
-records.
+records. Instead of `.all()` one can use `.df()` to receive a pandas
+DataFrame.
 
 
 ### Key role
@@ -257,7 +259,7 @@ dictionary to map dataframe columns to database columns.
     })
     view.write(data)
 
-    df_copy = view.read_df()
+    df_copy = view.read().df()
 
 
 ### Documentation TODO
@@ -272,10 +274,7 @@ Some ideas, in no particular order:
 
   - Add a view.insert method that bypass tmp table and write directly
     to the actual table
-  - Split `acl_rules` into `acl_read` and `acl_write`. Apply also acl
-    on joined table (not only on the main table of the view)
   - Support for version column (probably a write timestamp)
-  - Be able to introspect existing db (without yaml schema then)
   - Add support for other 'ON CONFLICT' action (like incrementing a
     version column, or appening to an array)
   - Support for table constraints

@@ -1239,6 +1239,10 @@ class View(object):
         else:
             columns = ', '.join('"%s"' % c.name for c in self.field_map)
             buff = BuffIO()
+            # TODO: See
+            # https://hakibenita.com/fast-load-data-python-postgresql#copy-data-from-a-string-iterator
+            # and https://stackoverflow.com/a/12604375 to avoid string
+            # buffer
             if self.ctx.flavor == 'crdb':
                 writer = csv.writer(buff, delimiter='\t', quotechar='"')
                 qr = 'COPY %s (%s) FROM STDIN' % (self.tmp_table, columns)
