@@ -755,6 +755,10 @@ class Context:
         if not table.key:
             return
 
+        # TODO don't automatically define table key as btree index,
+        # but use a unique constraint and a brin idx, this potentially
+        # work with upsert statement
+
         use_brin = (self.flavor == 'postgresql' and not self.legacy_pg
                     and table.use_index == 'BRIN')
         if use_brin:
@@ -1305,6 +1309,9 @@ class View(object):
         (because of the filter) and the amount of deleted lines (ex:
         `{'filtered': 10, 'deleted': 3}`)
         '''
+
+        # TODO use merge command, see
+        # https://www.depesz.com/2018/04/10/waiting-for-postgresql-11-merge-sql-command-following-sql2016/
 
         # Handle list of dict and dataframes
         if isinstance(data, list) and data and isinstance(data[0], dict):
