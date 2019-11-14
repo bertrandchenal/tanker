@@ -334,10 +334,14 @@ class Context:
 
         self.registry = Context._registries.get(self.db_uri)
         if not self.registry:
-            # Load schema as yaml if a string is given
+            # Load schema as yaml if a string is given and as a file
+            # if the path exists
             schema = self.cfg.get('schema')
             if isinstance(schema, basestring):
-                schema = yaml_load(schema)
+                if os.path.exists(schema):
+                    schema = yaml_load(open(schema))
+                else:
+                    schema = yaml_load(schema)
             if not schema:
                 schema = self.introspect_db(auto=True)
             # Register tables
