@@ -1037,8 +1037,7 @@ class View(object):
             self.key_cols = [id_col.name]
         else:
             # Use natural key if not
-            self.key_cols = [c.name for c in self.field_map
-                               if c.name in self.table.key]
+            self.key_cols = self.table.key
 
     def get_field(self, name):
         return self.field_dict.get(name)
@@ -1164,6 +1163,8 @@ class View(object):
         act as self.table).
         `args` is a dict of values that allows to parameterize `filters`.
         '''
+        self.validate_key()
+
         if table_alias and not filters:
             raise ValueError('table_alias parameter is only supported with '
                              'non-empty filters parameters')
@@ -1314,6 +1315,9 @@ class View(object):
         `{'filtered': 10, 'deleted': 3}`)
         '''
 
+        # First we have to make sure that fields are properly set for write
+        self.validate_key()
+
         # TODO use merge command, see
         # https://www.depesz.com/2018/04/10/waiting-for-postgresql-11-merge-sql-command-following-sql2016/
 
@@ -1402,6 +1406,17 @@ class View(object):
         cur = TankerCursor(self, [qr]).execute()
         return cur.rowcount
 
+    def validate_key(self):
+        id_col = self.table.get_column('id')
+        if not id_col.name in self.key_cols:
+            view_cols = set(c.name for c in self.field_map)
+            key_test = all(c in view_cols for c in self.table.key)
+            if not key_test:
+                msg = ('You must reference all the columns composing'
+                       ' the table key when you want to write or delete'
+                       ' rows (or pass the id column).')
+                raise ValueError(msg)
+
     def _pg_upsert(self, join_cond, insert, update):
         tmp_fields = ', '.join('%s."%s"' % (self.tmp_table, f.name)
                                for f in self.field_map)
@@ -1485,8 +1500,9 @@ class View(object):
                args=None):
         '''
         Delete rows from main table that are not in tmp table and evaluate
-        filters to true. Do the opposite if swap_table is True (keep in tmp
-        lines that are also in main and that evaluate filter to false.
+        filters to true. Do the opposite if action is 'update' (keep
+        in tmp lines that are also in main and that evaluate filter to
+        false.
         '''
         assert action in ('purge', 'update', 'insert')
         insert = action == 'insert'
@@ -1494,7 +1510,7 @@ class View(object):
         main = self.table.name
         tmp = self.tmp_table
         if update:
-            assert bool(filters), 'filters is nedded to purge on tmp'
+            assert bool(filters), 'filters is needed to purge on tmp'
             main, tmp = tmp, main
 
         # Prepare basic query
