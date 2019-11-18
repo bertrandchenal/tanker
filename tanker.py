@@ -430,22 +430,26 @@ class Context:
         remote_table = fields[0].col.get_foreign_table().name
         key = (remote_table,) + fields
         mapping = self._fk_cache.get(key)
+        read_fields = list(self._fk_fields(fields))
+        view = View(remote_table, read_fields + ['id'])
+
         if mapping is None:
-            read_fields = list(self._fk_fields(fields))
-            view = View(remote_table, read_fields + ['id'])
-            db_values = view.read(disable_acl=True, limit=LRU_SIZE,
+            if 'id' not in read_fields:
+                cols = set(c.name for c in view.field_map if c.name != 'id')
+                view.validate_key(cols) # Make sure we will have a
+                                        # one2one mapping
+
+            db_values = view.read(disable_acl=True, limit=LRU_PAGE_SIZE,
                                   order=('id', 'desc'))
             mapping = dict((val[:-1], val[-1])
                            for val in db_values)
 
             # Enable lru if fk mapping reach LRU_SIZE
-            if len(mapping) == LRU_SIZE:
+            if len(mapping) == LRU_PAGE_SIZE:
                 mapping = LRU(mapping)
             self._fk_cache[key] = mapping
 
         if isinstance(mapping, LRU):
-            read_fields = list(self._fk_fields(fields))
-            view = View(remote_table, read_fields + ['id'])
             base_filter = '(AND %s)' % ' '.join(
                 '(= %s {})' % f for f in read_fields)
 
@@ -1163,8 +1167,7 @@ class View(object):
         act as self.table).
         `args` is a dict of values that allows to parameterize `filters`.
         '''
-        self.validate_key()
-
+        self.validate_key(set(c.name for c in self.field_map))
         if table_alias and not filters:
             raise ValueError('table_alias parameter is only supported with '
                              'non-empty filters parameters')
@@ -1316,7 +1319,7 @@ class View(object):
         '''
 
         # First we have to make sure that fields are properly set for write
-        self.validate_key()
+        self.validate_key(set(c.name for c in self.field_map))
 
         # TODO use merge command, see
         # https://www.depesz.com/2018/04/10/waiting-for-postgresql-11-merge-sql-command-following-sql2016/
@@ -1406,15 +1409,22 @@ class View(object):
         cur = TankerCursor(self, [qr]).execute()
         return cur.rowcount
 
-    def validate_key(self):
+    def validate_key(self, columns):
+        '''
+        Make sure the set of columns cover the table key. If not the
+        access is not univocal
+        '''
         id_col = self.table.get_column('id')
-        if not id_col.name in self.key_cols:
-            view_cols = set(c.name for c in self.field_map)
-            key_test = all(c in view_cols for c in self.table.key)
-            if not key_test:
-                msg = ('You must reference all the columns composing'
-                       ' the table key when you want to write or delete'
-                       ' rows (or pass the id column).')
+        if not id_col.name in columns:
+            missing_key = [c for c in self.table.key if c not in columns]
+            if missing_key:
+                msg = (
+                    'You must reference all the columns composing the table key'
+                    ' when you want to write, delete or reference rows (or'
+                    ' pass the id column).  Table is "%s", missing columns'
+                    ' are: %s' % (self.table.name, ','.join(missing_key))
+                )
+
                 raise ValueError(msg)
 
     def _pg_upsert(self, join_cond, insert, update):
@@ -1493,7 +1503,6 @@ class View(object):
             'where': where,
         }
         cur = TankerCursor(self, qr).execute()
-
         return cur and cur.rowcount or 0
 
     def _purge(self, join_cond, filters, disable_acl=False, action='purge',
@@ -1542,7 +1551,6 @@ class View(object):
         exp = Expression(self.table, base_env=self.base_env())
         filter_chunks = exp._build_filter_cond(filters, acl_filters)
         join_chunks = [exp.ref_set]
-
         if filter_chunks:
             qr = [head_qr] + [join_qr] + join_chunks
             if insert:
@@ -1559,8 +1567,8 @@ class View(object):
             if excl_cond:
                 qr += ' WHERE ' + excl_cond
             qr += tail_qr
-
         cur = TankerCursor(self, qr, args=args).execute()
+
         return cur.rowcount
 
 
@@ -1982,11 +1990,6 @@ class ReferenceSet:
         if parent:
             parent.children.append(self)
 
-    def add(self, desc):
-        ref = self.get_ref(desc)
-        self.references.append(ref)
-        return ref
-
     def get_sql_joins(self):
         for key, alias in self.joins.items():
             left_table, right_table, left_col, right_col = key
@@ -2000,6 +2003,10 @@ class ReferenceSet:
             #     acl_cond = exp._build_filter_cond(acl_filters)
             yield join + ' ON (' + cond + ')'
 
+    def add(self, desc):
+        ref = self.get_ref(desc)
+        self.references.append(ref)
+        return ref
 
     def get_ref(self, desc, table=None, alias=None):
         table = table or self.table

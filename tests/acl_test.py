@@ -1,5 +1,12 @@
-from tanker import View, ctx, execute
-from .base_test import session
+from tanker import View, ctx
+from .base_test import session, members
+
+member_cols = [
+    'name',
+    'team.country.name',
+    'team.name',
+    'registration_code',
+]
 
 
 def inject(table, kind, rules):
@@ -19,21 +26,84 @@ def test_read(session):
     res = View('country', ['name']).read().all()
     assert res == [('Belgium',)]
 
-    # # Test that acl is enforced on relations
+    # Test with a relation
+    inject('team', 'acl-read', ['(= country.name "Belgium")'])
+    res = View('team', ['name']).read().all()
+    assert res == [('Blue',), ('Red',)]
+
+
+    # # Test that acl is implictly enforced on relations
     # res = View('team', ['country.name']).read().all()
     # assert res == [('Belgium',), ('Belgium',)]
 
-def test_write(session):
+def test_insert(session):
     inject('member', 'acl-write', ['(= registration_code "001")'])
-
-    # Test that main table is filtered
+    # Test that main table is filtered on insertion
     view = View('member', ['registration_code', 'name'])
     cnt = view.write([
-        ('001', 'UPDATED'),
-        ('002', 'UPDATED'),
+        ('001', 'Bob'),
+        ('002', 'Alice'),
      ])
     assert cnt['filtered'] == 1
+    bob, = view.read().all()
+    assert bob == ('001', 'Bob')
+    view.delete()
 
-    cur = execute('SELECT registration_code, name FROM member')
-    res = list(cur)
-    assert res == [('001', 'UPDATED')]
+    # Test on insert with filter on relation
+    inject('member', 'acl-write', ['(= team.name "Blue")'])
+    cnt = View('member', member_cols).write([
+    ['Bob', 'Belgium', 'Blue', '001'],
+    ['Alice', 'Belgium', 'Red', '002'],
+     ])
+    assert cnt['filtered'] == 1
+    bob, = view.read().all()
+    assert bob == ('001', 'Bob')
+
+def test_update(session):
+    # Add all members to table
+    inject('member', 'acl-write', [])
+    view = View('member', ['registration_code', 'name'])
+    View('member', member_cols).write(members)
+
+    # Test on update
+    inject('member', 'acl-write', ['(= registration_code "001")'])
+    # Test that main table is filtered on insertion
+    view = View('member', ['registration_code', 'name'])
+    cnt = view.write([
+        ('001', 'BOB'),
+        ('002', 'ALICE'),
+     ])
+    assert cnt['filtered'] == 1
+    res = View('member', ['name']).read().all()
+    assert sorted(name for name, in res) == ['Alice', 'BOB', 'Trudy']
+
+    # Test no update with filter on relation
+    inject('member', 'acl-write', ['(= team.name "Blue")'])
+    view = View('member', ['registration_code', 'name'])
+
+    cnt = view.write([
+        ('001', 'BOB'),
+        ('002', 'ALICE'),
+     ])
+    res = view.read('(in registration_code "001" "002")').all()
+    assert sorted(res) == [('001', 'BOB'), ('002', 'Alice')]
+
+    # Nasty test, when we change the value of the column supporting the filter
+    view = View('member', ['registration_code', 'team.name', 'team.country.name'])
+
+    cnt = view.write([
+        ('001', 'Red', 'Belgium'), # Blue to Red transition
+        ('002', 'Blue', 'Belgium'),# Red to Blue transition
+     ])
+    return
+    res = view.read('(in registration_code "001" "002")').all()
+    # assert sorted(res) == [('001', 'Blue', 'Belgium'), ('002', 'Red', 'Belgium')]
+
+    # This currently fail because the update on 001 is allowed by the
+    # code (because 001 is on red team before the change, but then the
+    # insert purge detect an invalid row (and act as if it was
+    # incorrectly insert (but it was the result of the update) and so
+    # deletes it
+
+    # Idea: collect inserted ids by the previous step and delete only
+    # line that are part of those -> not sure if possible with sqlite
