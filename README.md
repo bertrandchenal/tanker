@@ -154,7 +154,7 @@ which means that the use the `name` column to identify the country
 (which is conveniently defined as the key in the table
 definition).
 
-We can go further and use more than one dot and let tanker resolve
+We can go further and use more than one dot and let Tanker resolve
 foreign key for us. Let's say we want to add a member table to our
 database, we append the following piece of yaml to our schema file
 
@@ -298,9 +298,44 @@ dictionary to map dataframe columns to database columns.
 ```
 
 
-### Documentation TODO
+## ACL
+
+The ACL system of Tanker allows to systemically filter access to the
+rows of any table. We can define filters for reading data or writing
+it. To enable it, you can add it to the `cfg` parameter of `connect`,
+but you can also change it later:
+
+``` python
+cfg['acl-read'] = {'team': "(= team.country.name 'Belgium')"}
+with connect(cfg):
+	teams = View('team').read().all() # No belgian team will be returned
+	cfg['acl-read'] = {}              # we reset the acl
+	teams = View('team').read().all() # Returns everything again
+```
+
+As you can see it's a simple dict whose keys are table names and
+values are Tanker filters. Similarly, you can add an `acl-write`
+dictionary to `cfg`:
+
+``` python
+cfg['acl-read'] = {'team': "(= team.country.name 'Belgium')"}
+View('team').write(teams)
+```
+
+### Important remark
+
+The current implementation of write acl is still problematic when:
+1. The rows we write on are not filtered by the acl.
+2. The written data change the content of the row in a way that those
+   rows are now filtered by the acl.
+
+In this situation, the current implementation will confuse those
+updated rows with newly inserted row that violate the write acl and
+will automatically delete those.
+
+
+## Documentation TODO
   - Deletion (by data, by filter)
-  - ACL
   - Aliases
 
 
