@@ -1,0 +1,37 @@
+@media screen {
+	.bespoke-parent {
+		font-size: 1.1em;
+	}
+	.bespoke-progress-parent {
+		height: .1vw;
+	}
+
+	section {
+		font-family: "Lato", "Helvetica";
+	}
+
+	h1 {
+		font-family: "IBM 3270", "SF Mono", "Sans";
+	}
+
+	h1 {
+		margin-top:20%;
+		text-align: center;
+	}
+	#s0{
+		background-image: url("boat2.jpeg");
+		background-position: center; 
+		background-repeat: no-repeat;
+		background-size: cover;
+	}
+	#s0 h1 {
+		color: white;
+		margin: 40% 0 0 5%;
+		text-align: left;
+		font-size: 4em;
+	}
+
+	pre {
+		padding: 1em;
+	}
+}

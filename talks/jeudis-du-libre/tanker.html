@@ -1,0 +1,688 @@
+
+<!DOCTYPE html>
+<html>
+<head>
+   <meta charset="utf-8">
+   <title>Tanker</title>
+
+<meta name="generator" content="GitHub Pages w/ Jekyll">
+<meta name="author"    content="Gerald Bauer et al" >
+
+<!-- S6 style sheet links -->
+<link rel="stylesheet" href="s62/screen.css">
+<link rel="stylesheet" href="pygments.css">
+<link rel="stylesheet" href="style.css">
+
+  
+
+</head>
+<body>
+
+<article id="presentation">
+
+<section class="slide" id="s0"><h1>Tanker</h1>
+</section>
+<section class="slide" id="s1"><h2>Planning</h2>
+
+<ul>
+<li>Organisation des données: normalisation, choix des index</li>
+<li>Rôles des données: OLAP vs OLTP</li>
+<li>Manipulation des donnée: modèle objet vs modèle relationel</li>
+</ul>
+</section>
+<section class="slide" id="s2"><h1>Normalisation des tables</h1>
+</section>
+<section class="slide" id="s3"><h2>Exemple: jeudis du libre</h2>
+
+<p>Exemple de jeux de données: http://jeudisdulibre.be/.</p>
+
+<p>Information que l&#39;on peut collecter pour chaque évènement:</p>
+
+<ul>
+<li>title</li>
+<li>date</li>
+<li>speaker</li>
+<li>bio</li>
+<li>description</li>
+<li>tags</li>
+</ul>
+</section>
+<section class="slide" id="s4"><h2>Version naïve</h2>
+
+<p>Création de la table:</p>
+<div class="highlight"><pre><span></span><span class="k">CREATE</span> <span class="k">TABLE</span> <span class="ss">&quot;event&quot;</span> <span class="p">(</span>
+  <span class="ss">&quot;url&quot;</span> <span class="nb">VARCHAR</span> <span class="k">NOT</span>  <span class="k">NULL</span><span class="p">,</span>
+  <span class="ss">&quot;title&quot;</span> <span class="nb">VARCHAR</span><span class="p">,</span>
+  <span class="ss">&quot;speaker&quot;</span> <span class="nb">VARCHAR</span><span class="p">,</span>
+  <span class="ss">&quot;description&quot;</span> <span class="nb">VARCHAR</span><span class="p">,</span>
+  <span class="ss">&quot;date&quot;</span> <span class="nb">DATE</span><span class="p">,</span>
+  <span class="ss">&quot;tags&quot;</span> <span class="nb">VARCHAR</span><span class="p">[],</span>
+  <span class="ss">&quot;bio&quot;</span> <span class="nb">VARCHAR</span>
+<span class="p">)</span>
+</pre></div>
+
+<p>Insertion en db :</p>
+<div class="highlight"><pre><span></span><span class="k">INSERT</span> <span class="k">INTO</span> <span class="k">TABLE</span> <span class="n">event</span> <span class="p">(</span><span class="ss">&quot;date&quot;</span><span class="p">,</span> <span class="ss">&quot;speaker&quot;</span><span class="p">,</span> <span class="ss">&quot;tags&quot;</span><span class="p">,</span> <span class="ss">&quot;bio&quot;</span><span class="p">,</span> <span class="ss">&quot;title&quot;</span><span class="p">,</span> <span class="ss">&quot;url&quot;</span><span class="p">)</span>
+<span class="k">VALUES</span> <span class="p">(</span><span class="s1">&#39;2019-05-08&#39;</span><span class="p">,</span> <span class="s1">&#39;Yannick Warnier (Chamilo)&#39;</span> <span class="s1">&#39;{e-learning,éducation}&#39;</span><span class="p">,</span> <span class="s1">&#39;...&#39;</span><span class="p">);</span>
+</pre></div>
+</section>
+<section class="slide" id="s5"><h2>Version naïve</h2>
+
+<pre><code>date       speaker                                    tags                                            bio
+---------- ------------------------------------------ ----------------------------------------------- ---
+2019-05-08 Yannick Warnier (Chamilo)                  {e-learning,éducation}                          ...
+2019-04-10 Joël Lambillotte (IMIO)                    {communauté,développement}                      ...
+2019-03-03 Fabrice Flore-Thebault (Stylelabs, Cent... {automation,systèmes}                           ...
+2019-02-07 Michel Villers                             {internet,systèmes}
+2018-12-21 Mathieu Goeminne (CETIC)                   {Big Data,développement,Traitement des données} ...
+2018-11-24 Laurence Baclin (HELHa)                    {éducation,programmation}
+2018-11-06 Said Eloudrhiri                            {blockchain,sécurité}
+2018-10-05 Robert Viseur                              {automation,photographie,robert viseur}         ...
+2018-05-04 Christopher Richard et Quentin Carpenti... {éducation,mons,programmation}                  ...
+2018-02-15 Michaël Hoste (80LIMIT)                    {Javascript,mons,programmation,web}</code></pre>
+
+<p>Non affiché: <code>description</code> et <code>url</code></p>
+</section>
+<section class="slide" id="s6"><h2>Discussion</h2>
+
+<p>Avec une seule table (et des colonnes en plus) on peut stocker une
+grosse partie des info du site.</p>
+</section>
+<section class="slide" id="s7"><h2>Version normalisée - clés naturelles</h2>
+
+<p>Table &quot;event&quot;:</p>
+
+<pre><code>speaker                                    date       description                               
+------------------------------------------ ---------- ------------------------------------------
+Yannick Warnier (Chamilo)                  2019-05-08 Le projet de plateforme e-learning Cham...
+Joël Lambillotte (IMIO)                    2019-04-10 L’intercommunale Imio conçoit et héberg...
+Fabrice Flore-Thebault (Stylelabs, Cent... 2019-03-03 Ansible est une plate-forme d’automatis...
+Michel Villers                             2019-02-07 Pfsense est un routeur/pare-feu, dérivé...
+Mathieu Goeminne (CETIC)                   2018-12-21 Les logiciels open source ont une place...
+Laurence Baclin (HELHa)                    2018-11-24 Quoi de neuf dans l’univers de la progr...
+Said Eloudrhiri                            2018-11-06 De nos jours, les blockchains restent i...
+Robert Viseur                              2018-10-05 Les logiciels et le matériels libres pe...
+Christopher Richard et Quentin Carpenti... 2018-05-04 Apprendre la logique de programmation e...
+Michaël Hoste (80LIMIT)                    2018-02-15 Le développement JavaScript est un véri...</code></pre>
+</section>
+<section class="slide" id="s8"><h2>Version normalisée - clés naturelles</h2>
+
+<p>Table &quot;speaker&quot;:</p>
+
+<pre><code>speaker                                    url  bio
+------------------------------------------ ---- ------------------------------------------
+Yannick Warnier (Chamilo)                  ...  Diplômé en Sciences In...
+Joël Lambillotte (IMIO)                    ...  Joël Lambillotte est d...
+Fabrice Flore-Thebault (Stylelabs, Cent... ...  Fabrice Flore-Thebault...
+                                           ...</code></pre>
+
+<p>Note: Le champ speaker pose problème, certaines présentations on plusieurs orateurs.</p>
+</section>
+<section class="slide" id="s9"><h2>Version normalisée - clés naturelles</h2>
+
+<p>Table &quot;tag&quot;:</p>
+
+<pre><code>tags                     url
+-----------------------  -----
+BigData                  ...
+automation               ...
+automation               ...
+blockchain               ...</code></pre>
+</section>
+<section class="slide" id="s10"><h2>Discussion</h2>
+
+<ul>
+<li>Beaucoup d&#39;exemple sur le web (en particulier Wikipedia) mettent en
+avant cette approche.</li>
+<li>En pratique on va être vite amené a utiliser des clés naturelles
+composites, par exemple si on veut gérer plusieurs orateurs par
+évènement, on doit passer par une table en plus:</li>
+</ul>
+
+<pre><code>speaker                                    url
+------------------------------------------ ---
+Yannick Warnier (Chamilo)                  ...
+Joël Lambillotte (IMIO)                    ...
+Fabrice Flore-Thebault (Stylelabs, Cent... ...
+Michel Villers                             ...
+Mathieu Goeminne (CETIC)                   ...</code></pre>
+
+<ul>
+<li>chaque orateur va apparaître dans la table speaker et dans la table
+de relation.</li>
+<li>chaque url va apparaître dans cette même table et la table event.</li>
+<li>De plus ...</li>
+</ul>
+</section>
+<section class="slide" id="s11"><h2>Discussion (suite)</h2>
+<div class="highlight"><pre><span></span><span class="n">jdl</span><span class="o">=&gt;</span> <span class="k">create</span> <span class="k">table</span> <span class="n">speaker</span> <span class="p">(</span><span class="n">name</span> <span class="nb">varchar</span> <span class="k">primary</span> <span class="k">key</span><span class="p">);</span>
+<span class="k">CREATE</span> <span class="k">TABLE</span>
+<span class="n">jdl</span><span class="o">=&gt;</span> <span class="k">create</span> <span class="k">table</span> <span class="n">event</span> <span class="p">(</span><span class="n">url</span> <span class="nb">varchar</span> <span class="k">primary</span> <span class="k">key</span><span class="p">);</span>
+<span class="k">CREATE</span> <span class="k">TABLE</span>
+<span class="n">jdl</span><span class="o">=&gt;</span> <span class="k">create</span> <span class="k">table</span> <span class="n">speaker_event</span> <span class="p">(</span><span class="n">speaker</span> <span class="nb">varchar</span> <span class="k">references</span> <span class="n">speaker</span> <span class="p">(</span><span class="n">name</span><span class="p">),</span> <span class="n">url</span> <span class="nb">varchar</span> <span class="k">references</span> <span class="n">event</span> <span class="p">(</span><span class="n">url</span><span class="p">));</span>
+<span class="k">CREATE</span> <span class="k">TABLE</span>
+<span class="n">jdl</span><span class="o">=&gt;</span> <span class="k">INSERT</span> <span class="k">INTO</span> <span class="n">speaker</span> <span class="p">(</span><span class="n">name</span><span class="p">)</span> <span class="k">VALUES</span> <span class="p">(</span><span class="s1">&#39;Bob&#39;</span><span class="p">);</span>
+<span class="k">INSERT</span> <span class="mi">0</span> <span class="mi">1</span>
+<span class="n">jdl</span><span class="o">=&gt;</span> <span class="k">INSERT</span> <span class="k">INTO</span> <span class="n">event</span> <span class="p">(</span><span class="n">url</span><span class="p">)</span> <span class="k">VALUES</span> <span class="p">(</span><span class="s1">&#39;http://...&#39;</span><span class="p">);</span>
+<span class="k">INSERT</span> <span class="mi">0</span> <span class="mi">1</span>
+<span class="n">jdl</span><span class="o">=&gt;</span> <span class="k">INSERT</span> <span class="k">INTO</span> <span class="n">speaker_event</span> <span class="p">(</span><span class="n">speaker</span><span class="p">,</span> <span class="n">url</span><span class="p">)</span> <span class="k">VALUES</span> <span class="p">(</span><span class="s1">&#39;Bob&#39;</span><span class="p">,</span> <span class="s1">&#39;http://...&#39;</span><span class="p">);</span>
+<span class="k">INSERT</span> <span class="mi">0</span> <span class="mi">1</span>
+<span class="n">jdl</span><span class="o">=&gt;</span> <span class="k">UPDATE</span> <span class="n">speaker</span> <span class="k">SET</span> <span class="n">name</span> <span class="o">=</span> <span class="s1">&#39;Robert&#39;</span> <span class="k">WHERE</span> <span class="n">name</span> <span class="o">=</span> <span class="s1">&#39;Bob&#39;</span><span class="p">;</span>
+<span class="n">ERREUR</span><span class="p">:</span>  <span class="k">UPDATE</span> <span class="n">ou</span> <span class="k">DELETE</span> <span class="n">sur</span> <span class="n">la</span> <span class="k">table</span> <span class="err">«</span> <span class="n">speaker</span> <span class="err">»</span> <span class="n">viole</span> <span class="n">la</span> <span class="n">contrainte</span> <span class="n">de</span> <span class="n">clé</span> <span class="err">é</span><span class="n">trangère</span>
+<span class="err">«</span> <span class="n">speaker_event_speaker_fkey</span> <span class="err">»</span> <span class="n">de</span> <span class="n">la</span> <span class="k">table</span> <span class="err">«</span> <span class="n">speaker_event</span> <span class="err">»</span>
+<span class="n">DÉTAIL</span> <span class="p">:</span> <span class="n">La</span> <span class="n">clé</span> <span class="p">(</span><span class="n">name</span><span class="p">)</span><span class="o">=</span><span class="p">(</span><span class="n">Bob</span><span class="p">)</span> <span class="n">est</span> <span class="n">toujours</span> <span class="n">référencée</span> <span class="err">à</span> <span class="n">partir</span> <span class="n">de</span> <span class="n">la</span> <span class="k">table</span> <span class="err">«</span> <span class="n">speaker_event</span> <span class="err">»</span><span class="p">.</span>
+</pre></div>
+
+<p>¯\_(ツ)_/¯</p>
+</section>
+<section class="slide" id="s12"><h2>Version normalisée - clés artificielle (&quot;surrogate&quot;)</h2>
+
+<p>Table event:</p>
+<div class="highlight"><pre><span></span><span class="k">CREATE</span> <span class="k">TABLE</span> <span class="ss">&quot;event&quot;</span> <span class="p">(</span>
+  <span class="ss">&quot;id&quot;</span> <span class="nb">SERIAL</span> <span class="k">PRIMARY</span> <span class="k">KEY</span><span class="p">,</span>
+  <span class="ss">&quot;url&quot;</span> <span class="nb">VARCHAR</span> <span class="k">NOT</span> <span class="k">NULL</span><span class="p">,</span>
+  <span class="ss">&quot;title&quot;</span> <span class="nb">VARCHAR</span><span class="p">,</span> <span class="ss">&quot;description&quot;</span> <span class="nb">VARCHAR</span><span class="p">,</span>
+  <span class="ss">&quot;date&quot;</span> <span class="nb">DATE</span><span class="p">,</span>
+  <span class="ss">&quot;tags&quot;</span> <span class="nb">VARCHAR</span><span class="p">[]</span>
+  <span class="p">)</span>
+</pre></div>
+
+<p>Note: utiliser un array de varchar pour les tags</p>
+</section>
+<section class="slide" id="s13"><h2>Version normalisée - clés artificielle</h2>
+
+<p>Table speaker:</p>
+<div class="highlight"><pre><span></span><span class="k">CREATE</span> <span class="k">TABLE</span> <span class="ss">&quot;speaker&quot;</span> <span class="p">(</span>
+  <span class="ss">&quot;id&quot;</span> <span class="nb">SERIAL</span> <span class="k">PRIMARY</span> <span class="k">KEY</span><span class="p">,</span>
+  <span class="ss">&quot;name&quot;</span> <span class="nb">VARCHAR</span> <span class="k">NOT</span> <span class="k">NULL</span><span class="p">,</span>
+  <span class="ss">&quot;bio&quot;</span> <span class="nb">VARCHAR</span>
+  <span class="p">)</span>
+</pre></div>
+</section>
+<section class="slide" id="s14"><h2>Version normalisée - clés artificielle</h2>
+
+<p>Table event_speaker</p>
+<div class="highlight"><pre><span></span><span class="k">CREATE</span> <span class="k">TABLE</span> <span class="ss">&quot;event_speaker&quot;</span> <span class="p">(</span>
+  <span class="ss">&quot;id&quot;</span> <span class="nb">SERIAL</span><span class="p">,</span>
+  <span class="ss">&quot;speaker&quot;</span> <span class="nb">INTEGER</span> <span class="k">REFERENCES</span> <span class="ss">&quot;speaker&quot;</span> <span class="p">(</span><span class="ss">&quot;id&quot;</span><span class="p">)</span> <span class="p">,</span>
+  <span class="ss">&quot;event&quot;</span> <span class="nb">INTEGER</span> <span class="k">REFERENCES</span> <span class="ss">&quot;event&quot;</span> <span class="p">(</span><span class="ss">&quot;id&quot;</span><span class="p">),</span>
+  <span class="p">)</span>
+</pre></div>
+</section>
+<section class="slide" id="s15"><h2>Insertion: nouvel évènement</h2>
+<div class="highlight"><pre><span></span><span class="n">jdl</span><span class="o">=&gt;</span> <span class="k">INSERT</span> <span class="k">INTO</span> <span class="n">event</span> <span class="p">(</span><span class="n">url</span><span class="p">,</span> <span class="n">title</span><span class="p">,</span> <span class="n">description</span><span class="p">)</span> <span class="k">VALUES</span> <span class="p">(</span><span class="s1">&#39;http://...&#39;</span><span class="p">,</span> <span class="s1">&#39;Example Title&#39;</span><span class="p">,</span> <span class="s1">&#39;Example description&#39;</span><span class="p">);</span>
+<span class="k">INSERT</span> <span class="mi">0</span> <span class="mi">1</span>
+<span class="n">jdl</span><span class="o">=&gt;</span> <span class="k">select</span> <span class="o">*</span> <span class="k">from</span> <span class="n">event</span><span class="p">;</span>
+ <span class="n">id</span> <span class="o">|</span>    <span class="n">url</span>     <span class="o">|</span>     <span class="n">title</span>     <span class="o">|</span>     <span class="n">description</span>     <span class="o">|</span> <span class="nb">date</span> <span class="o">|</span> <span class="n">tags</span> 
+<span class="c1">----+------------+---------------+---------------------+------+------</span>
+  <span class="mi">1</span> <span class="o">|</span> <span class="n">http</span><span class="p">:</span><span class="o">//</span><span class="p">...</span> <span class="o">|</span> <span class="n">Example</span> <span class="n">Title</span> <span class="o">|</span> <span class="n">Example</span> <span class="n">description</span> <span class="o">|</span>      <span class="o">|</span> 
+<span class="p">(</span><span class="mi">1</span> <span class="n">ligne</span><span class="p">)</span>
+</pre></div>
+</section>
+<section class="slide" id="s16"><h2>Insertion: premier orateur</h2>
+<div class="highlight"><pre><span></span><span class="n">jdl</span><span class="o">=&gt;</span> <span class="k">INSERT</span> <span class="k">INTO</span> <span class="n">speaker</span> <span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="n">bio</span><span class="p">)</span> <span class="k">VALUES</span> <span class="p">(</span><span class="s1">&#39;John Doe&#39;</span><span class="p">,</span> <span class="s1">&#39;Example Bio&#39;</span><span class="p">);</span>
+<span class="k">INSERT</span> <span class="mi">0</span> <span class="mi">1</span>
+<span class="n">jdl</span><span class="o">=&gt;</span> <span class="k">select</span> <span class="o">*</span> <span class="k">from</span> <span class="n">speaker</span><span class="p">;</span>
+ <span class="n">id</span> <span class="o">|</span>   <span class="n">name</span>   <span class="o">|</span>     <span class="n">bio</span>     
+<span class="c1">----+----------+-------------</span>
+  <span class="mi">1</span> <span class="o">|</span> <span class="n">John</span> <span class="n">Doe</span> <span class="o">|</span> <span class="n">Example</span> <span class="n">Bio</span>
+<span class="p">(</span><span class="mi">1</span> <span class="n">ligne</span><span class="p">)</span>
+</pre></div>
+</section>
+<section class="slide" id="s17"><h2>Insertion: second orateur</h2>
+<div class="highlight"><pre><span></span><span class="n">jdl</span><span class="o">=&gt;</span> <span class="k">INSERT</span> <span class="k">INTO</span> <span class="n">speaker</span> <span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="n">bio</span><span class="p">)</span> <span class="k">VALUES</span> <span class="p">(</span><span class="s1">&#39;Jane Doe&#39;</span><span class="p">,</span> <span class="s1">&#39;Another Bio&#39;</span><span class="p">);</span>
+<span class="k">INSERT</span> <span class="mi">0</span> <span class="mi">1</span>
+<span class="n">jdl</span><span class="o">=&gt;</span> <span class="k">INSERT</span> <span class="k">INTO</span> <span class="n">event_speaker</span> <span class="p">(</span><span class="n">event</span><span class="p">,</span> <span class="n">speaker</span><span class="p">)</span> <span class="k">VALUES</span> <span class="p">(</span><span class="mi">1</span><span class="p">,</span><span class="mi">2</span><span class="p">);</span>
+<span class="k">INSERT</span> <span class="mi">0</span> <span class="mi">1</span>
+</pre></div>
+</section>
+<section class="slide" id="s18"><h2>Select: jointure des 3 tables</h2>
+<div class="highlight"><pre><span></span><span class="n">jdl</span><span class="o">=&gt;</span> <span class="k">SELECT</span> <span class="n">event</span><span class="p">.</span><span class="n">url</span><span class="p">,</span> <span class="n">event</span><span class="p">.</span><span class="n">title</span><span class="p">,</span> <span class="n">speaker</span><span class="p">.</span><span class="n">name</span> <span class="k">FROM</span> <span class="n">event</span>
+      <span class="k">JOIN</span> <span class="n">event_speaker</span> <span class="k">ON</span> <span class="p">(</span><span class="n">event_speaker</span><span class="p">.</span><span class="n">event</span> <span class="o">=</span> <span class="n">event</span><span class="p">.</span><span class="n">id</span><span class="p">)</span>
+      <span class="k">JOIN</span> <span class="n">speaker</span> <span class="k">ON</span> <span class="p">(</span><span class="n">event_speaker</span><span class="p">.</span><span class="n">speaker</span> <span class="o">=</span> <span class="n">speaker</span><span class="p">.</span><span class="n">id</span><span class="p">);</span>
+    <span class="n">url</span>     <span class="o">|</span>     <span class="n">title</span>     <span class="o">|</span>   <span class="n">name</span>   
+<span class="c1">------------+---------------+----------</span>
+ <span class="n">http</span><span class="p">:</span><span class="o">//</span><span class="p">...</span> <span class="o">|</span> <span class="n">Example</span> <span class="n">Title</span> <span class="o">|</span> <span class="n">John</span> <span class="n">Doe</span>
+ <span class="n">http</span><span class="p">:</span><span class="o">//</span><span class="p">...</span> <span class="o">|</span> <span class="n">Example</span> <span class="n">Title</span> <span class="o">|</span> <span class="n">Jane</span> <span class="n">Doe</span>
+<span class="p">(</span><span class="mi">2</span> <span class="n">lignes</span><span class="p">)</span>
+</pre></div>
+</section>
+<section class="slide" id="s19"><h2>Index et clé uniques</h2>
+
+<p>Est-ce que l&#39;on autorise deux évènement avec la même url ? Deux
+speaker avec le même nom ?</p>
+<div class="highlight"><pre><span></span><span class="k">CREATE</span> <span class="k">UNIQUE</span> <span class="k">INDEX</span> <span class="ss">&quot;unique_index_event&quot;</span> <span class="k">ON</span> <span class="ss">&quot;event&quot;</span> <span class="p">(</span><span class="ss">&quot;url&quot;</span><span class="p">);</span>
+<span class="k">CREATE</span> <span class="k">UNIQUE</span> <span class="k">INDEX</span> <span class="ss">&quot;unique_index_speaker&quot;</span> <span class="k">ON</span> <span class="ss">&quot;speaker&quot;</span> <span class="p">(</span><span class="ss">&quot;name&quot;</span><span class="p">);</span>
+<span class="k">CREATE</span> <span class="k">UNIQUE</span> <span class="k">INDEX</span> <span class="ss">&quot;unique_index_event_speaker&quot;</span> <span class="k">ON</span> <span class="ss">&quot;event_speaker&quot;</span>  <span class="p">(</span><span class="ss">&quot;speaker&quot;</span><span class="p">,</span> <span class="ss">&quot;event&quot;</span><span class="p">);</span>
+</pre></div>
+
+<p>De manière générale, une table sans une (et une seule) contrainte d&#39;unicité est souvent
+signe d&#39;un problème.</p>
+</section>
+<section class="slide" id="s20"><h2>Insertion d&#39;un doublon</h2>
+<div class="highlight"><pre><span></span><span class="n">jdl</span><span class="o">=&gt;</span> <span class="k">INSERT</span> <span class="k">INTO</span> <span class="n">speaker</span> <span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="n">bio</span><span class="p">)</span> <span class="k">VALUES</span> <span class="p">(</span><span class="s1">&#39;John Doe&#39;</span><span class="p">,</span> <span class="s1">&#39;Example Bio&#39;</span><span class="p">);</span>
+<span class="n">ERREUR</span><span class="p">:</span>  <span class="n">la</span> <span class="n">valeur</span> <span class="n">d</span><span class="err">&#39;</span><span class="n">une</span> <span class="n">clé</span> <span class="n">dupliquée</span> <span class="n">rompt</span> <span class="n">la</span> <span class="n">contrainte</span> <span class="k">unique</span> <span class="err">«</span> <span class="n">unique_index_speaker</span> <span class="err">»</span>
+<span class="n">DÉTAIL</span> <span class="p">:</span> <span class="n">La</span> <span class="n">clé</span> <span class="err">«</span> <span class="p">(</span><span class="n">name</span><span class="p">)</span><span class="o">=</span><span class="p">(</span><span class="n">John</span> <span class="n">Doe</span><span class="p">)</span> <span class="err">»</span> <span class="n">existe</span> <span class="n">déjà</span><span class="p">.</span>
+</pre></div>
+</section>
+<section class="slide" id="s21"><h2>Second effet KissCool: <code>ON CONFLICT</code></h2>
+<div class="highlight"><pre><span></span><span class="n">jdl</span><span class="o">=&gt;</span> <span class="k">INSERT</span> <span class="k">INTO</span> <span class="n">speaker</span> <span class="p">(</span><span class="ss">&quot;name&quot;</span><span class="p">,</span> <span class="ss">&quot;bio&quot;</span><span class="p">)</span>
+      <span class="k">VALUES</span> <span class="p">(</span><span class="s1">&#39;John Doe&#39;</span><span class="p">,</span> <span class="s1">&#39;Updated Bio&#39;</span><span class="p">),</span> <span class="p">(</span><span class="s1">&#39;Jack Doe&#39;</span><span class="p">,</span> <span class="s1">&#39;yet another Bio&#39;</span><span class="p">)</span>
+      <span class="k">ON</span> <span class="n">CONFLICT</span><span class="p">(</span><span class="ss">&quot;name&quot;</span><span class="p">)</span> <span class="k">DO</span> <span class="k">UPDATE</span> <span class="k">SET</span> <span class="n">bio</span><span class="o">=</span><span class="n">EXCLUDED</span><span class="p">.</span><span class="n">bio</span><span class="p">;</span>
+<span class="k">INSERT</span> <span class="mi">0</span> <span class="mi">2</span>
+</pre></div>
+</section>
+<section class="slide" id="s22"><h2>Résultat</h2>
+<div class="highlight"><pre><span></span><span class="n">jdl</span><span class="o">=&gt;</span> <span class="k">select</span> <span class="o">*</span> <span class="k">from</span> <span class="n">speaker</span><span class="p">;</span>
+ <span class="n">id</span> <span class="o">|</span>   <span class="n">name</span>   <span class="o">|</span>       <span class="n">bio</span>       
+<span class="c1">----+----------+-----------------</span>
+  <span class="mi">2</span> <span class="o">|</span> <span class="n">Jane</span> <span class="n">Doe</span> <span class="o">|</span> <span class="n">Another</span> <span class="n">Bio</span>
+  <span class="mi">1</span> <span class="o">|</span> <span class="n">John</span> <span class="n">Doe</span> <span class="o">|</span> <span class="n">Updated</span> <span class="n">Bio</span>
+  <span class="mi">5</span> <span class="o">|</span> <span class="n">Jack</span> <span class="n">Doe</span> <span class="o">|</span> <span class="n">yet</span> <span class="n">another</span> <span class="n">Bio</span>
+<span class="p">(</span><span class="mi">3</span> <span class="n">lignes</span><span class="p">)</span>
+</pre></div>
+</section>
+<section class="slide" id="s23"><h2>Et Tanker dans tout ça ?</h2>
+
+<p>Si on assemble tous ces ingrédient:</p>
+
+<ul>
+<li>Normalisation</li>
+<li>Clés artificielles</li>
+<li>Contrainte d&#39;unicité sur les clé naturelles</li>
+<li>insertion via <code>ON CONFLICT</code></li>
+</ul>
+
+<p>... et que l&#39;on ajoute Python. On obtient Tanker</p>
+</section>
+<section class="slide" id="s24"><h2>Définition des tables</h2>
+<div class="highlight"><pre><span></span><span class="p p-Indicator">-</span> <span class="nt">table</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">event</span>
+  <span class="nt">columns</span><span class="p">:</span>
+    <span class="nt">url</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">varchar</span>
+    <span class="nt">title</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">varchar</span>
+    <span class="nt">description</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">varchar</span>
+    <span class="nt">date</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">date</span>
+    <span class="nt">tags</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">varchar[]</span>
+  <span class="nt">key</span><span class="p">:</span>
+    <span class="p p-Indicator">-</span> <span class="l l-Scalar l-Scalar-Plain">url</span>
+<span class="p p-Indicator">-</span> <span class="nt">table</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">speaker</span>
+  <span class="nt">columns</span><span class="p">:</span>
+    <span class="nt">name</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">varchar</span>
+    <span class="nt">bio</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">varchar</span>
+  <span class="nt">key</span><span class="p">:</span>
+    <span class="p p-Indicator">-</span> <span class="l l-Scalar l-Scalar-Plain">name</span>
+</pre></div>
+</section>
+<section class="slide" id="s25"><h2>Définition des tables</h2>
+<div class="highlight"><pre><span></span><span class="p p-Indicator">-</span> <span class="nt">table</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">event_speaker</span>
+  <span class="nt">columns</span><span class="p">:</span>
+    <span class="nt">speaker</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">m2o speaker.id</span>  <span class="c1"># &lt;- many to one (aka clé étrangère)</span>
+    <span class="nt">event</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">m2o event.id</span>
+  <span class="nt">key</span><span class="p">:</span>
+    <span class="p p-Indicator">-</span> <span class="l l-Scalar l-Scalar-Plain">speaker</span>
+    <span class="p p-Indicator">-</span> <span class="l l-Scalar l-Scalar-Plain">event</span>
+</pre></div>
+</section>
+<section class="slide" id="s26"><h2>Création des tables</h2>
+<div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">tanker</span> <span class="kn">import</span> <span class="n">connect</span><span class="p">,</span> <span class="n">create_tables</span>
+
+<span class="n">cfg</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="s1">&#39;db_uri&#39;</span><span class="p">:</span> <span class="s1">&#39;postgresql:///jdl&#39;</span><span class="p">,</span>
+    <span class="s1">&#39;schema&#39;</span><span class="p">:</span> <span class="n">schema</span><span class="p">,</span>
+<span class="p">}</span>
+<span class="k">with</span> <span class="n">connect</span><span class="p">(</span><span class="n">cfg</span><span class="p">):</span>
+    <span class="n">create_tables</span><span class="p">()</span>
+</pre></div>
+</section>
+<section class="slide" id="s27"><h3>Création des tables: logs</h3>
+
+<pre><code>DEBUG:2019-11-17 19:53:54: SQL Query:
+  SELECT table_name FROM information_schema.tables WHERE table_schema
+  = 'public'
+DEBUG:2019-11-17 19:53:54: SQL Query:
+               SELECT table_name, column_name, data_type
+  FROM information_schema.columns ORDER BY table_name
+DEBUG:2019-11-17 19:53:54: SQL Query:
+  SELECT indexname FROM pg_indexes WHERE schemaname = 'public'
+DEBUG:2019-11-17 19:53:54: SQL Query:
+  SELECT constraint_name FROM information_schema.table_constraints
+DEBUG:2019-11-17 19:53:54: SQL Query:
+  CREATE TABLE "all_in_one_event" ("id" SERIAL, "url" VARCHAR NOT
+  NULL, "title" VARCHAR, "speaker" VARCHAR, "description" VARCHAR,
+  "date" DATE, "tags" VARCHAR[], "bio" VARCHAR)
+INFO:2019-11-17 19:53:54: Table "all_in_one_event" created
+DEBUG:2019-11-17 19:53:54: SQL Query:
+  CREATE TABLE "event" ("id" SERIAL PRIMARY KEY, "url" VARCHAR NOT
+  NULL, "title" VARCHAR, "description" VARCHAR, "date" DATE, "tags"
+  VARCHAR[])
+INFO:2019-11-17 19:53:54: Table "event" created
+DEBUG:2019-11-17 19:53:54: SQL Query:
+  CREATE TABLE "speaker" ("id" SERIAL PRIMARY KEY, "name" VARCHAR NOT
+  NULL, "bio" VARCHAR)
+INFO:2019-11-17 19:53:54: Table "speaker" created
+DEBUG:2019-11-17 19:53:54: SQL Query:
+  CREATE TABLE "event_speaker" ("id" SERIAL)
+INFO:2019-11-17 19:53:54: Table "event_speaker" created
+DEBUG:2019-11-17 19:53:54: SQL Query:
+  ALTER TABLE "event_speaker" ADD COLUMN "speaker" INTEGER REFERENCES
+  "speaker" ("id") ON DELETE CASCADE NOT NULL
+DEBUG:2019-11-17 19:53:54: SQL Query:
+  ALTER TABLE "event_speaker" ADD COLUMN "event" INTEGER REFERENCES
+  "event" ("id") ON DELETE CASCADE NOT NULL
+DEBUG:2019-11-17 19:53:54: SQL Query:
+  CREATE UNIQUE INDEX "unique_index_all_in_one_event" ON
+  "all_in_one_event" ("url")
+DEBUG:2019-11-17 19:53:54: SQL Query:
+  CREATE UNIQUE INDEX "unique_index_event" ON "event" ("url")
+DEBUG:2019-11-17 19:53:54: SQL Query:
+  CREATE UNIQUE INDEX "unique_index_speaker" ON "speaker" ("name")
+DEBUG:2019-11-17 19:53:54: SQL Query:
+  CREATE UNIQUE INDEX "unique_index_event_speaker" ON "event_speaker"
+  ("speaker", "event")
+DEBUG:2019-11-17 19:53:54: SQL Query:
+  CREATE TEMPORARY TABLE tmp ("url" VARCHAR NOT NULL, "title" VARCHAR
+  , "speaker" VARCHAR , "description" VARCHAR , "date" DATE , "tags"
+  VARCHAR[] , "bio" VARCHAR , id SERIAL PRIMARY KEY)
+DEBUG:2019-11-17 19:53:54: SQL Query:
+  COPY tmp ("url", "title", "speaker", "description", "date", "tags",
+  "bio") FROM STDIN WITH (FORMAT csv)
+DEBUG:2019-11-17 19:53:54: SQL Query:
+  INSERT INTO "all_in_one_event" ("url", "title", "speaker",
+  "description", "date", "tags", "bio") SELECT tmp."url", tmp."title",
+  tmp."speaker", tmp."description", tmp."date", tmp."tags", tmp."bio"
+  FROM tmp LEFT JOIN "all_in_one_event" ON ( tmp."url" =
+  "all_in_one_event"."url") ON CONFLICT ("url") DO UPDATE SET "title"
+  = EXCLUDED."title", "speaker" = EXCLUDED."speaker", "description" =
+  EXCLUDED."description", "date" = EXCLUDED."date", "tags" =
+  EXCLUDED."tags", "bio" = EXCLUDED."bio"
+SQL Params:
+  ()
+DEBUG:2019-11-17 19:53:54: SQL Query:
+  DROP TABLE tmp
+DEBUG:2019-11-17 19:53:54: COMMIT</code></pre>
+</section>
+<section class="slide" id="s28"><h2>Insertion</h2>
+<div class="highlight"><pre><span></span><span class="n">values</span> <span class="o">=</span> <span class="p">[</span>
+  <span class="p">(</span><span class="s1">&#39;John Doe&#39;</span><span class="p">,</span> <span class="s1">&#39;Updated Bio&#39;</span><span class="p">),</span>
+  <span class="p">(</span><span class="s1">&#39;Jack Doe&#39;</span><span class="p">,</span> <span class="s1">&#39;yet another Bio&#39;</span><span class="p">)</span>
+<span class="p">]</span>
+<span class="k">with</span> <span class="n">connect</span><span class="p">(</span><span class="n">cfg</span><span class="p">):</span>
+    <span class="n">view</span> <span class="o">=</span> <span class="n">View</span><span class="p">(</span><span class="s1">&#39;speaker&#39;</span><span class="p">,</span> <span class="p">[</span><span class="s1">&#39;name&#39;</span><span class="p">,</span> <span class="s1">&#39;bio&#39;</span><span class="p">])</span>
+    <span class="n">view</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">values</span><span class="p">)</span>
+</pre></div>
+
+<p>Qui est la traduction de l&#39;exemple précédent de <code>ON CONFLICT</code></p>
+</section>
+<section class="slide" id="s29"><h2>Discussion</h2>
+<div class="highlight"><pre><span></span><span class="k">with</span> <span class="n">connect</span><span class="p">(</span><span class="n">cfg</span><span class="p">):</span>
+    <span class="o">...</span>
+</pre></div>
+
+<p>Crée un <code>contextmanager</code> qui garanti l&#39;atomicité du block de code</p>
+</section>
+<section class="slide" id="s30"><h2>Discussion</h2>
+<div class="highlight"><pre><span></span><span class="n">view</span>  <span class="o">=</span> <span class="n">View</span><span class="p">(</span><span class="s1">&#39;speaker&#39;</span><span class="p">,</span> <span class="p">[</span><span class="s1">&#39;name&#39;</span><span class="p">,</span> <span class="s1">&#39;bio&#39;</span><span class="p">])</span> <span class="c1"># INSERT INTO speaker (name, bio)</span>
+<span class="n">view</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">values</span><span class="p">)</span>                       <span class="c1"># VALUES (...) ON CONFLICT ...</span>
+</pre></div>
+</section>
+<section class="slide" id="s31"><h2>Lecture</h2>
+<div class="highlight"><pre><span></span><span class="k">with</span> <span class="n">connect</span><span class="p">(</span><span class="n">cfg</span><span class="p">):</span>
+    <span class="n">data</span> <span class="o">=</span> <span class="n">View</span><span class="p">(</span><span class="s1">&#39;speaker&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">read</span><span class="p">()</span><span class="o">.</span><span class="n">all</span><span class="p">()</span>
+    <span class="k">print</span><span class="p">(</span><span class="n">data</span><span class="p">)</span>
+</pre></div>
+
+<pre><code>[('Jane Doe', 'Another Bio'), ('John Doe', 'Updated Bio'), ('Jack Doe', 'yet another Bio')]</code></pre>
+</section>
+<section class="slide" id="s32"><h2>Lecture</h2>
+<div class="highlight"><pre><span></span><span class="k">for</span> <span class="n">row</span> <span class="ow">in</span> <span class="n">View</span><span class="p">(</span><span class="s1">&#39;speaker&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">read</span><span class="p">()</span><span class="o">.</span><span class="n">dict</span><span class="p">():</span>
+    <span class="k">print</span><span class="p">(</span><span class="n">row</span><span class="p">)</span>
+</pre></div>
+
+<pre><code>{'name': 'Jane Doe', 'bio': 'Another Bio'}
+{'name': 'John Doe', 'bio': 'Updated Bio'}
+{'name': 'Jack Doe', 'bio': 'yet another Bio'}µµ</code></pre>
+</section>
+<section class="slide" id="s33"><h2>Lecture</h2>
+<div class="highlight"><pre><span></span><span class="n">df</span> <span class="o">=</span> <span class="n">View</span><span class="p">(</span><span class="s1">&#39;speaker&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">read</span><span class="p">()</span><span class="o">.</span><span class="n">df</span><span class="p">()</span>
+<span class="k">print</span><span class="p">(</span><span class="n">df</span><span class="p">)</span>
+</pre></div>
+
+<pre><code>name              bio
+0  Jane Doe      Another Bio
+1  John Doe      Updated Bio
+2  Jack Doe  yet another Bio</code></pre>
+</section>
+<section class="slide" id="s34"><h2>Lecture</h2>
+<div class="highlight"><pre><span></span><span class="n">df</span> <span class="o">=</span> <span class="n">View</span><span class="p">(</span><span class="s1">&#39;event&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">read</span><span class="p">()</span><span class="o">.</span><span class="n">df</span><span class="p">()</span>
+<span class="k">print</span><span class="p">(</span><span class="n">df</span><span class="p">)</span>
+</pre></div>
+
+<pre><code>url  date          description          title
+0  http://...  None  Example description  Example Title</code></pre>
+</section>
+<section class="slide" id="s35"><h2>Lecture</h2>
+<div class="highlight"><pre><span></span><span class="n">df</span> <span class="o">=</span> <span class="n">View</span><span class="p">(</span><span class="s1">&#39;event_speaker&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">read</span><span class="p">()</span><span class="o">.</span><span class="n">df</span><span class="p">()</span>
+<span class="k">print</span><span class="p">(</span><span class="n">df</span><span class="p">)</span>
+</pre></div>
+
+<pre><code>speaker.name   event.url
+0     John Doe  http://...
+1     Jane Doe  http://...</code></pre>
+</section>
+<section class="slide" id="s36"><h2>Lecture</h2>
+<div class="highlight"><pre><span></span><span class="n">df</span> <span class="o">=</span> <span class="n">View</span><span class="p">(</span><span class="s1">&#39;event_speaker&#39;</span><span class="p">,</span> <span class="p">[</span><span class="s1">&#39;event.title&#39;</span><span class="p">,</span> <span class="s1">&#39;speaker.name&#39;</span><span class="p">,</span> <span class="s1">&#39;speaker.bio&#39;</span><span class="p">])</span><span class="o">.</span><span class="n">read</span><span class="p">()</span><span class="o">.</span><span class="n">df</span><span class="p">()</span>
+<span class="k">print</span><span class="p">(</span><span class="n">df</span><span class="p">)</span>
+</pre></div>
+
+<pre><code>event.title speaker.name  speaker.bio
+0  Example Title     John Doe  Updated Bio
+1  Example Title     Jane Doe  Another Bio```</code></pre>
+</section>
+<section class="slide" id="s37"><h2>Discussion</h2>
+<div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">tanker</span> <span class="kn">import</span> <span class="n">logger</span>
+<span class="n">logger</span><span class="o">.</span><span class="n">setLevel</span><span class="p">(</span><span class="s1">&#39;DEBUG&#39;</span><span class="p">)</span>
+<span class="k">with</span> <span class="n">connect</span><span class="p">(</span><span class="n">cfg</span><span class="p">):</span>
+    <span class="n">df</span> <span class="o">=</span> <span class="n">View</span><span class="p">(</span><span class="s1">&#39;event_speaker&#39;</span><span class="p">,</span> <span class="p">[</span><span class="s1">&#39;event.title&#39;</span><span class="p">,</span> <span class="s1">&#39;speaker.name&#39;</span><span class="p">,</span> <span class="s1">&#39;speaker.bio&#39;</span><span class="p">])</span><span class="o">.</span><span class="n">read</span><span class="p">()</span><span class="o">.</span><span class="n">df</span><span class="p">()</span>
+</pre></div>
+<div class="highlight"><pre><span></span><span class="k">SELECT</span> <span class="ss">&quot;event_0&quot;</span><span class="p">.</span><span class="ss">&quot;title&quot;</span><span class="p">,</span> <span class="ss">&quot;speaker_1&quot;</span><span class="p">.</span><span class="ss">&quot;name&quot;</span><span class="p">,</span> <span class="ss">&quot;speaker_1&quot;</span><span class="p">.</span><span class="ss">&quot;bio&quot;</span>
+<span class="k">FROM</span> <span class="ss">&quot;event_speaker&quot;</span>
+<span class="k">LEFT</span> <span class="k">JOIN</span> <span class="ss">&quot;event&quot;</span> <span class="k">AS</span> <span class="ss">&quot;event_0&quot;</span>
+  <span class="k">ON</span> <span class="p">(</span><span class="ss">&quot;event_speaker&quot;</span><span class="p">.</span><span class="ss">&quot;event&quot;</span> <span class="o">=</span> <span class="ss">&quot;event_0&quot;</span><span class="p">.</span><span class="ss">&quot;id&quot;</span><span class="p">)</span>
+<span class="k">LEFT</span> <span class="k">JOIN</span> <span class="ss">&quot;speaker&quot;</span> <span class="k">AS</span> <span class="ss">&quot;speaker_1&quot;</span>
+  <span class="k">ON</span> <span class="p">(</span><span class="ss">&quot;event_speaker&quot;</span><span class="p">.</span><span class="ss">&quot;speaker&quot;</span> <span class="o">=</span> <span class="ss">&quot;speaker_1&quot;</span><span class="p">.</span><span class="ss">&quot;id&quot;</span><span class="p">)</span>
+</pre></div>
+</section>
+<section class="slide" id="s38"></section>
+<section class="slide" id="s39"><h2>One-To-Many</h2>
+<div class="highlight"><pre><span></span><span class="p p-Indicator">-</span> <span class="nt">table</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">speaker</span>
+  <span class="nt">columns</span><span class="p">:</span>
+    <span class="nt">name</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">varchar</span>
+    <span class="nt">bio</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">varchar</span>
+    <span class="nt">events</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">o2m event_speaker.speaker</span> <span class="c1"># &lt;- one to many</span>
+  <span class="nt">key</span><span class="p">:</span>
+    <span class="p p-Indicator">-</span> <span class="l l-Scalar l-Scalar-Plain">name</span>
+</pre></div>
+</section>
+<section class="slide" id="s40"><h2>One-To-Many</h2>
+<div class="highlight"><pre><span></span><span class="n">df</span> <span class="o">=</span> <span class="n">View</span><span class="p">(</span><span class="s1">&#39;speaker&#39;</span><span class="p">,</span> <span class="p">[</span><span class="s1">&#39;name&#39;</span><span class="p">,</span> <span class="s1">&#39;events.event.title&#39;</span><span class="p">,</span> <span class="p">])</span><span class="o">.</span><span class="n">read</span><span class="p">()</span><span class="o">.</span><span class="n">df</span><span class="p">()</span>
+<span class="k">print</span><span class="p">(</span><span class="n">df</span><span class="p">)</span>
+</pre></div>
+
+<pre><code>name events.event.title
+0  John Doe      Example Title
+1  Jane Doe      Example Title
+2  Jack Doe               None</code></pre>
+
+<h2>One-To-Many</h2>
+
+<pre><code>SELECT "speaker"."name", "event_1"."title" FROM "speaker"
+LEFT JOIN  "event_speaker" AS "event_speaker_0"
+ ON ("speaker"."id" = "event_speaker_0"."speaker")
+LEFT JOIN "event" AS "event_1"
+ ON ("event_speaker_0"."event" = "event_1"."id")</code></pre>
+</section>
+<section class="slide" id="s41"><h2>Insertion: données réelles</h2>
+
+<pre><code>>>> len(data)
+78
+>>> data[0]
+{'tags': ['e-learning', 'éducation'],
+ 'date': '2019-05-08',
+ 'title': 'Chamilo: Améliorer l’accès à une éducation de qualité partout dans le monde',
+ 'speaker': 'Yannick Warnier (Chamilo)',
+ 'description': 'Le projet de plateforme e-learning Chamilo ...',
+ 'bio': 'Yannick Warnier, diplômé en Sciences Informatiques ...',
+ 'url': 'http://jeudisdulibre.be/2019/05/08/mons-le-23-mai-chamilo-ameliorer-lacces-a-...'}</code></pre>
+<div class="highlight"><pre><span></span><span class="n">View</span><span class="p">(</span><span class="s1">&#39;event&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">data</span><span class="p">)</span>
+<span class="n">speakers</span> <span class="o">=</span> <span class="p">{</span><span class="n">d</span><span class="p">[</span><span class="s1">&#39;speaker&#39;</span><span class="p">]:</span> <span class="n">d</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;bio&#39;</span><span class="p">)</span> <span class="k">for</span> <span class="n">d</span> <span class="ow">in</span> <span class="n">data</span> <span class="k">if</span> <span class="n">d</span><span class="p">[</span><span class="s1">&#39;speaker&#39;</span><span class="p">]}</span>
+<span class="n">View</span><span class="p">(</span><span class="s1">&#39;speaker&#39;</span><span class="p">,</span> <span class="p">[</span><span class="s1">&#39;name&#39;</span><span class="p">,</span> <span class="s1">&#39;bio&#39;</span><span class="p">])</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">speakers</span><span class="o">.</span><span class="n">items</span><span class="p">())</span>
+<span class="n">View</span><span class="p">(</span><span class="s1">&#39;event_speaker&#39;</span><span class="p">,</span> <span class="p">{</span>
+    <span class="s1">&#39;speaker&#39;</span><span class="p">:</span> <span class="s1">&#39;speaker.name&#39;</span><span class="p">,</span>
+    <span class="s1">&#39;url&#39;</span><span class="p">:</span> <span class="s1">&#39;event.url&#39;</span><span class="p">,</span>
+<span class="p">})</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">data</span><span class="p">)</span>
+</pre></div>
+</section>
+<section class="slide" id="s42"><h2>Filtres</h2>
+<div class="highlight"><pre><span></span><span class="n">fltr</span> <span class="o">=</span> <span class="p">{</span><span class="s1">&#39;date&#39;</span><span class="p">:</span> <span class="s1">&#39;2019-05-08&#39;</span><span class="p">}</span>
+<span class="n">res</span> <span class="o">=</span> <span class="n">View</span><span class="p">(</span><span class="s1">&#39;event&#39;</span><span class="p">,</span> <span class="s1">&#39;title&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">read</span><span class="p">(</span><span class="n">fltr</span><span class="p">)</span><span class="o">.</span><span class="n">all</span><span class="p">()</span>
+<span class="k">print</span><span class="p">(</span><span class="n">res</span><span class="p">)</span>
+</pre></div>
+
+<pre><code>[('Chamilo: Améliorer l’accès à une éducation de qualité partout dans le monde',)]</code></pre>
+</section>
+<section class="slide" id="s43"><h2>Filtres</h2>
+<div class="highlight"><pre><span></span><span class="n">fltr</span> <span class="o">=</span> <span class="s1">&#39;(= date &quot;2019-05-08&quot;)&#39;</span>
+<span class="n">res</span> <span class="o">=</span> <span class="n">View</span><span class="p">(</span><span class="s1">&#39;event&#39;</span><span class="p">,</span> <span class="s1">&#39;title&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">read</span><span class="p">(</span><span class="n">fltr</span><span class="p">)</span><span class="o">.</span><span class="n">all</span><span class="p">()</span>
+<span class="k">print</span><span class="p">(</span><span class="n">res</span><span class="p">)</span>
+</pre></div>
+
+<pre><code>[('Chamilo: Améliorer l’accès à une éducation de qualité partout dans le monde',)]</code></pre>
+</section>
+<section class="slide" id="s44"><h2>Filtres</h2>
+<div class="highlight"><pre><span></span><span class="n">fltr</span> <span class="o">=</span> <span class="s1">&#39;(and (&gt;= date &quot;2019-01-01&quot;) (&lt; date &quot;2020-01-01&quot;))&#39;</span>
+<span class="n">res</span> <span class="o">=</span> <span class="n">View</span><span class="p">(</span><span class="s1">&#39;event&#39;</span><span class="p">,</span> <span class="s1">&#39;title&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">read</span><span class="p">(</span><span class="n">fltr</span><span class="p">)</span><span class="o">.</span><span class="n">all</span><span class="p">()</span>
+<span class="k">print</span><span class="p">(</span><span class="n">res</span><span class="p">)</span>
+</pre></div>
+
+<pre><code>[('Chamilo: Améliorer l’accès à une éducation de qualité partout
+ dans le monde',), ('Imio : clés du succès du logiciel libre dans
+ les communes wallonnes',), ('Automatiser son infrastructure avec
+ Ansible, tester grâce à Molecule',), ('pfSense, un firewall
+ “libre” pour la sécurisation des réseaux domestiques et
+ d’entreprises',)]</code></pre>
+
+<h2>Filtre</h2>
+<div class="highlight"><pre><span></span><span class="n">fltr</span> <span class="o">=</span> <span class="s1">&#39;(ilike title &quot;%python%&quot;)&#39;</span>
+<span class="n">res</span> <span class="o">=</span> <span class="n">View</span><span class="p">(</span><span class="s1">&#39;event&#39;</span><span class="p">,</span> <span class="p">[</span><span class="s1">&#39;date&#39;</span><span class="p">,</span> <span class="s1">&#39;title&#39;</span><span class="p">])</span><span class="o">.</span><span class="n">read</span><span class="p">(</span><span class="n">fltr</span><span class="p">)</span><span class="o">.</span><span class="n">all</span><span class="p">()</span>
+<span class="k">print</span><span class="p">(</span><span class="n">res</span><span class="p">)</span>
+</pre></div>
+
+<pre><code>[(datetime.date(2015, 12, 20), 'Pour une bonne pédagogie de
+ la programmation web avec Python & Django')]</code></pre>
+</section>
+<section class="slide" id="s45"><h2>Agrégats</h2>
+<div class="highlight"><pre><span></span><span class="k">print</span><span class="p">(</span><span class="n">View</span><span class="p">(</span><span class="s1">&#39;speaker&#39;</span><span class="p">,</span> <span class="s1">&#39;(count *)&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">read</span><span class="p">()</span><span class="o">.</span><span class="n">one</span><span class="p">())</span>
+</pre></div>
+
+<pre><code>(73,)</code></pre>
+<div class="highlight"><pre><span></span><span class="k">print</span><span class="p">(</span><span class="n">View</span><span class="p">(</span><span class="s1">&#39;event&#39;</span><span class="p">,</span> <span class="s1">&#39;(count *)&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">read</span><span class="p">()</span><span class="o">.</span><span class="n">one</span><span class="p">())</span>
+</pre></div>
+
+<pre><code>(78,)</code></pre>
+</section>
+<section class="slide" id="s46"><h2>Agrégats</h2>
+<div class="highlight"><pre><span></span><span class="n">res</span> <span class="o">=</span> <span class="n">View</span><span class="p">(</span><span class="s1">&#39;event_speaker&#39;</span><span class="p">,</span> <span class="p">[</span>
+    <span class="s1">&#39;speaker.name&#39;</span><span class="p">,</span>
+    <span class="s1">&#39;(count *)&#39;</span><span class="p">,</span>
+<span class="p">])</span><span class="o">.</span><span class="n">read</span><span class="p">(</span><span class="n">order</span><span class="o">=</span><span class="p">(</span><span class="s1">&#39;(count *)&#39;</span><span class="p">,</span> <span class="s1">&#39;desc&#39;</span><span class="p">),</span> <span class="n">limit</span><span class="o">=</span><span class="mi">5</span><span class="p">)</span><span class="o">.</span><span class="n">all</span><span class="p">()</span>
+<span class="k">for</span> <span class="n">speaker</span> <span class="ow">in</span> <span class="n">res</span><span class="p">:</span>
+    <span class="k">print</span><span class="p">(</span><span class="n">speaker</span><span class="p">)</span>
+</pre></div>
+
+<pre><code>('Robert Viseur (UMONS / CETIC / photographe indépendant)', 2)
+('Dimitri Durieux (CETIC)', 2)
+('Sébastien Noël (UMONS – FPMs et MIND PROJECTOR)', 2)
+('Robert Viseur est Docteur ...', 2)
+('Robert Viseur', 2)</code></pre>
+</section>
+<section class="slide" id="s47"><h2>Cast</h2>
+<div class="highlight"><pre><span></span><span class="n">df</span> <span class="o">=</span> <span class="n">View</span><span class="p">(</span><span class="s1">&#39;event&#39;</span><span class="p">,</span> <span class="p">{</span>
+     <span class="s1">&#39;year&#39;</span><span class="p">:</span> <span class="s1">&#39;(extract &quot;year&quot; date )&#39;</span><span class="p">,</span>
+     <span class="s1">&#39;month&#39;</span><span class="p">:</span> <span class="s1">&#39;(extract &quot;month&quot; date )&#39;</span><span class="p">,</span>
+     <span class="s1">&#39;count&#39;</span><span class="p">:</span> <span class="s1">&#39;(count *)&#39;</span><span class="p">,</span>
+<span class="p">})</span><span class="o">.</span><span class="n">read</span><span class="p">()</span><span class="o">.</span><span class="n">df</span><span class="p">()</span> <span class="c1"># with auto-groupby</span>
+<span class="k">print</span><span class="p">(</span><span class="n">df</span><span class="o">.</span><span class="n">set_index</span><span class="p">([</span><span class="s1">&#39;year&#39;</span><span class="p">,</span> <span class="s1">&#39;month&#39;</span><span class="p">])</span><span class="o">.</span><span class="n">unstack</span><span class="p">()</span><span class="o">.</span><span class="n">fillna</span><span class="p">(</span><span class="s1">&#39;&#39;</span><span class="p">))</span>
+</pre></div>
+
+<h2>Cast</h2>
+
+<pre><code>count
+month   1.0  2.0  3.0  4.0  5.0  6.0  8.0  9.0  10.0 11.0 12.0
+year
+2011.0                                                  1    1
+2012.0     2    2    2    2    2    2         1    1    1    1
+2013.0          2         1    1    1         1    1    2
+2014.0     1    2    1    1         1         1    1         1
+2015.0     2    1    1         1    1    1         1    2    1
+2016.0     1         1    1    2              1    2         2
+2017.0     1    1    1    1    1         1    1    1    1
+2018.0     2    1              1                   1    2    1
+2019.0          1    1    1    1</code></pre>
+</section>
+<section class="slide" id="s48"><h2>Expression</h2>
+<div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">tanker</span> <span class="kn">import</span> <span class="n">Expression</span>
+
+<span class="c1"># On ajoute le support pour une nouvelle expression sql</span>
+<span class="n">Expression</span><span class="o">.</span><span class="n">builtins</span><span class="p">[</span><span class="s1">&#39;char_length&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="k">lambda</span> <span class="n">x</span><span class="p">:</span> <span class="s1">&#39;char_length(</span><span class="si">%s</span><span class="s1">)&#39;</span> <span class="o">%</span> <span class="n">x</span>
+<span class="o">...</span>
+     <span class="n">df</span> <span class="o">=</span> <span class="n">View</span><span class="p">(</span><span class="s1">&#39;event&#39;</span><span class="p">,</span> <span class="p">{</span>
+          <span class="s1">&#39;date&#39;</span><span class="p">:</span> <span class="s1">&#39;date&#39;</span><span class="p">,</span>
+          <span class="s1">&#39;len&#39;</span><span class="p">:</span> <span class="s1">&#39;(char_length title)&#39;</span> <span class="p">})</span><span class="o">.</span><span class="n">read</span><span class="p">(</span>
+               <span class="n">order</span><span class="o">=</span><span class="p">(</span><span class="s1">&#39;len&#39;</span><span class="p">,</span> <span class="s1">&#39;desc&#39;</span><span class="p">),</span>
+               <span class="n">limit</span><span class="o">=</span><span class="mi">5</span><span class="p">)</span><span class="o">.</span><span class="n">df</span><span class="p">()</span>
+     <span class="k">print</span><span class="p">(</span><span class="n">df</span><span class="p">)</span>
+</pre></div>
+</section>
+<section class="slide" id="s49"><h2>Expression</h2>
+<div class="highlight"><pre><span></span><span class="k">SELECT</span> <span class="ss">&quot;event&quot;</span><span class="p">.</span><span class="ss">&quot;date&quot;</span><span class="p">,</span> <span class="k">char_length</span><span class="p">(</span><span class="ss">&quot;event&quot;</span><span class="p">.</span><span class="ss">&quot;title&quot;</span><span class="p">)</span> <span class="k">FROM</span> <span class="ss">&quot;event&quot;</span>
+  <span class="k">ORDER</span> <span class="k">BY</span> <span class="k">char_length</span><span class="p">(</span><span class="ss">&quot;event&quot;</span><span class="p">.</span><span class="ss">&quot;title&quot;</span><span class="p">)</span> <span class="k">desc</span> <span class="k">LIMIT</span> <span class="mi">5</span>
+</pre></div>
+
+<pre><code>date  len
+0  2018-01-04  176
+1  2017-10-27  172
+2  2014-09-05  167
+3  2012-03-04  152
+4  2012-06-26  148</code></pre>
+</section>
+<section class="slide" id="s50"><h2>tk: la ligne de commande de tanker</h2>
+</section>
+<section class="slide" id="s51"><h2>ACL</h2>
+</section>
+<section class="slide" id="s52"></section>
+<section class="slide" id="s53"></section>
+<section class="slide" id="s54"></section>
+<section class="slide" id="s55"></section>
+
+</article><!-- presentation -->
+
+<!-- S6 JS -->
+  <script src="s62/slides.keys.js"></script>
+  <script src="s62/slides.progress.js"></script>
+  <script src="s62/slides.classes.js"></script>
+  <script src="s62/slides.state.js"></script>
+  <script src="s62/slides.kernel.js"></script>
+  <script>
+     const {Deck, classes, keys, progress, state} = S6;
+     const deck = new Deck({ parent: "#presentation",
+                             plugins: [classes(), keys(), progress(), state()] });
+	var hash = 	window.location.hash;
+	if (!!hash) {
+		deck.jump(parseInt(hash.slice(1)));
+	}
+     
+  </script>
+
+</body>
+</html>
+
