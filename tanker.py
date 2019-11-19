@@ -181,6 +181,7 @@ class Pool:
             }
             sqlite3.register_converter("JSONB", json.loads)
             sqlite3.register_converter("INTEGER[]", convert_array(int))
+            sqlite3.register_converter("VARCHAR[]", convert_array(str))
             sqlite3.register_converter("FLOAT[]", convert_array(float))
             sqlite3.register_converter(
                 "BOOL[]", convert_array(lambda x: x == 'True'))
