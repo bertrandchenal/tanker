@@ -25,8 +25,8 @@ Information que l'on peut collecter pour chaque évènement:
  - description
  - tags
 
---- 
-## Version naïve 
+---
+## Version naïve
 
 Création de la table:
 
@@ -49,8 +49,8 @@ INSERT INTO TABLE event ("date", "speaker", "tags", "bio", "title", "url")
 VALUES ('2019-05-08', 'Yannick Warnier (Chamilo)' '{e-learning,éducation}', '...');
 ```
 
---- 
-## Version naïve 
+---
+## Version naïve
 
 
     date       speaker                                    tags                                            bio
@@ -68,7 +68,7 @@ VALUES ('2019-05-08', 'Yannick Warnier (Chamilo)' '{e-learning,éducation}', '..
 
 Non affiché: `description` et `url`
 
---- 
+---
 ## Discussion
 
 Avec une seule table (et des colonnes en plus) on peut stocker une
@@ -80,7 +80,7 @@ grosse partie des info du site.
 
 Table "event":
 
-    speaker                                    date       description                               
+    speaker                                    date       description
     ------------------------------------------ ---------- ------------------------------------------
     Yannick Warnier (Chamilo)                  2019-05-08 Le projet de plateforme e-learning Cham...
     Joël Lambillotte (IMIO)                    2019-04-10 L’intercommunale Imio conçoit et héberg...
@@ -137,7 +137,7 @@ Fabrice Flore-Thebault (Stylelabs, Cent... ...
 Michel Villers							   ...
 Mathieu Goeminne (CETIC)                   ...
 ```
-										   
+
 - chaque orateur va apparaître dans la table speaker et dans la table
   de relation.
 - chaque url va apparaître dans cette même table et la table event.
@@ -219,9 +219,9 @@ Table event_speaker
 jdl=> INSERT INTO event (url, title, description) VALUES ('http://...', 'Example Title', 'Example description');
 INSERT 0 1
 jdl=> select * from event;
- id |    url     |     title     |     description     | date | tags 
+ id |    url     |     title     |     description     | date | tags
 ----+------------+---------------+---------------------+------+------
-  1 | http://... | Example Title | Example description |      | 
+  1 | http://... | Example Title | Example description |      |
 (1 ligne)
 ```
 
@@ -232,7 +232,7 @@ jdl=> select * from event;
 jdl=> INSERT INTO speaker (name, bio) VALUES ('John Doe', 'Example Bio');
 INSERT 0 1
 jdl=> select * from speaker;
- id |   name   |     bio     
+ id |   name   |     bio
 ----+----------+-------------
   1 | John Doe | Example Bio
 (1 ligne)
@@ -255,7 +255,7 @@ INSERT 0 1
 jdl=> SELECT event.url, event.title, speaker.name FROM event
       JOIN event_speaker ON (event_speaker.event = event.id)
 	  JOIN speaker ON (event_speaker.speaker = speaker.id);
-    url     |     title     |   name   
+    url     |     title     |   name
 ------------+---------------+----------
  http://... | Example Title | John Doe
  http://... | Example Title | Jane Doe
@@ -302,7 +302,7 @@ INSERT 0 2
 
 ``` sql
 jdl=> select * from speaker;
- id |   name   |       bio       
+ id |   name   |       bio
 ----+----------+-----------------
   2 | Jane Doe | Another Bio
   1 | John Doe | Updated Bio
@@ -582,7 +582,7 @@ LEFT JOIN "speaker" AS "speaker_1"
 ```
 
 ---
-## 
+##
 
 ---
 ## One-To-Many
@@ -658,7 +658,7 @@ res = View('event', 'title').read(fltr).all()
 print(res)
 ```
 
-``` 
+```
 [('Chamilo: Améliorer l’accès à une éducation de qualité partout dans le monde',)]
 ```
 
@@ -671,7 +671,7 @@ res = View('event', 'title').read(fltr).all()
 print(res)
 ```
 
-``` 
+```
 [('Chamilo: Améliorer l’accès à une éducation de qualité partout dans le monde',)]
 ```
 
@@ -816,13 +816,27 @@ SELECT "event"."date", char_length("event"."title") FROM "event"
 ## ACL
 
 ---
-## 
+## Cadeau Bonux: une api en 60 lignes de code
+
+``` python
+@route('/read/<table>')                             |     for k, v in params.items():
+def read(table, ext='json'):						|         if k not in names or not v.strip():
+    table, *fields = table.split('+')				|             continue
+    view = View(table, fields or None)				|         for op in Expression.builtins:
+    fltr = []										|             if v.startswith(op):
+    args = []										|                 fltr.append('(%s %s {})' % (op, k))
+    params = dict(request.params)					|                 v = shlex.split(v[len(op):])
+    names = [f.name for f in view.fields] + ['id']	|                 args.append(v[0] if len(v) == 0 else v)
+    ...												|                 break
+													|         else:
+													|             fltr.append('(ilike %s {})' % k)
+													|             args.append(v + '%')
+													|
+													|     res = list(view.read(fltr, args=args).dict())
+													|     return {'data': res}
+
+```
+
 
 ---
-## 
-
----
-## 
-
----
-## 
+##

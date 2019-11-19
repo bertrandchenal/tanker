@@ -92,7 +92,7 @@ grosse partie des info du site.</p>
 
 <p>Table &quot;event&quot;:</p>
 
-<pre><code>speaker                                    date       description                               
+<pre><code>speaker                                    date       description
 ------------------------------------------ ---------- ------------------------------------------
 Yannick Warnier (Chamilo)                  2019-05-08 Le projet de plateforme e-learning Cham...
 Joël Lambillotte (IMIO)                    2019-04-10 L’intercommunale Imio conçoit et héberg...
@@ -213,9 +213,9 @@ de relation.</li>
 <div class="highlight"><pre><span></span><span class="n">jdl</span><span class="o">=&gt;</span> <span class="k">INSERT</span> <span class="k">INTO</span> <span class="n">event</span> <span class="p">(</span><span class="n">url</span><span class="p">,</span> <span class="n">title</span><span class="p">,</span> <span class="n">description</span><span class="p">)</span> <span class="k">VALUES</span> <span class="p">(</span><span class="s1">&#39;http://...&#39;</span><span class="p">,</span> <span class="s1">&#39;Example Title&#39;</span><span class="p">,</span> <span class="s1">&#39;Example description&#39;</span><span class="p">);</span>
 <span class="k">INSERT</span> <span class="mi">0</span> <span class="mi">1</span>
 <span class="n">jdl</span><span class="o">=&gt;</span> <span class="k">select</span> <span class="o">*</span> <span class="k">from</span> <span class="n">event</span><span class="p">;</span>
- <span class="n">id</span> <span class="o">|</span>    <span class="n">url</span>     <span class="o">|</span>     <span class="n">title</span>     <span class="o">|</span>     <span class="n">description</span>     <span class="o">|</span> <span class="nb">date</span> <span class="o">|</span> <span class="n">tags</span> 
+ <span class="n">id</span> <span class="o">|</span>    <span class="n">url</span>     <span class="o">|</span>     <span class="n">title</span>     <span class="o">|</span>     <span class="n">description</span>     <span class="o">|</span> <span class="nb">date</span> <span class="o">|</span> <span class="n">tags</span>
 <span class="c1">----+------------+---------------+---------------------+------+------</span>
-  <span class="mi">1</span> <span class="o">|</span> <span class="n">http</span><span class="p">:</span><span class="o">//</span><span class="p">...</span> <span class="o">|</span> <span class="n">Example</span> <span class="n">Title</span> <span class="o">|</span> <span class="n">Example</span> <span class="n">description</span> <span class="o">|</span>      <span class="o">|</span> 
+  <span class="mi">1</span> <span class="o">|</span> <span class="n">http</span><span class="p">:</span><span class="o">//</span><span class="p">...</span> <span class="o">|</span> <span class="n">Example</span> <span class="n">Title</span> <span class="o">|</span> <span class="n">Example</span> <span class="n">description</span> <span class="o">|</span>      <span class="o">|</span>
 <span class="p">(</span><span class="mi">1</span> <span class="n">ligne</span><span class="p">)</span>
 </pre></div>
 </section>
@@ -223,7 +223,7 @@ de relation.</li>
 <div class="highlight"><pre><span></span><span class="n">jdl</span><span class="o">=&gt;</span> <span class="k">INSERT</span> <span class="k">INTO</span> <span class="n">speaker</span> <span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="n">bio</span><span class="p">)</span> <span class="k">VALUES</span> <span class="p">(</span><span class="s1">&#39;John Doe&#39;</span><span class="p">,</span> <span class="s1">&#39;Example Bio&#39;</span><span class="p">);</span>
 <span class="k">INSERT</span> <span class="mi">0</span> <span class="mi">1</span>
 <span class="n">jdl</span><span class="o">=&gt;</span> <span class="k">select</span> <span class="o">*</span> <span class="k">from</span> <span class="n">speaker</span><span class="p">;</span>
- <span class="n">id</span> <span class="o">|</span>   <span class="n">name</span>   <span class="o">|</span>     <span class="n">bio</span>     
+ <span class="n">id</span> <span class="o">|</span>   <span class="n">name</span>   <span class="o">|</span>     <span class="n">bio</span>
 <span class="c1">----+----------+-------------</span>
   <span class="mi">1</span> <span class="o">|</span> <span class="n">John</span> <span class="n">Doe</span> <span class="o">|</span> <span class="n">Example</span> <span class="n">Bio</span>
 <span class="p">(</span><span class="mi">1</span> <span class="n">ligne</span><span class="p">)</span>
@@ -240,7 +240,7 @@ de relation.</li>
 <div class="highlight"><pre><span></span><span class="n">jdl</span><span class="o">=&gt;</span> <span class="k">SELECT</span> <span class="n">event</span><span class="p">.</span><span class="n">url</span><span class="p">,</span> <span class="n">event</span><span class="p">.</span><span class="n">title</span><span class="p">,</span> <span class="n">speaker</span><span class="p">.</span><span class="n">name</span> <span class="k">FROM</span> <span class="n">event</span>
       <span class="k">JOIN</span> <span class="n">event_speaker</span> <span class="k">ON</span> <span class="p">(</span><span class="n">event_speaker</span><span class="p">.</span><span class="n">event</span> <span class="o">=</span> <span class="n">event</span><span class="p">.</span><span class="n">id</span><span class="p">)</span>
       <span class="k">JOIN</span> <span class="n">speaker</span> <span class="k">ON</span> <span class="p">(</span><span class="n">event_speaker</span><span class="p">.</span><span class="n">speaker</span> <span class="o">=</span> <span class="n">speaker</span><span class="p">.</span><span class="n">id</span><span class="p">);</span>
-    <span class="n">url</span>     <span class="o">|</span>     <span class="n">title</span>     <span class="o">|</span>   <span class="n">name</span>   
+    <span class="n">url</span>     <span class="o">|</span>     <span class="n">title</span>     <span class="o">|</span>   <span class="n">name</span>
 <span class="c1">------------+---------------+----------</span>
  <span class="n">http</span><span class="p">:</span><span class="o">//</span><span class="p">...</span> <span class="o">|</span> <span class="n">Example</span> <span class="n">Title</span> <span class="o">|</span> <span class="n">John</span> <span class="n">Doe</span>
  <span class="n">http</span><span class="p">:</span><span class="o">//</span><span class="p">...</span> <span class="o">|</span> <span class="n">Example</span> <span class="n">Title</span> <span class="o">|</span> <span class="n">Jane</span> <span class="n">Doe</span>
@@ -274,7 +274,7 @@ signe d&#39;un problème.</p>
 </section>
 <section class="slide" id="s22"><h2>Résultat</h2>
 <div class="highlight"><pre><span></span><span class="n">jdl</span><span class="o">=&gt;</span> <span class="k">select</span> <span class="o">*</span> <span class="k">from</span> <span class="n">speaker</span><span class="p">;</span>
- <span class="n">id</span> <span class="o">|</span>   <span class="n">name</span>   <span class="o">|</span>       <span class="n">bio</span>       
+ <span class="n">id</span> <span class="o">|</span>   <span class="n">name</span>   <span class="o">|</span>       <span class="n">bio</span>
 <span class="c1">----+----------+-----------------</span>
   <span class="mi">2</span> <span class="o">|</span> <span class="n">Jane</span> <span class="n">Doe</span> <span class="o">|</span> <span class="n">Another</span> <span class="n">Bio</span>
   <span class="mi">1</span> <span class="o">|</span> <span class="n">John</span> <span class="n">Doe</span> <span class="o">|</span> <span class="n">Updated</span> <span class="n">Bio</span>
@@ -659,10 +659,25 @@ year
 </section>
 <section class="slide" id="s51"><h2>ACL</h2>
 </section>
-<section class="slide" id="s52"></section>
+<section class="slide" id="s52"><h2>Cadeau Bonux: une api en 60 lignes de code</h2>
+<div class="highlight"><pre><span></span><span class="nd">@route</span><span class="p">(</span><span class="s1">&#39;/read/&lt;table&gt;&#39;</span><span class="p">)</span>                             <span class="o">|</span>     <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">params</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+<span class="k">def</span> <span class="nf">read</span><span class="p">(</span><span class="n">table</span><span class="p">,</span> <span class="n">ext</span><span class="o">=</span><span class="s1">&#39;json&#39;</span><span class="p">):</span>                        <span class="o">|</span>         <span class="k">if</span> <span class="n">k</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">names</span> <span class="ow">or</span> <span class="ow">not</span> <span class="n">v</span><span class="o">.</span><span class="n">strip</span><span class="p">():</span>
+    <span class="n">table</span><span class="p">,</span> <span class="o">*</span><span class="n">fields</span> <span class="o">=</span> <span class="n">table</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s1">&#39;+&#39;</span><span class="p">)</span>               <span class="o">|</span>             <span class="k">continue</span>
+    <span class="n">view</span> <span class="o">=</span> <span class="n">View</span><span class="p">(</span><span class="n">table</span><span class="p">,</span> <span class="n">fields</span> <span class="ow">or</span> <span class="bp">None</span><span class="p">)</span>              <span class="o">|</span>         <span class="k">for</span> <span class="n">op</span> <span class="ow">in</span> <span class="n">Expression</span><span class="o">.</span><span class="n">builtins</span><span class="p">:</span>
+    <span class="n">fltr</span> <span class="o">=</span> <span class="p">[]</span>                                       <span class="o">|</span>             <span class="k">if</span> <span class="n">v</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="n">op</span><span class="p">):</span>
+    <span class="n">args</span> <span class="o">=</span> <span class="p">[]</span>                                       <span class="o">|</span>                 <span class="n">fltr</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s1">&#39;(</span><span class="si">%s</span><span class="s1"> </span><span class="si">%s</span><span class="s1"> {})&#39;</span> <span class="o">%</span> <span class="p">(</span><span class="n">op</span><span class="p">,</span> <span class="n">k</span><span class="p">))</span>
+    <span class="n">params</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">(</span><span class="n">request</span><span class="o">.</span><span class="n">params</span><span class="p">)</span>                   <span class="o">|</span>                 <span class="n">v</span> <span class="o">=</span> <span class="n">shlex</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="n">v</span><span class="p">[</span><span class="nb">len</span><span class="p">(</span><span class="n">op</span><span class="p">):])</span>
+    <span class="n">names</span> <span class="o">=</span> <span class="p">[</span><span class="n">f</span><span class="o">.</span><span class="n">name</span> <span class="k">for</span> <span class="n">f</span> <span class="ow">in</span> <span class="n">view</span><span class="o">.</span><span class="n">fields</span><span class="p">]</span> <span class="o">+</span> <span class="p">[</span><span class="s1">&#39;id&#39;</span><span class="p">]</span>  <span class="o">|</span>                 <span class="n">args</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">v</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">v</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span> <span class="k">else</span> <span class="n">v</span><span class="p">)</span>
+    <span class="o">...</span>                                             <span class="o">|</span>                 <span class="k">break</span>
+                                                    <span class="o">|</span>         <span class="k">else</span><span class="p">:</span>
+                                                    <span class="o">|</span>             <span class="n">fltr</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s1">&#39;(ilike </span><span class="si">%s</span><span class="s1"> {})&#39;</span> <span class="o">%</span> <span class="n">k</span><span class="p">)</span>
+                                                    <span class="o">|</span>             <span class="n">args</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">v</span> <span class="o">+</span> <span class="s1">&#39;%&#39;</span><span class="p">)</span>
+                                                    <span class="o">|</span>
+                                                    <span class="o">|</span>     <span class="n">res</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">view</span><span class="o">.</span><span class="n">read</span><span class="p">(</span><span class="n">fltr</span><span class="p">,</span> <span class="n">args</span><span class="o">=</span><span class="n">args</span><span class="p">)</span><span class="o">.</span><span class="n">dict</span><span class="p">())</span>
+                                                    <span class="o">|</span>     <span class="k">return</span> <span class="p">{</span><span class="s1">&#39;data&#39;</span><span class="p">:</span> <span class="n">res</span><span class="p">}</span>
+</pre></div>
+</section>
 <section class="slide" id="s53"></section>
-<section class="slide" id="s54"></section>
-<section class="slide" id="s55"></section>
 
 </article><!-- presentation -->
 
