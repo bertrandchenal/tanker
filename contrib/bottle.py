@@ -3,7 +3,7 @@
 
 # Usage:
 # from bottle import install
-# install(BottlePlugin())
+# install(TankerPlugin(cfg))
 
 from functools import wraps
 from tanker import connect
