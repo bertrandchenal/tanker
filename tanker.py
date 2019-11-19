@@ -996,7 +996,7 @@ class View(object):
     def __init__(self, table, fields=None):
         self.ctx = ctx
         self.table = Table.get(table)
-        if fields is None:
+        if not fields:
             fields = list(self.table.default_fields())
         if isinstance(fields, basestring):
             fields = [[fields, fields]]
