@@ -668,7 +668,9 @@ View('event_speaker', {
   utilisée.
 - Le code python ne doit pas savoir si la donnée est neuve (et
   exécuter un insert) ou déjà existante (et exécuter un update).
-- Le code est optimisé pour cette utilisation en batch (typiquement
+- La gestion des clé étrangère (et la résolution des `id`) est
+  complètement abstraite.
+- Tanker est optimisé pour cette utilisation en batch (typiquement
   par paquet de 10k lignes).
 - Il existe un mécanisme de suppression automatique des lignes en base
   de donnée ("purge") pour synchroniser automatiquement les ligne de
