@@ -660,6 +660,21 @@ View('event_speaker', {
 ```
 
 ---
+### Insertion
+
+- Tanker s'appuie sur le mécanisme de `ON CONFLICT` expliqué
+  précédemment.
+- Si `ON CONFLICT` n'est pas disponible, une solution équivalente est
+  utilisée.
+- Le code python ne doit pas savoir si la donnée est neuve (et
+  exécuter un insert) ou déjà existante (et exécuter un update).
+- Le code est optimisé pour cette utilisation en batch (typiquement
+  par paquet de 10k lignes).
+- Il existe un mécanisme de suppression automatique des lignes en base
+  de donnée ("purge") pour synchroniser automatiquement les ligne de
+  la table avec les données passées lors de l'appel à `write`
+
+---
 ## Filtres et agrégats
 
 ---
@@ -965,6 +980,19 @@ def read(table, ext='json'):						|         if k not in names or not v.strip():
 
 ```
 
+
+---
+### Cas d'utilisations
+
+- Data warehouse: Tanker est utilisé maintenir une base de données
+  occupant 40Go et contentant 70 tables qui sont la collection de
+  données provenant d'une trentaine d'api. Cette DB est exposée en
+  interne à des analystes ou à des solutions BI via une api web
+  s'appuyant elle aussi sur Tanker.
+
+- Maintenance d'un référentiel de centrales électriques en Europe de
+  l'ouest. Tanker est utilisé pour synchroniser la base de donnée
+  avec des feuilles Excel.
 
 ---
 # Merci

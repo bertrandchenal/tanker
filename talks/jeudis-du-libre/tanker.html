@@ -542,9 +542,25 @@ LEFT JOIN "event" AS "event_1"
 <span class="p">})</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">data</span><span class="p">)</span>
 </pre></div>
 </section>
-<section class="slide" id="s44"><h2>Filtres et agrégats</h2>
+<section class="slide" id="s44"><h3>Insertion</h3>
+
+<ul>
+<li>Tanker s&#39;appuie sur le mécanisme de <code>ON CONFLICT</code> expliqué
+précédemment.</li>
+<li>Si <code>ON CONFLICT</code> n&#39;est pas disponible, une solution équivalente est
+utilisée.</li>
+<li>Le code python ne doit pas savoir si la donnée est neuve (et
+exécuter un insert) ou déjà existante (et exécuter un update).</li>
+<li>Le code est optimisé pour cette utilisation en batch (typiquement
+par paquet de 10k lignes).</li>
+<li>Il existe un mécanisme de suppression automatique des lignes en base
+de donnée (&quot;purge&quot;) pour synchroniser automatiquement les ligne de
+la table avec les données passées lors de l&#39;appel à <code>write</code></li>
+</ul>
 </section>
-<section class="slide" id="s45"><h3>Filtres</h3>
+<section class="slide" id="s45"><h2>Filtres et agrégats</h2>
+</section>
+<section class="slide" id="s46"><h3>Filtres</h3>
 <div class="highlight"><pre><span></span><span class="n">fltr</span> <span class="o">=</span> <span class="p">{</span><span class="s1">&#39;date&#39;</span><span class="p">:</span> <span class="s1">&#39;2019-05-08&#39;</span><span class="p">}</span>
 <span class="n">res</span> <span class="o">=</span> <span class="n">View</span><span class="p">(</span><span class="s1">&#39;event&#39;</span><span class="p">,</span> <span class="s1">&#39;title&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">read</span><span class="p">(</span><span class="n">fltr</span><span class="p">)</span><span class="o">.</span><span class="n">all</span><span class="p">()</span>
 <span class="k">print</span><span class="p">(</span><span class="n">res</span><span class="p">)</span>
@@ -552,7 +568,7 @@ LEFT JOIN "event" AS "event_1"
 
 <pre><code>[('Chamilo: Améliorer l’accès à une éducation de qualité partout dans le monde',)]</code></pre>
 </section>
-<section class="slide" id="s46"><h3>Filtres</h3>
+<section class="slide" id="s47"><h3>Filtres</h3>
 <div class="highlight"><pre><span></span><span class="n">fltr</span> <span class="o">=</span> <span class="s1">&#39;(= date &quot;2019-05-08&quot;)&#39;</span>
 <span class="n">res</span> <span class="o">=</span> <span class="n">View</span><span class="p">(</span><span class="s1">&#39;event&#39;</span><span class="p">,</span> <span class="s1">&#39;title&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">read</span><span class="p">(</span><span class="n">fltr</span><span class="p">)</span><span class="o">.</span><span class="n">all</span><span class="p">()</span>
 <span class="k">print</span><span class="p">(</span><span class="n">res</span><span class="p">)</span>
@@ -560,7 +576,7 @@ LEFT JOIN "event" AS "event_1"
 
 <pre><code>[('Chamilo: Améliorer l’accès à une éducation de qualité partout dans le monde',)]</code></pre>
 </section>
-<section class="slide" id="s47"><h3>Filtres</h3>
+<section class="slide" id="s48"><h3>Filtres</h3>
 <div class="highlight"><pre><span></span><span class="n">fltr</span> <span class="o">=</span> <span class="s1">&#39;(and (&gt;= date &quot;2019-01-01&quot;) (&lt; date &quot;2020-01-01&quot;))&#39;</span>
 <span class="n">res</span> <span class="o">=</span> <span class="n">View</span><span class="p">(</span><span class="s1">&#39;event&#39;</span><span class="p">,</span> <span class="s1">&#39;title&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">read</span><span class="p">(</span><span class="n">fltr</span><span class="p">)</span><span class="o">.</span><span class="n">all</span><span class="p">()</span>
 <span class="k">print</span><span class="p">(</span><span class="n">res</span><span class="p">)</span>
@@ -572,7 +588,7 @@ LEFT JOIN "event" AS "event_1"
  ('pfSense, un firewall “libre” pour la sécurisation des réseaux domestiques et
  d’entreprises',)]</code></pre>
 </section>
-<section class="slide" id="s48"><h3>Filtres</h3>
+<section class="slide" id="s49"><h3>Filtres</h3>
 <div class="highlight"><pre><span></span><span class="n">fltr</span> <span class="o">=</span> <span class="s1">&#39;(ilike title &quot;%python%&quot;)&#39;</span>
 <span class="n">res</span> <span class="o">=</span> <span class="n">View</span><span class="p">(</span><span class="s1">&#39;event&#39;</span><span class="p">,</span> <span class="p">[</span><span class="s1">&#39;date&#39;</span><span class="p">,</span> <span class="s1">&#39;title&#39;</span><span class="p">])</span><span class="o">.</span><span class="n">read</span><span class="p">(</span><span class="n">fltr</span><span class="p">)</span><span class="o">.</span><span class="n">all</span><span class="p">()</span>
 <span class="k">print</span><span class="p">(</span><span class="n">res</span><span class="p">)</span>
@@ -581,7 +597,7 @@ LEFT JOIN "event" AS "event_1"
 <pre><code>[(datetime.date(2015, 12, 20), 'Pour une bonne pédagogie de
  la programmation web avec Python & Django')]</code></pre>
 </section>
-<section class="slide" id="s49"><h3>Agrégats</h3>
+<section class="slide" id="s50"><h3>Agrégats</h3>
 <div class="highlight"><pre><span></span><span class="k">print</span><span class="p">(</span><span class="n">View</span><span class="p">(</span><span class="s1">&#39;speaker&#39;</span><span class="p">,</span> <span class="s1">&#39;(count *)&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">read</span><span class="p">()</span><span class="o">.</span><span class="n">one</span><span class="p">())</span>
 </pre></div>
 
@@ -591,7 +607,7 @@ LEFT JOIN "event" AS "event_1"
 
 <pre><code>(78,)</code></pre>
 </section>
-<section class="slide" id="s50"><h3>Agrégats</h3>
+<section class="slide" id="s51"><h3>Agrégats</h3>
 <div class="highlight"><pre><span></span><span class="n">res</span> <span class="o">=</span> <span class="n">View</span><span class="p">(</span><span class="s1">&#39;event_speaker&#39;</span><span class="p">,</span> <span class="p">[</span>
     <span class="s1">&#39;speaker.name&#39;</span><span class="p">,</span>
     <span class="s1">&#39;(count *)&#39;</span><span class="p">,</span>
@@ -606,7 +622,7 @@ LEFT JOIN "event" AS "event_1"
 ('Robert Viseur est Docteur ...', 2)
 ('Robert Viseur', 2)</code></pre>
 </section>
-<section class="slide" id="s51"><h3>Cast</h3>
+<section class="slide" id="s52"><h3>Cast</h3>
 <div class="highlight"><pre><span></span><span class="n">df</span> <span class="o">=</span> <span class="n">View</span><span class="p">(</span><span class="s1">&#39;event&#39;</span><span class="p">,</span> <span class="p">{</span>
      <span class="s1">&#39;year&#39;</span><span class="p">:</span> <span class="s1">&#39;(extract &quot;year&quot; date )&#39;</span><span class="p">,</span>
      <span class="s1">&#39;month&#39;</span><span class="p">:</span> <span class="s1">&#39;(extract &quot;month&quot; date )&#39;</span><span class="p">,</span>
@@ -615,7 +631,7 @@ LEFT JOIN "event" AS "event_1"
 <span class="k">print</span><span class="p">(</span><span class="n">df</span><span class="o">.</span><span class="n">set_index</span><span class="p">([</span><span class="s1">&#39;year&#39;</span><span class="p">,</span> <span class="s1">&#39;month&#39;</span><span class="p">])</span><span class="o">.</span><span class="n">unstack</span><span class="p">()</span><span class="o">.</span><span class="n">fillna</span><span class="p">(</span><span class="s1">&#39;&#39;</span><span class="p">))</span>
 </pre></div>
 </section>
-<section class="slide" id="s52"><h3>Cast</h3>
+<section class="slide" id="s53"><h3>Cast</h3>
 <div class="highlight"><pre><span></span>count
 month   1.0  2.0  3.0  4.0  5.0  6.0  8.0  9.0  10.0 11.0 12.0
 year
@@ -630,7 +646,7 @@ year
 2019.0          1    1    1    1
 </pre></div>
 </section>
-<section class="slide" id="s53"><h3>Expression</h3>
+<section class="slide" id="s54"><h3>Expression</h3>
 <div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">tanker</span> <span class="kn">import</span> <span class="n">Expression</span>
 
 <span class="c1"># On ajoute le support pour une nouvelle expression sql</span>
@@ -644,7 +660,7 @@ year
      <span class="k">print</span><span class="p">(</span><span class="n">df</span><span class="p">)</span>
 </pre></div>
 </section>
-<section class="slide" id="s54"><h3>Expression</h3>
+<section class="slide" id="s55"><h3>Expression</h3>
 <div class="highlight"><pre><span></span><span class="k">SELECT</span> <span class="ss">&quot;event&quot;</span><span class="p">.</span><span class="ss">&quot;date&quot;</span><span class="p">,</span> <span class="k">char_length</span><span class="p">(</span><span class="ss">&quot;event&quot;</span><span class="p">.</span><span class="ss">&quot;title&quot;</span><span class="p">)</span> <span class="k">FROM</span> <span class="ss">&quot;event&quot;</span>
   <span class="k">ORDER</span> <span class="k">BY</span> <span class="k">char_length</span><span class="p">(</span><span class="ss">&quot;event&quot;</span><span class="p">.</span><span class="ss">&quot;title&quot;</span><span class="p">)</span> <span class="k">desc</span> <span class="k">LIMIT</span> <span class="mi">5</span>
 </pre></div>
@@ -656,7 +672,7 @@ year
 3  2012-03-04  152
 4  2012-06-26  148</code></pre>
 </section>
-<section class="slide" id="s55"><h3>ACL</h3>
+<section class="slide" id="s56"><h3>ACL</h3>
 
 <p>les ACL (access control list) permettent de définir des filtres de
 manière globales:</p>
@@ -676,7 +692,7 @@ manière globales:</p>
      <span class="k">print</span><span class="p">(</span><span class="n">view</span><span class="o">.</span><span class="n">read</span><span class="p">()</span><span class="o">.</span><span class="n">one</span><span class="p">())</span> <span class="c1"># -&gt; (78,)</span>
 </pre></div>
 </section>
-<section class="slide" id="s56"><h3>ACL</h3>
+<section class="slide" id="s57"><h3>ACL</h3>
 <div class="highlight"><pre><span></span><span class="n">acl_read</span> <span class="o">=</span> <span class="p">{</span>
      <span class="s1">&#39;event&#39;</span><span class="p">:</span> <span class="p">[</span><span class="s1">&#39;(&gt;= event.date {first_day})&#39;</span><span class="p">],</span>
      <span class="s1">&#39;speaker&#39;</span><span class="p">:</span> <span class="p">[</span>
@@ -699,14 +715,14 @@ manière globales:</p>
      <span class="k">print</span><span class="p">(</span><span class="n">res</span><span class="p">)</span> <span class="c1"># -&gt; (4,)</span>
 </pre></div>
 </section>
-<section class="slide" id="s57"><h2>Ligne de commande et api web</h2>
+<section class="slide" id="s58"><h2>Ligne de commande et api web</h2>
 </section>
-<section class="slide" id="s58"><h3>tk: la ligne de commande de tanker</h3>
+<section class="slide" id="s59"><h3>tk: la ligne de commande de tanker</h3>
 <div class="highlight"><pre><span></span>$ cat .tk.yaml 
 db_uri: postgresql:///jdl
 </pre></div>
 </section>
-<section class="slide" id="s59"><h3>tk: la ligne de commande de tanker</h3>
+<section class="slide" id="s60"><h3>tk: la ligne de commande de tanker</h3>
 <div class="highlight"><pre><span></span>$ tk info
 all_in_one_event
 event
@@ -721,7 +737,7 @@ title <span class="o">(</span>VARCHAR<span class="o">)</span>
 url <span class="o">(</span>VARCHAR<span class="o">)</span>
 </pre></div>
 </section>
-<section class="slide" id="s60"><h3>tk: la ligne de commande de tanker</h3>
+<section class="slide" id="s61"><h3>tk: la ligne de commande de tanker</h3>
 <div class="highlight"><pre><span></span>$ tk <span class="nb">read</span> event_speaker -l <span class="m">5</span>
 
 speaker.name,event.url
@@ -732,7 +748,7 @@ Michel Villers,http://jeudisdulibre.be/2019/02/07/mons-le-21-fevrier-pfsense-un-
 Mathieu Goeminne <span class="o">(</span>CETIC<span class="o">)</span>,http://jeudisdulibre.be/2018/12/21/mons-le-17-janvier-...
 </pre></div>
 </section>
-<section class="slide" id="s61"><h3>tk: la ligne de commande de tanker</h3>
+<section class="slide" id="s62"><h3>tk: la ligne de commande de tanker</h3>
 <div class="highlight"><pre><span></span>$ tk <span class="nb">read</span> event_speaker speaker.name event.date -F <span class="s2">&quot;(or (ilike title &#39;%python%&#39;) (ilike title &#39;%ruby%&#39;))&quot;</span> -t
 
 speaker.name                               event.date
@@ -749,7 +765,7 @@ Sauver le Monde ? Vers une économie collaborative par la mise en commun des res
 MOOC – Une façon OUVERTE d’apprendre LIBREMENT ? Exemples avec ITyPa <span class="o">(</span>sujet généré par les ...
 </pre></div>
 </section>
-<section class="slide" id="s62"><h3>Cadeau Bonux: une api en 60 lignes de code</h3>
+<section class="slide" id="s63"><h3>Cadeau Bonux: une api en 60 lignes de code</h3>
 <div class="highlight"><pre><span></span><span class="nd">@route</span><span class="p">(</span><span class="s1">&#39;/read/&lt;table&gt;&#39;</span><span class="p">)</span>                             <span class="o">|</span>     <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">params</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
 <span class="k">def</span> <span class="nf">read</span><span class="p">(</span><span class="n">table</span><span class="p">,</span> <span class="n">ext</span><span class="o">=</span><span class="s1">&#39;json&#39;</span><span class="p">):</span>                        <span class="o">|</span>         <span class="k">if</span> <span class="n">k</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">names</span> <span class="ow">or</span> <span class="ow">not</span> <span class="n">v</span><span class="o">.</span><span class="n">strip</span><span class="p">():</span>
     <span class="n">table</span><span class="p">,</span> <span class="o">*</span><span class="n">fields</span> <span class="o">=</span> <span class="n">table</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s1">&#39;+&#39;</span><span class="p">)</span>               <span class="o">|</span>             <span class="k">continue</span>
@@ -767,7 +783,20 @@ MOOC – Une façon OUVERTE d’apprendre LIBREMENT ? Exemples avec ITyPa <span 
                                                     <span class="o">|</span>     <span class="k">return</span> <span class="p">{</span><span class="s1">&#39;data&#39;</span><span class="p">:</span> <span class="n">res</span><span class="p">}</span>
 </pre></div>
 </section>
-<section class="slide" id="s63"><h1>Merci</h1>
+<section class="slide" id="s64"><h3>Cas d&#39;utilisations</h3>
+
+<ul>
+<li><p>Data warehouse: Tanker est utilisé maintenir une base de données
+occupant 40Go et contentant 70 tables qui sont la collection de
+données provenant d&#39;une trentaine d&#39;api. Cette DB est exposée en
+interne à des analystes ou à des solutions BI via une api web
+s&#39;appuyant elle aussi sur Tanker.</p></li>
+<li><p>Maintenance d&#39;un référentiel de centrales électriques en Europe de
+l&#39;ouest. Tanker est utilisé pour synchroniser la base de donnée
+avec des feuilles Excel.</p></li>
+</ul>
+</section>
+<section class="slide" id="s65"><h1>Merci</h1>
 </section>
 
 </article><!-- presentation -->
