@@ -25,31 +25,28 @@
 <section class="slide" id="s1"><h3>Planning</h3>
 
 <ul>
-<li>Organisation des données: normalisation, choix des index</li>
-<li>Rôles des données: OLAP vs OLTP</li>
-<li>Manipulation des donnée: modèle objet vs modèle relationel</li>
+<li>Normalisation des tables</li>
+<li>Choix des index</li>
 <li>Tanker</li>
 <li>Lecture &amp; écriture</li>
-<li>Filtre &amp; agrégats</li>
-<li>Ligne de commande et interface web</li>
+<li>Filtres &amp; agrégats</li>
+<li>Ligne de commande et api web</li>
 </ul>
 </section>
 <section class="slide" id="s2"><h2>Normalisation des tables</h2>
 </section>
 <section class="slide" id="s3"><h3>Exemple: jeudis du libre</h3>
 
-<p>Exemple de jeux de données: http://jeudisdulibre.be/.</p>
+<p>Exemple de jeux de données: <a href="http://jeudisdulibre.be/">http://jeudisdulibre.be/</a>.</p>
 
 <p>Information que l&#39;on peut collecter pour chaque évènement:</p>
-
-<ul>
-<li>title</li>
-<li>date</li>
-<li>speaker</li>
-<li>bio</li>
-<li>description</li>
-<li>tags</li>
-</ul>
+<div class="highlight"><pre><span></span>- title
+- date
+- speaker
+- bio
+- description
+- tags
+</pre></div>
 </section>
 <section class="slide" id="s4"><h3>Version naïve</h3>
 
@@ -71,8 +68,7 @@
 </pre></div>
 </section>
 <section class="slide" id="s5"><h3>Version naïve</h3>
-
-<pre><code>date       speaker                                    tags                                            bio
+<div class="highlight"><pre><span></span>date       speaker                                    tags                                            bio
 ---------- ------------------------------------------ ----------------------------------------------- ---
 2019-05-08 Yannick Warnier (Chamilo)                  {e-learning,éducation}                          ...
 2019-04-10 Joël Lambillotte (IMIO)                    {communauté,développement}                      ...
@@ -83,82 +79,79 @@
 2018-11-06 Said Eloudrhiri                            {blockchain,sécurité}
 2018-10-05 Robert Viseur                              {automation,photographie,robert viseur}         ...
 2018-05-04 Christopher Richard et Quentin Carpenti... {éducation,mons,programmation}                  ...
-2018-02-15 Michaël Hoste (80LIMIT)                    {Javascript,mons,programmation,web}</code></pre>
+    2018-02-15 Michaël Hoste (80LIMIT)                    {Javascript,mons,programmation,web}
+</pre></div>
 
 <p>Non affiché: <code>description</code> et <code>url</code></p>
 </section>
 <section class="slide" id="s6"><h3>Discussion</h3>
 
-<p>Avec une seule table (et des colonnes en plus) on peut stocker une
-grosse partie des info du site.</p>
+<ul>
+<li>Ok pour une utilisation temporaire</li>
+<li>Pose problème pour l&#39;édition des données</li>
+<li>Problématique aussi sur des gros jeux de données</li>
+</ul>
 </section>
 <section class="slide" id="s7"><h3>Version normalisée - clés naturelles</h3>
 
-<p>Table &quot;event&quot;:</p>
-
-<pre><code>speaker                                    date       description
------------------------------------------- ---------- ------------------------------------------
-Yannick Warnier (Chamilo)                  2019-05-08 Le projet de plateforme e-learning Cham...
-Joël Lambillotte (IMIO)                    2019-04-10 L’intercommunale Imio conçoit et héberg...
-Fabrice Flore-Thebault (Stylelabs, Cent... 2019-03-03 Ansible est une plate-forme d’automatis...
-Michel Villers                             2019-02-07 Pfsense est un routeur/pare-feu, dérivé...
-Mathieu Goeminne (CETIC)                   2018-12-21 Les logiciels open source ont une place...
-Laurence Baclin (HELHa)                    2018-11-24 Quoi de neuf dans l’univers de la progr...
-Said Eloudrhiri                            2018-11-06 De nos jours, les blockchains restent i...
-Robert Viseur                              2018-10-05 Les logiciels et le matériels libres pe...
-Christopher Richard et Quentin Carpenti... 2018-05-04 Apprendre la logique de programmation e...
-Michaël Hoste (80LIMIT)                    2018-02-15 Le développement JavaScript est un véri...</code></pre>
+<p>Table <code>speaker</code>:</p>
+<div class="highlight"><pre><span></span>speaker                                    bio
+------------------------------------------ ------------------------------------------
+Yannick Warnier (Chamilo)                  Diplômé en Sciences In...
+Joël Lambillotte (IMIO)                    Joël Lambillotte est d...
+Fabrice Flore-Thebault (Stylelabs, Cent... Fabrice Flore-Thebault...
+</pre></div>
 </section>
 <section class="slide" id="s8"><h3>Version normalisée - clés naturelles</h3>
 
-<p>Table &quot;speaker&quot;:</p>
+<p>Table <code>event</code>:</p>
+<div class="highlight"><pre><span></span>speaker                                    url  date       description
+------------------------------------------ ---- ---------- ------------------------------------------
+Yannick Warnier (Chamilo)                  ...  2019-05-08 Le projet de plateforme e-learning Cham...
+Joël Lambillotte (IMIO)                    ...  2019-04-10 L’intercommunale Imio conçoit et héberg...
+Fabrice Flore-Thebault (Stylelabs, Cent... ...  2019-03-03 Ansible est une plate-forme d’automatis...
+Michel Villers                             ...  2019-02-07 Pfsense est un routeur/pare-feu, dérivé...
+Mathieu Goeminne (CETIC)                   ...  2018-12-21 Les logiciels open source ont une place...
+Laurence Baclin (HELHa)                    ...  2018-11-24 Quoi de neuf dans l’univers de la progr...
+Said Eloudrhiri                            ...  2018-11-06 De nos jours, les blockchains restent i...
+Robert Viseur                              ...  2018-10-05 Les logiciels et le matériels libres pe...
+Christopher Richard et Quentin Carpenti... ...  2018-05-04 Apprendre la logique de programmation e...
+Michaël Hoste (80LIMIT)                    ...  2018-02-15 Le développement JavaScript est un véri...
+</pre></div>
 
-<pre><code>speaker                                    url  bio
------------------------------------------- ---- ------------------------------------------
-Yannick Warnier (Chamilo)                  ...  Diplômé en Sciences In...
-Joël Lambillotte (IMIO)                    ...  Joël Lambillotte est d...
-Fabrice Flore-Thebault (Stylelabs, Cent... ...  Fabrice Flore-Thebault...
-                                           ...</code></pre>
-
-<p>Note: Le champ speaker pose problème, certaines présentations on plusieurs orateurs.</p>
+<p>Note: La colonne <code>speaker</code> pose problème, certaines présentations on plusieurs orateurs.</p>
 </section>
 <section class="slide" id="s9"><h3>Version normalisée - clés naturelles</h3>
 
-<p>Table &quot;tag&quot;:</p>
-
-<pre><code>tags                     url
------------------------  -----
-BigData                  ...
-automation               ...
-automation               ...
-blockchain               ...</code></pre>
-</section>
-<section class="slide" id="s10"><h3>Discussion</h3>
-
-<ul>
-<li>Beaucoup d&#39;exemple sur le web (en particulier Wikipedia) mettent en
-avant cette approche.</li>
-<li>En pratique on va être vite amené a utiliser des clés naturelles
-composites, par exemple si on veut gérer plusieurs orateurs par
-évènement, on doit passer par une table en plus:</li>
-</ul>
-
-<pre><code>speaker                                    url
+<p>On supprime la colonne <code>speaker</code> de <code>event</code> et on ajoute la table
+<code>event_speaker</code>:</p>
+<div class="highlight"><pre><span></span>speaker                                    url
 ------------------------------------------ ---
 Yannick Warnier (Chamilo)                  ...
 Joël Lambillotte (IMIO)                    ...
 Fabrice Flore-Thebault (Stylelabs, Cent... ...
 Michel Villers                             ...
-Mathieu Goeminne (CETIC)                   ...</code></pre>
+Mathieu Goeminne (CETIC)                   ...
+</pre></div>
 
 <ul>
 <li>chaque orateur va apparaître dans la table speaker et dans la table
 de relation.</li>
 <li>chaque url va apparaître dans cette même table et la table event.</li>
+</ul>
+</section>
+<section class="slide" id="s10"><h3>Discussion</h3>
+
+<ul>
+<li>Beaucoup d&#39;exemples sur le web (entre autre Wikipedia) mettent en
+avant cette approche.</li>
+<li>En pratique on va être vite amené a utiliser des clés naturelles
+composites qui peuvent devenir complexes (quid de modéliser un score
+par spectateur par speaker et par évènement).</li>
 <li>De plus ...</li>
 </ul>
 </section>
-<section class="slide" id="s11"><h3>Discussion (suite)</h3>
+<section class="slide" id="s11"><h3>Discussion</h3>
 <div class="highlight"><pre><span></span><span class="n">jdl</span><span class="o">=&gt;</span> <span class="k">create</span> <span class="k">table</span> <span class="n">speaker</span> <span class="p">(</span><span class="n">name</span> <span class="nb">varchar</span> <span class="k">primary</span> <span class="k">key</span><span class="p">);</span>
 <span class="k">CREATE</span> <span class="k">TABLE</span>
 <span class="n">jdl</span><span class="o">=&gt;</span> <span class="k">create</span> <span class="k">table</span> <span class="n">event</span> <span class="p">(</span><span class="n">url</span> <span class="nb">varchar</span> <span class="k">primary</span> <span class="k">key</span><span class="p">);</span>
@@ -190,8 +183,6 @@ de relation.</li>
   <span class="ss">&quot;tags&quot;</span> <span class="nb">VARCHAR</span><span class="p">[]</span>
   <span class="p">)</span>
 </pre></div>
-
-<p>Note: utiliser un array de varchar pour les tags</p>
 </section>
 <section class="slide" id="s13"><h3>Version normalisée - clés artificielle</h3>
 
@@ -251,7 +242,7 @@ de relation.</li>
 <span class="p">(</span><span class="mi">2</span> <span class="n">lignes</span><span class="p">)</span>
 </pre></div>
 </section>
-<section class="slide" id="s19"><h2>Index et clé uniques</h2>
+<section class="slide" id="s19"><h2>Indexes et clés uniques</h2>
 </section>
 <section class="slide" id="s20"><h3>Question</h3>
 
@@ -259,7 +250,7 @@ de relation.</li>
 speaker avec le même nom ?</p>
 <div class="highlight"><pre><span></span><span class="k">CREATE</span> <span class="k">UNIQUE</span> <span class="k">INDEX</span> <span class="ss">&quot;unique_index_event&quot;</span> <span class="k">ON</span> <span class="ss">&quot;event&quot;</span> <span class="p">(</span><span class="ss">&quot;url&quot;</span><span class="p">);</span>
 <span class="k">CREATE</span> <span class="k">UNIQUE</span> <span class="k">INDEX</span> <span class="ss">&quot;unique_index_speaker&quot;</span> <span class="k">ON</span> <span class="ss">&quot;speaker&quot;</span> <span class="p">(</span><span class="ss">&quot;name&quot;</span><span class="p">);</span>
-<span class="k">CREATE</span> <span class="k">UNIQUE</span> <span class="k">INDEX</span> <span class="ss">&quot;unique_index_event_speaker&quot;</span> <span class="k">ON</span> <span class="ss">&quot;event_speaker&quot;</span>  <span class="p">(</span><span class="ss">&quot;speaker&quot;</span><span class="p">,</span> <span class="ss">&quot;event&quot;</span><span class="p">);</span>
+<span class="k">CREATE</span> <span class="k">UNIQUE</span> <span class="k">INDEX</span> <span class="ss">&quot;unique_index_event_speaker&quot;</span> <span class="k">ON</span> <span class="ss">&quot;event_speaker&quot;</span> <span class="p">(</span><span class="ss">&quot;speaker&quot;</span><span class="p">,</span> <span class="ss">&quot;event&quot;</span><span class="p">);</span>
 </pre></div>
 
 <p>De manière générale, une table sans une (et une seule) contrainte d&#39;unicité est souvent
@@ -313,7 +304,8 @@ signe d&#39;un problème.</p>
     <span class="nt">tags</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">varchar[]</span>
   <span class="nt">key</span><span class="p">:</span>
     <span class="p p-Indicator">-</span> <span class="l l-Scalar l-Scalar-Plain">url</span>
-<span class="p p-Indicator">-</span> <span class="nt">table</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">speaker</span>
+</pre></div>
+<div class="highlight"><pre><span></span><span class="p p-Indicator">-</span> <span class="nt">table</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">speaker</span>
   <span class="nt">columns</span><span class="p">:</span>
     <span class="nt">name</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">varchar</span>
     <span class="nt">bio</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">varchar</span>
@@ -429,7 +421,7 @@ DEBUG:2019-11-17 19:53:54: COMMIT</code></pre>
 <p>Crée un <code>contextmanager</code> qui garanti l&#39;atomicité du block de code</p>
 </section>
 <section class="slide" id="s32"><h3>Discussion</h3>
-<div class="highlight"><pre><span></span><span class="n">view</span>  <span class="o">=</span> <span class="n">View</span><span class="p">(</span><span class="s1">&#39;speaker&#39;</span><span class="p">,</span> <span class="p">[</span><span class="s1">&#39;name&#39;</span><span class="p">,</span> <span class="s1">&#39;bio&#39;</span><span class="p">])</span> <span class="c1"># INSERT INTO speaker (name, bio)</span>
+<div class="highlight"><pre><span></span><span class="n">view</span> <span class="o">=</span> <span class="n">View</span><span class="p">(</span><span class="s1">&#39;speaker&#39;</span><span class="p">,</span> <span class="p">[</span><span class="s1">&#39;name&#39;</span><span class="p">,</span> <span class="s1">&#39;bio&#39;</span><span class="p">])</span> <span class="c1"># INSERT INTO speaker (name, bio)</span>
 <span class="n">view</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">values</span><span class="p">)</span>                       <span class="c1"># VALUES (...) ON CONFLICT ...</span>
 </pre></div>
 </section>
@@ -455,7 +447,7 @@ DEBUG:2019-11-17 19:53:54: COMMIT</code></pre>
 <span class="k">print</span><span class="p">(</span><span class="n">df</span><span class="p">)</span>
 </pre></div>
 
-<pre><code>name              bio
+<pre><code>       name              bio
 0  Jane Doe      Another Bio
 1  John Doe      Updated Bio
 2  Jack Doe  yet another Bio</code></pre>
@@ -465,26 +457,25 @@ DEBUG:2019-11-17 19:53:54: COMMIT</code></pre>
 <span class="k">print</span><span class="p">(</span><span class="n">df</span><span class="p">)</span>
 </pre></div>
 
-<pre><code>url  date          description          title
+<pre><code>          url  date          description          title
 0  http://...  None  Example description  Example Title</code></pre>
 </section>
 <section class="slide" id="s37"><h3>Lecture</h3>
-<div class="highlight"><pre><span></span><span class="n">df</span> <span class="o">=</span> <span class="n">View</span><span class="p">(</span><span class="s1">&#39;event_speaker&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">read</span><span class="p">()</span><span class="o">.</span><span class="n">df</span><span class="p">()</span>
-<span class="k">print</span><span class="p">(</span><span class="n">df</span><span class="p">)</span>
+<div class="highlight"><pre><span></span><span class="k">for</span> <span class="n">record</span> <span class="ow">in</span> <span class="n">View</span><span class="p">(</span><span class="s1">&#39;event_speaker&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">read</span><span class="p">()</span><span class="o">.</span><span class="n">dict</span><span class="p">():</span>
+    <span class="k">print</span><span class="p">(</span><span class="n">record</span><span class="p">)</span>
 </pre></div>
 
-<pre><code>speaker.name   event.url
-0     John Doe  http://...
-1     Jane Doe  http://...</code></pre>
+<pre><code>{'speaker.name': 'John Doe', 'event.url': 'http://...'}
+{'speaker.name': 'Jane Doe', 'event.url': 'http://...'}</code></pre>
 </section>
 <section class="slide" id="s38"><h3>Lecture</h3>
 <div class="highlight"><pre><span></span><span class="n">df</span> <span class="o">=</span> <span class="n">View</span><span class="p">(</span><span class="s1">&#39;event_speaker&#39;</span><span class="p">,</span> <span class="p">[</span><span class="s1">&#39;event.title&#39;</span><span class="p">,</span> <span class="s1">&#39;speaker.name&#39;</span><span class="p">,</span> <span class="s1">&#39;speaker.bio&#39;</span><span class="p">])</span><span class="o">.</span><span class="n">read</span><span class="p">()</span><span class="o">.</span><span class="n">df</span><span class="p">()</span>
 <span class="k">print</span><span class="p">(</span><span class="n">df</span><span class="p">)</span>
 </pre></div>
 
-<pre><code>event.title speaker.name  speaker.bio
+<pre><code>     event.title speaker.name  speaker.bio
 0  Example Title     John Doe  Updated Bio
-1  Example Title     Jane Doe  Another Bio```</code></pre>
+1  Example Title     Jane Doe  Another Bio</code></pre>
 </section>
 <section class="slide" id="s39"><h3>Discussion</h3>
 <div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">tanker</span> <span class="kn">import</span> <span class="n">logger</span>
@@ -517,7 +508,7 @@ DEBUG:2019-11-17 19:53:54: COMMIT</code></pre>
 <span class="k">print</span><span class="p">(</span><span class="n">df</span><span class="p">)</span>
 </pre></div>
 
-<pre><code>name events.event.title
+<pre><code>       name events.event.title
 0  John Doe      Example Title
 1  Jane Doe      Example Title
 2  Jack Doe               None</code></pre>
@@ -575,14 +566,13 @@ LEFT JOIN "event" AS "event_1"
 <span class="k">print</span><span class="p">(</span><span class="n">res</span><span class="p">)</span>
 </pre></div>
 
-<pre><code>[('Chamilo: Améliorer l’accès à une éducation de qualité partout
- dans le monde',), ('Imio : clés du succès du logiciel libre dans
- les communes wallonnes',), ('Automatiser son infrastructure avec
- Ansible, tester grâce à Molecule',), ('pfSense, un firewall
- “libre” pour la sécurisation des réseaux domestiques et
+<pre><code>[('Chamilo: Améliorer l’accès à une éducation de qualité partout dans le monde',),
+ ('Imio : clés du succès du logiciel libre dans les communes wallonnes',),
+ ('Automatiser son infrastructure avec Ansible, tester grâce à Molecule',),
+ ('pfSense, un firewall “libre” pour la sécurisation des réseaux domestiques et
  d’entreprises',)]</code></pre>
 </section>
-<section class="slide" id="s48"><h2>Filtres</h2>
+<section class="slide" id="s48"><h3>Filtres</h3>
 <div class="highlight"><pre><span></span><span class="n">fltr</span> <span class="o">=</span> <span class="s1">&#39;(ilike title &quot;%python%&quot;)&#39;</span>
 <span class="n">res</span> <span class="o">=</span> <span class="n">View</span><span class="p">(</span><span class="s1">&#39;event&#39;</span><span class="p">,</span> <span class="p">[</span><span class="s1">&#39;date&#39;</span><span class="p">,</span> <span class="s1">&#39;title&#39;</span><span class="p">])</span><span class="o">.</span><span class="n">read</span><span class="p">(</span><span class="n">fltr</span><span class="p">)</span><span class="o">.</span><span class="n">all</span><span class="p">()</span>
 <span class="k">print</span><span class="p">(</span><span class="n">res</span><span class="p">)</span>
@@ -625,9 +615,8 @@ LEFT JOIN "event" AS "event_1"
 <span class="k">print</span><span class="p">(</span><span class="n">df</span><span class="o">.</span><span class="n">set_index</span><span class="p">([</span><span class="s1">&#39;year&#39;</span><span class="p">,</span> <span class="s1">&#39;month&#39;</span><span class="p">])</span><span class="o">.</span><span class="n">unstack</span><span class="p">()</span><span class="o">.</span><span class="n">fillna</span><span class="p">(</span><span class="s1">&#39;&#39;</span><span class="p">))</span>
 </pre></div>
 </section>
-<section class="slide" id="s52"><h2>Cast</h2>
-
-<pre><code>count
+<section class="slide" id="s52"><h3>Cast</h3>
+<div class="highlight"><pre><span></span>count
 month   1.0  2.0  3.0  4.0  5.0  6.0  8.0  9.0  10.0 11.0 12.0
 year
 2011.0                                                  1    1
@@ -638,7 +627,8 @@ year
 2016.0     1         1    1    2              1    2         2
 2017.0     1    1    1    1    1         1    1    1    1
 2018.0     2    1              1                   1    2    1
-2019.0          1    1    1    1</code></pre>
+2019.0          1    1    1    1
+</pre></div>
 </section>
 <section class="slide" id="s53"><h3>Expression</h3>
 <div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">tanker</span> <span class="kn">import</span> <span class="n">Expression</span>
@@ -659,21 +649,64 @@ year
   <span class="k">ORDER</span> <span class="k">BY</span> <span class="k">char_length</span><span class="p">(</span><span class="ss">&quot;event&quot;</span><span class="p">.</span><span class="ss">&quot;title&quot;</span><span class="p">)</span> <span class="k">desc</span> <span class="k">LIMIT</span> <span class="mi">5</span>
 </pre></div>
 
-<pre><code>date  len
+<pre><code>         date  len
 0  2018-01-04  176
 1  2017-10-27  172
 2  2014-09-05  167
 3  2012-03-04  152
 4  2012-06-26  148</code></pre>
 </section>
-<section class="slide" id="s55"><h2>Ligne de commande et interface web</h2>
+<section class="slide" id="s55"><h3>ACL</h3>
+
+<p>les ACL (access control list) permettent de définir des filtres de
+manière globales:</p>
+<div class="highlight"><pre><span></span><span class="n">acl_read</span> <span class="o">=</span> <span class="p">{</span>
+     <span class="s1">&#39;event&#39;</span><span class="p">:</span> <span class="p">[</span><span class="s1">&#39;(&gt;= event.date &quot;2019-01-01&quot;)&#39;</span><span class="p">]</span>
+<span class="p">}</span>
+<span class="n">cfg</span> <span class="o">=</span> <span class="p">{</span>
+     <span class="s1">&#39;db_uri&#39;</span><span class="p">:</span> <span class="s1">&#39;postgresql:///jdl&#39;</span><span class="p">,</span>
+     <span class="s1">&#39;schema&#39;</span><span class="p">:</span> <span class="n">schema</span><span class="p">,</span>
+     <span class="s1">&#39;acl-read&#39;</span><span class="p">:</span> <span class="n">acl_read</span><span class="p">,</span>
+<span class="p">}</span>
+<span class="k">with</span> <span class="n">connect</span><span class="p">(</span><span class="n">cfg</span><span class="p">):</span>
+     <span class="n">view</span> <span class="o">=</span> <span class="n">View</span><span class="p">(</span><span class="s1">&#39;event&#39;</span><span class="p">,</span> <span class="s1">&#39;(count *)&#39;</span><span class="p">)</span>
+     <span class="k">print</span><span class="p">(</span><span class="n">view</span><span class="o">.</span><span class="n">read</span><span class="p">()</span><span class="o">.</span><span class="n">one</span><span class="p">())</span> <span class="c1"># -&gt; (4,)</span>
+
+     <span class="n">cfg</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s1">&#39;acl-read&#39;</span><span class="p">)</span>
+     <span class="k">print</span><span class="p">(</span><span class="n">view</span><span class="o">.</span><span class="n">read</span><span class="p">()</span><span class="o">.</span><span class="n">one</span><span class="p">())</span> <span class="c1"># -&gt; (78,)</span>
+</pre></div>
 </section>
-<section class="slide" id="s56"><h3>tk: la ligne de commande de tanker</h3>
+<section class="slide" id="s56"><h3>ACL</h3>
+<div class="highlight"><pre><span></span><span class="n">acl_read</span> <span class="o">=</span> <span class="p">{</span>
+     <span class="s1">&#39;event&#39;</span><span class="p">:</span> <span class="p">[</span><span class="s1">&#39;(&gt;= event.date {first_day})&#39;</span><span class="p">],</span>
+     <span class="s1">&#39;speaker&#39;</span><span class="p">:</span> <span class="p">[</span>
+       <span class="s1">&#39;(exists ( from event_speaker (select 1)&#39;</span>
+           <span class="s1">&#39;(where (and (&gt;= event.date {first_day})) (= speaker _parent.id))&#39;</span>
+       <span class="s1">&#39;))&#39;</span>
+     <span class="p">]</span>
+<span class="p">}</span>
+<span class="n">cfg</span> <span class="o">=</span> <span class="p">{</span>
+     <span class="s1">&#39;db_uri&#39;</span><span class="p">:</span> <span class="s1">&#39;postgresql:///jdl&#39;</span><span class="p">,</span>
+     <span class="s1">&#39;schema&#39;</span><span class="p">:</span> <span class="n">schema</span><span class="p">,</span>
+     <span class="s1">&#39;acl-read&#39;</span><span class="p">:</span> <span class="n">acl_read</span><span class="p">,</span>
+     <span class="s1">&#39;first_day&#39;</span><span class="p">:</span> <span class="s1">&#39;2019-01-01&#39;</span><span class="p">,</span>
+<span class="p">}</span>
+<span class="k">with</span> <span class="n">connect</span><span class="p">(</span><span class="n">cfg</span><span class="p">):</span>
+     <span class="n">res</span> <span class="o">=</span> <span class="n">View</span><span class="p">(</span><span class="s1">&#39;event&#39;</span><span class="p">,</span> <span class="s1">&#39;(count *)&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">read</span><span class="p">()</span><span class="o">.</span><span class="n">one</span><span class="p">()</span>
+     <span class="k">print</span><span class="p">(</span><span class="n">res</span><span class="p">)</span>  <span class="c1"># -&gt; (4,)</span>
+
+     <span class="n">res</span> <span class="o">=</span> <span class="n">View</span><span class="p">(</span><span class="s1">&#39;speaker&#39;</span><span class="p">,</span> <span class="s1">&#39;(count *)&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">read</span><span class="p">()</span><span class="o">.</span><span class="n">one</span><span class="p">()</span>
+     <span class="k">print</span><span class="p">(</span><span class="n">res</span><span class="p">)</span> <span class="c1"># -&gt; (4,)</span>
+</pre></div>
+</section>
+<section class="slide" id="s57"><h2>Ligne de commande et api web</h2>
+</section>
+<section class="slide" id="s58"><h3>tk: la ligne de commande de tanker</h3>
 <div class="highlight"><pre><span></span>$ cat .tk.yaml 
 db_uri: postgresql:///jdl
 </pre></div>
 </section>
-<section class="slide" id="s57"><h3>tk: la ligne de commande de tanker</h3>
+<section class="slide" id="s59"><h3>tk: la ligne de commande de tanker</h3>
 <div class="highlight"><pre><span></span>$ tk info
 all_in_one_event
 event
@@ -688,8 +721,9 @@ title <span class="o">(</span>VARCHAR<span class="o">)</span>
 url <span class="o">(</span>VARCHAR<span class="o">)</span>
 </pre></div>
 </section>
-<section class="slide" id="s58"><h3>tk: la ligne de commande de tanker</h3>
+<section class="slide" id="s60"><h3>tk: la ligne de commande de tanker</h3>
 <div class="highlight"><pre><span></span>$ tk <span class="nb">read</span> event_speaker -l <span class="m">5</span>
+
 speaker.name,event.url
 Yannick Warnier <span class="o">(</span>Chamilo<span class="o">)</span>,http://jeudisdulibre.be/2019/05/08/mons-le-23-mai-chamilo...
 Joël Lambillotte <span class="o">(</span>IMIO<span class="o">)</span>,http://jeudisdulibre.be/2019/04/10/mons-le-25-avril-imio-cles...
@@ -698,18 +732,24 @@ Michel Villers,http://jeudisdulibre.be/2019/02/07/mons-le-21-fevrier-pfsense-un-
 Mathieu Goeminne <span class="o">(</span>CETIC<span class="o">)</span>,http://jeudisdulibre.be/2018/12/21/mons-le-17-janvier-...
 </pre></div>
 </section>
-<section class="slide" id="s59"><h3>tk: la ligne de commande de tanker</h3>
-<div class="highlight"><pre><span></span>$ tk <span class="nb">read</span> event_speaker speaker.name event.date -F <span class="s2">&quot;(ilike title &#39;%python%&#39;)&quot;</span> -t
-speaker.name                 event.date
----------------------------- ----------
-Hugues Bersini <span class="o">(</span>ULB, IRIDIA<span class="o">)</span> <span class="m">2015</span>-12-20
+<section class="slide" id="s61"><h3>tk: la ligne de commande de tanker</h3>
+<div class="highlight"><pre><span></span>$ tk <span class="nb">read</span> event_speaker speaker.name event.date -F <span class="s2">&quot;(or (ilike title &#39;%python%&#39;) (ilike title &#39;%ruby%&#39;))&quot;</span> -t
+
+speaker.name                               event.date
+------------------------------------------ ----------
+Hugues Bersini <span class="o">(</span>ULB, IRIDIA<span class="o">)</span>               <span class="m">2015</span>-12-20
+Etienne Charlier                           <span class="m">2014</span>-02-25
+Francois Stephany <span class="o">(</span>Wapict SPRL<span class="o">)</span> et Auré... <span class="m">2012</span>-11-02
+</pre></div>
+<div class="highlight"><pre><span></span>$ tk <span class="nb">read</span> event title -F <span class="s2">&quot;(in date &#39;2018-01-04&#39; &#39;2017-10-27&#39; &#39;2014-09-05&#39;)&quot;</span> -t
+title
+--------------------------------------------------------------------------------------------------
+Les bases de la connectivité Bluetooth Low Energy sous Linux <span class="o">(</span>Raspberry PI, BeagleBone, etc..<span class="o">)</span> ...
+Sauver le Monde ? Vers une économie collaborative par la mise en commun des ressources… Ou quand ...
+MOOC – Une façon OUVERTE d’apprendre LIBREMENT ? Exemples avec ITyPa <span class="o">(</span>sujet généré par les ...
 </pre></div>
 </section>
-<section class="slide" id="s60"><h3>ACL</h3>
-
-<p>soon<sup>TM</sup></p>
-</section>
-<section class="slide" id="s61"><h3>Cadeau Bonux: une api en 60 lignes de code</h3>
+<section class="slide" id="s62"><h3>Cadeau Bonux: une api en 60 lignes de code</h3>
 <div class="highlight"><pre><span></span><span class="nd">@route</span><span class="p">(</span><span class="s1">&#39;/read/&lt;table&gt;&#39;</span><span class="p">)</span>                             <span class="o">|</span>     <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">params</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
 <span class="k">def</span> <span class="nf">read</span><span class="p">(</span><span class="n">table</span><span class="p">,</span> <span class="n">ext</span><span class="o">=</span><span class="s1">&#39;json&#39;</span><span class="p">):</span>                        <span class="o">|</span>         <span class="k">if</span> <span class="n">k</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">names</span> <span class="ow">or</span> <span class="ow">not</span> <span class="n">v</span><span class="o">.</span><span class="n">strip</span><span class="p">():</span>
     <span class="n">table</span><span class="p">,</span> <span class="o">*</span><span class="n">fields</span> <span class="o">=</span> <span class="n">table</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s1">&#39;+&#39;</span><span class="p">)</span>               <span class="o">|</span>             <span class="k">continue</span>
@@ -727,7 +767,7 @@ Hugues Bersini <span class="o">(</span>ULB, IRIDIA<span class="o">)</span> <span
                                                     <span class="o">|</span>     <span class="k">return</span> <span class="p">{</span><span class="s1">&#39;data&#39;</span><span class="p">:</span> <span class="n">res</span><span class="p">}</span>
 </pre></div>
 </section>
-<section class="slide" id="s62"><h1>Merci</h1>
+<section class="slide" id="s63"><h1>Merci</h1>
 </section>
 
 </article><!-- presentation -->

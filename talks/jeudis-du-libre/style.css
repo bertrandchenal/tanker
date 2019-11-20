@@ -40,6 +40,12 @@
 		padding: 1em;
 	}
 
+    code {
+        font-size: 1.2em;
+        background-color: #f8f8f8;
+        /* border: 1px dashed lightgrey; */
+    }
+
 	.slide:last-child {
 		background-image: url("boat1.jpeg");
 		background-position: center;

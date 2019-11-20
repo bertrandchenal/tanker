@@ -16,7 +16,7 @@ class HighlighterRenderer(misaka.HtmlRenderer):
             formatter = HtmlFormatter()
             return highlight(text, lexer, formatter)
         # default
-        return '\n<pre><code>{}</code></pre>\n'.format(text.strip())
+        return '\n<pre><code>{}</code></pre>\n'.format(text.rstrip())
 
 md = misaka.Markdown(
     HighlighterRenderer(),

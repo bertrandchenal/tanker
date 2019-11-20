@@ -4,13 +4,13 @@
 ---
 ### Planning
 
-- Organisation des données: normalisation, choix des index
-- Rôles des données: OLAP vs OLTP
-- Manipulation des donnée: modèle objet vs modèle relationel
+- Normalisation des tables
+- Choix des index
 - Tanker
 - Lecture & écriture
-- Filtre & agrégats
-- Ligne de commande et interface web
+- Filtres & agrégats
+- Ligne de commande et api web
+
 
 ---
 ## Normalisation des tables
@@ -18,16 +18,18 @@
 ---
 ### Exemple: jeudis du libre
 
-Exemple de jeux de données: http://jeudisdulibre.be/.
+Exemple de jeux de données: <http://jeudisdulibre.be/>.
 
 Information que l'on peut collecter pour chaque évènement:
 
- - title
- - date
- - speaker
- - bio
- - description
- - tags
+``` text
+- title
+- date
+- speaker
+- bio
+- description
+- tags
+```
 
 ---
 ### Version naïve
@@ -56,83 +58,72 @@ VALUES ('2019-05-08', 'Yannick Warnier (Chamilo)' '{e-learning,éducation}', '..
 ---
 ### Version naïve
 
-
-    date       speaker                                    tags                                            bio
-    ---------- ------------------------------------------ ----------------------------------------------- ---
-    2019-05-08 Yannick Warnier (Chamilo)                  {e-learning,éducation}                          ...
-    2019-04-10 Joël Lambillotte (IMIO)                    {communauté,développement}                      ...
-    2019-03-03 Fabrice Flore-Thebault (Stylelabs, Cent... {automation,systèmes}                           ...
-    2019-02-07 Michel Villers                             {internet,systèmes}
-    2018-12-21 Mathieu Goeminne (CETIC)                   {Big Data,développement,Traitement des données} ...
-    2018-11-24 Laurence Baclin (HELHa)                    {éducation,programmation}
-    2018-11-06 Said Eloudrhiri                            {blockchain,sécurité}
-    2018-10-05 Robert Viseur                              {automation,photographie,robert viseur}         ...
-    2018-05-04 Christopher Richard et Quentin Carpenti... {éducation,mons,programmation}                  ...
+``` text
+date       speaker                                    tags                                            bio
+---------- ------------------------------------------ ----------------------------------------------- ---
+2019-05-08 Yannick Warnier (Chamilo)                  {e-learning,éducation}                          ...
+2019-04-10 Joël Lambillotte (IMIO)                    {communauté,développement}                      ...
+2019-03-03 Fabrice Flore-Thebault (Stylelabs, Cent... {automation,systèmes}                           ...
+2019-02-07 Michel Villers                             {internet,systèmes}
+2018-12-21 Mathieu Goeminne (CETIC)                   {Big Data,développement,Traitement des données} ...
+2018-11-24 Laurence Baclin (HELHa)                    {éducation,programmation}
+2018-11-06 Said Eloudrhiri                            {blockchain,sécurité}
+2018-10-05 Robert Viseur                              {automation,photographie,robert viseur}         ...
+2018-05-04 Christopher Richard et Quentin Carpenti... {éducation,mons,programmation}                  ...
     2018-02-15 Michaël Hoste (80LIMIT)                    {Javascript,mons,programmation,web}
-
+```
 Non affiché: `description` et `url`
 
 ---
 ### Discussion
 
-Avec une seule table (et des colonnes en plus) on peut stocker une
-grosse partie des info du site.
+- Ok pour une utilisation temporaire
+- Pose problème pour l'édition des données
+- Problématique aussi sur des gros jeux de données
 
 
 ---
 ### Version normalisée - clés naturelles
+Table `speaker`:
 
-Table "event":
-
-    speaker                                    date       description
-    ------------------------------------------ ---------- ------------------------------------------
-    Yannick Warnier (Chamilo)                  2019-05-08 Le projet de plateforme e-learning Cham...
-    Joël Lambillotte (IMIO)                    2019-04-10 L’intercommunale Imio conçoit et héberg...
-    Fabrice Flore-Thebault (Stylelabs, Cent... 2019-03-03 Ansible est une plate-forme d’automatis...
-    Michel Villers                             2019-02-07 Pfsense est un routeur/pare-feu, dérivé...
-    Mathieu Goeminne (CETIC)                   2018-12-21 Les logiciels open source ont une place...
-    Laurence Baclin (HELHa)                    2018-11-24 Quoi de neuf dans l’univers de la progr...
-    Said Eloudrhiri                            2018-11-06 De nos jours, les blockchains restent i...
-    Robert Viseur                              2018-10-05 Les logiciels et le matériels libres pe...
-    Christopher Richard et Quentin Carpenti... 2018-05-04 Apprendre la logique de programmation e...
-    Michaël Hoste (80LIMIT)                    2018-02-15 Le développement JavaScript est un véri...
+``` text
+speaker                                    bio
+------------------------------------------ ------------------------------------------
+Yannick Warnier (Chamilo)                  Diplômé en Sciences In...
+Joël Lambillotte (IMIO)                    Joël Lambillotte est d...
+Fabrice Flore-Thebault (Stylelabs, Cent... Fabrice Flore-Thebault...
+``` 											   
 
 ---
 ### Version normalisée - clés naturelles
 
-Table "speaker":
+Table `event`:
 
-    speaker                                    url  bio
-    ------------------------------------------ ---- ------------------------------------------
-    Yannick Warnier (Chamilo)                  ...  Diplômé en Sciences In...
-    Joël Lambillotte (IMIO)                    ...  Joël Lambillotte est d...
-    Fabrice Flore-Thebault (Stylelabs, Cent... ...  Fabrice Flore-Thebault...
-											   ...
-Note: Le champ speaker pose problème, certaines présentations on plusieurs orateurs.
-
----
-### Version normalisée - clés naturelles
-
-Table "tag":
-
-    tags                     url
-    -----------------------  -----
-    BigData                  ...
-    automation               ...
-    automation               ...
-    blockchain               ...
-
-
----
-###  Discussion
-
-- Beaucoup d'exemple sur le web (en particulier Wikipedia) mettent en
-  avant cette approche.
-- En pratique on va être vite amené a utiliser des clés naturelles
-  composites, par exemple si on veut gérer plusieurs orateurs par
-  évènement, on doit passer par une table en plus:
-
+``` text
+speaker                                    url  date       description
+------------------------------------------ ---- ---------- ------------------------------------------
+Yannick Warnier (Chamilo)                  ...  2019-05-08 Le projet de plateforme e-learning Cham...
+Joël Lambillotte (IMIO)                    ...  2019-04-10 L’intercommunale Imio conçoit et héberg...
+Fabrice Flore-Thebault (Stylelabs, Cent... ...  2019-03-03 Ansible est une plate-forme d’automatis...
+Michel Villers                             ...  2019-02-07 Pfsense est un routeur/pare-feu, dérivé...
+Mathieu Goeminne (CETIC)                   ...  2018-12-21 Les logiciels open source ont une place...
+Laurence Baclin (HELHa)                    ...  2018-11-24 Quoi de neuf dans l’univers de la progr...
+Said Eloudrhiri                            ...  2018-11-06 De nos jours, les blockchains restent i...
+Robert Viseur                              ...  2018-10-05 Les logiciels et le matériels libres pe...
+Christopher Richard et Quentin Carpenti... ...  2018-05-04 Apprendre la logique de programmation e...
+Michaël Hoste (80LIMIT)                    ...  2018-02-15 Le développement JavaScript est un véri...
 ```
+Note: La colonne `speaker` pose problème, certaines présentations on plusieurs orateurs.
+
+
+---
+### Version normalisée - clés naturelles
+
+On supprime la colonne `speaker` de `event` et on ajoute la table
+`event_speaker`:
+
+
+``` text
 speaker                                    url
 ------------------------------------------ ---
 Yannick Warnier (Chamilo)                  ...
@@ -145,11 +136,20 @@ Mathieu Goeminne (CETIC)                   ...
 - chaque orateur va apparaître dans la table speaker et dans la table
   de relation.
 - chaque url va apparaître dans cette même table et la table event.
+
+---
+###  Discussion
+
+- Beaucoup d'exemples sur le web (entre autre Wikipedia) mettent en
+  avant cette approche.
+- En pratique on va être vite amené a utiliser des clés naturelles
+  composites qui peuvent devenir complexes (quid de modéliser un score
+  par spectateur par speaker et par évènement).
 - De plus ...
 
 
 ---
-###  Discussion (suite)
+###  Discussion
 
 ``` sql
 jdl=> create table speaker (name varchar primary key);
@@ -186,8 +186,6 @@ Table event:
   "tags" VARCHAR[]
   )
 ```
-
-Note: utiliser un array de varchar pour les tags
 
 ---
 ### Version normalisée - clés artificielle
@@ -267,7 +265,7 @@ jdl=> SELECT event.url, event.title, speaker.name FROM event
 ```
 
 ---
-## Index et clé uniques
+## Indexes et clés uniques
 
 ---
 ### Question
@@ -278,7 +276,7 @@ speaker avec le même nom ?
 ``` sql
 CREATE UNIQUE INDEX "unique_index_event" ON "event" ("url");
 CREATE UNIQUE INDEX "unique_index_speaker" ON "speaker" ("name");
-CREATE UNIQUE INDEX "unique_index_event_speaker" ON "event_speaker"  ("speaker", "event");
+CREATE UNIQUE INDEX "unique_index_event_speaker" ON "event_speaker" ("speaker", "event");
 ```
 
 De manière générale, une table sans une (et une seule) contrainte d'unicité est souvent
@@ -320,7 +318,6 @@ jdl=> select * from speaker;
 ---
 ## Et Tanker dans tout ça ?
 
-
 ---
 ### Recette
 
@@ -346,6 +343,9 @@ Si on assemble tous ces ingrédient:
     tags: varchar[]
   key:
     - url
+```
+
+``` yaml
 - table: speaker
   columns:
     name: varchar
@@ -482,7 +482,7 @@ Crée un `contextmanager` qui garanti l'atomicité du block de code
 ### Discussion
 
 ``` python
-view  = View('speaker', ['name', 'bio']) # INSERT INTO speaker (name, bio)
+view = View('speaker', ['name', 'bio']) # INSERT INTO speaker (name, bio)
 view.write(values)                       # VALUES (...) ON CONFLICT ...
 ```
 
@@ -538,8 +538,8 @@ df = View('event').read().df()
 print(df)
 ```
 
-```
-         url  date          description          title
+``` 
+          url  date          description          title
 0  http://...  None  Example description  Example Title
 ```
 
@@ -548,14 +548,13 @@ print(df)
 ### Lecture
 
 ``` python
-df = View('event_speaker').read().df()
-print(df)
+for record in View('event_speaker').read().dict():
+    print(record)
 ```
 
 ```
-  speaker.name   event.url
-0     John Doe  http://...
-1     Jane Doe  http://...
+{'speaker.name': 'John Doe', 'event.url': 'http://...'}
+{'speaker.name': 'Jane Doe', 'event.url': 'http://...'}
 ```
 
 ---
@@ -569,7 +568,7 @@ print(df)
 ```
      event.title speaker.name  speaker.bio
 0  Example Title     John Doe  Updated Bio
-1  Example Title     Jane Doe  Another Bio```
+1  Example Title     Jane Doe  Another Bio
 ```
 
 
@@ -594,7 +593,6 @@ LEFT JOIN "speaker" AS "speaker_1"
 
 ---
 ## Relations
-
 
 ---
 ### One-To-Many
@@ -626,6 +624,7 @@ print(df)
 ```
 
 ### SQL
+
 ```
 SELECT "speaker"."name", "event_1"."title" FROM "speaker"
 LEFT JOIN  "event_speaker" AS "event_speaker_0"
@@ -663,7 +662,6 @@ View('event_speaker', {
 ---
 ## Filtres et agrégats
 
-
 ---
 ###  Filtres
 
@@ -700,17 +698,15 @@ print(res)
 ```
 
 ```
-[('Chamilo: Améliorer l’accès à une éducation de qualité partout
- dans le monde',), ('Imio : clés du succès du logiciel libre dans
- les communes wallonnes',), ('Automatiser son infrastructure avec
- Ansible, tester grâce à Molecule',), ('pfSense, un firewall
- “libre” pour la sécurisation des réseaux domestiques et
+[('Chamilo: Améliorer l’accès à une éducation de qualité partout dans le monde',),
+ ('Imio : clés du succès du logiciel libre dans les communes wallonnes',),
+ ('Automatiser son infrastructure avec Ansible, tester grâce à Molecule',),
+ ('pfSense, un firewall “libre” pour la sécurisation des réseaux domestiques et
  d’entreprises',)]
 ```
 
 ---
-
-## Filtres
+### Filtres
 
 ``` python
 fltr = '(ilike title "%python%")'
@@ -776,9 +772,9 @@ print(df.set_index(['year', 'month']).unstack().fillna(''))
 ```
 
 ---
-## Cast
+### Cast
 
-```
+``` text
        count
 month   1.0  2.0  3.0  4.0  5.0  6.0  8.0  9.0  10.0 11.0 12.0
 year
@@ -828,8 +824,59 @@ SELECT "event"."date", char_length("event"."title") FROM "event"
 4  2012-06-26  148
 ```
 
+
 ---
-## Ligne de commande et interface web
+### ACL
+
+les ACL (access control list) permettent de définir des filtres de
+manière globales:
+
+``` python
+acl_read = {
+     'event': ['(>= event.date "2019-01-01")']
+}
+cfg = {
+     'db_uri': 'postgresql:///jdl',
+     'schema': schema,
+     'acl-read': acl_read,
+}
+with connect(cfg):
+     view = View('event', '(count *)')
+     print(view.read().one()) # -> (4,)
+
+     cfg.pop('acl-read')
+     print(view.read().one()) # -> (78,)
+```
+
+---
+### ACL
+
+``` python
+acl_read = {
+     'event': ['(>= event.date {first_day})'],
+     'speaker': [
+       '(exists ( from event_speaker (select 1)'
+           '(where (and (>= event.date {first_day})) (= speaker _parent.id))'
+       '))'
+     ]
+}
+cfg = {
+     'db_uri': 'postgresql:///jdl',
+     'schema': schema,
+     'acl-read': acl_read,
+     'first_day': '2019-01-01',
+}
+with connect(cfg):
+     res = View('event', '(count *)').read().one()
+     print(res)  # -> (4,)
+
+     res = View('speaker', '(count *)').read().one()
+     print(res) # -> (4,)
+```
+
+
+---
+## Ligne de commande et api web
 
 ---
 ### tk: la ligne de commande de tanker
@@ -865,6 +912,7 @@ url (VARCHAR)
 
 ``` shell
 $ tk read event_speaker -l 5
+
 speaker.name,event.url
 Yannick Warnier (Chamilo),http://jeudisdulibre.be/2019/05/08/mons-le-23-mai-chamilo...
 Joël Lambillotte (IMIO),http://jeudisdulibre.be/2019/04/10/mons-le-25-avril-imio-cles...
@@ -877,16 +925,23 @@ Mathieu Goeminne (CETIC),http://jeudisdulibre.be/2018/12/21/mons-le-17-janvier-.
 ### tk: la ligne de commande de tanker
 
 ``` shell
-$ tk read event_speaker speaker.name event.date -F "(ilike title '%python%')" -t
-speaker.name                 event.date
----------------------------- ----------
-Hugues Bersini (ULB, IRIDIA) 2015-12-20
+$ tk read event_speaker speaker.name event.date -F "(or (ilike title '%python%') (ilike title '%ruby%'))" -t
+
+speaker.name                               event.date
+------------------------------------------ ----------
+Hugues Bersini (ULB, IRIDIA)               2015-12-20
+Etienne Charlier                           2014-02-25
+Francois Stephany (Wapict SPRL) et Auré... 2012-11-02
 ```
 
----
-### ACL
-
-soon<sup>TM</sup>
+``` shell
+$ tk read event title -F "(in date '2018-01-04' '2017-10-27' '2014-09-05')" -t
+title
+--------------------------------------------------------------------------------------------------
+Les bases de la connectivité Bluetooth Low Energy sous Linux (Raspberry PI, BeagleBone, etc..) ...
+Sauver le Monde ? Vers une économie collaborative par la mise en commun des ressources… Ou quand ...
+MOOC – Une façon OUVERTE d’apprendre LIBREMENT ? Exemples avec ITyPa (sujet généré par les ...
+```
 
 ---
 ### Cadeau Bonux: une api en 60 lignes de code
