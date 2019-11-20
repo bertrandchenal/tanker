@@ -22,17 +22,21 @@
 
 <section class="slide" id="s0"><h1>Tanker</h1>
 </section>
-<section class="slide" id="s1"><h2>Planning</h2>
+<section class="slide" id="s1"><h3>Planning</h3>
 
 <ul>
 <li>Organisation des données: normalisation, choix des index</li>
 <li>Rôles des données: OLAP vs OLTP</li>
 <li>Manipulation des donnée: modèle objet vs modèle relationel</li>
+<li>Tanker</li>
+<li>Lecture &amp; écriture</li>
+<li>Filtre &amp; agrégats</li>
+<li>Ligne de commande et interface web</li>
 </ul>
 </section>
-<section class="slide" id="s2"><h1>Normalisation des tables</h1>
+<section class="slide" id="s2"><h2>Normalisation des tables</h2>
 </section>
-<section class="slide" id="s3"><h2>Exemple: jeudis du libre</h2>
+<section class="slide" id="s3"><h3>Exemple: jeudis du libre</h3>
 
 <p>Exemple de jeux de données: http://jeudisdulibre.be/.</p>
 
@@ -47,7 +51,7 @@
 <li>tags</li>
 </ul>
 </section>
-<section class="slide" id="s4"><h2>Version naïve</h2>
+<section class="slide" id="s4"><h3>Version naïve</h3>
 
 <p>Création de la table:</p>
 <div class="highlight"><pre><span></span><span class="k">CREATE</span> <span class="k">TABLE</span> <span class="ss">&quot;event&quot;</span> <span class="p">(</span>
@@ -66,7 +70,7 @@
 <span class="k">VALUES</span> <span class="p">(</span><span class="s1">&#39;2019-05-08&#39;</span><span class="p">,</span> <span class="s1">&#39;Yannick Warnier (Chamilo)&#39;</span> <span class="s1">&#39;{e-learning,éducation}&#39;</span><span class="p">,</span> <span class="s1">&#39;...&#39;</span><span class="p">);</span>
 </pre></div>
 </section>
-<section class="slide" id="s5"><h2>Version naïve</h2>
+<section class="slide" id="s5"><h3>Version naïve</h3>
 
 <pre><code>date       speaker                                    tags                                            bio
 ---------- ------------------------------------------ ----------------------------------------------- ---
@@ -83,16 +87,16 @@
 
 <p>Non affiché: <code>description</code> et <code>url</code></p>
 </section>
-<section class="slide" id="s6"><h2>Discussion</h2>
+<section class="slide" id="s6"><h3>Discussion</h3>
 
 <p>Avec une seule table (et des colonnes en plus) on peut stocker une
 grosse partie des info du site.</p>
 </section>
-<section class="slide" id="s7"><h2>Version normalisée - clés naturelles</h2>
+<section class="slide" id="s7"><h3>Version normalisée - clés naturelles</h3>
 
 <p>Table &quot;event&quot;:</p>
 
-<pre><code>speaker                                    date       description                               
+<pre><code>speaker                                    date       description
 ------------------------------------------ ---------- ------------------------------------------
 Yannick Warnier (Chamilo)                  2019-05-08 Le projet de plateforme e-learning Cham...
 Joël Lambillotte (IMIO)                    2019-04-10 L’intercommunale Imio conçoit et héberg...
@@ -105,7 +109,7 @@ Robert Viseur                              2018-10-05 Les logiciels et le matér
 Christopher Richard et Quentin Carpenti... 2018-05-04 Apprendre la logique de programmation e...
 Michaël Hoste (80LIMIT)                    2018-02-15 Le développement JavaScript est un véri...</code></pre>
 </section>
-<section class="slide" id="s8"><h2>Version normalisée - clés naturelles</h2>
+<section class="slide" id="s8"><h3>Version normalisée - clés naturelles</h3>
 
 <p>Table &quot;speaker&quot;:</p>
 
@@ -118,7 +122,7 @@ Fabrice Flore-Thebault (Stylelabs, Cent... ...  Fabrice Flore-Thebault...
 
 <p>Note: Le champ speaker pose problème, certaines présentations on plusieurs orateurs.</p>
 </section>
-<section class="slide" id="s9"><h2>Version normalisée - clés naturelles</h2>
+<section class="slide" id="s9"><h3>Version normalisée - clés naturelles</h3>
 
 <p>Table &quot;tag&quot;:</p>
 
@@ -129,7 +133,7 @@ automation               ...
 automation               ...
 blockchain               ...</code></pre>
 </section>
-<section class="slide" id="s10"><h2>Discussion</h2>
+<section class="slide" id="s10"><h3>Discussion</h3>
 
 <ul>
 <li>Beaucoup d&#39;exemple sur le web (en particulier Wikipedia) mettent en
@@ -154,7 +158,7 @@ de relation.</li>
 <li>De plus ...</li>
 </ul>
 </section>
-<section class="slide" id="s11"><h2>Discussion (suite)</h2>
+<section class="slide" id="s11"><h3>Discussion (suite)</h3>
 <div class="highlight"><pre><span></span><span class="n">jdl</span><span class="o">=&gt;</span> <span class="k">create</span> <span class="k">table</span> <span class="n">speaker</span> <span class="p">(</span><span class="n">name</span> <span class="nb">varchar</span> <span class="k">primary</span> <span class="k">key</span><span class="p">);</span>
 <span class="k">CREATE</span> <span class="k">TABLE</span>
 <span class="n">jdl</span><span class="o">=&gt;</span> <span class="k">create</span> <span class="k">table</span> <span class="n">event</span> <span class="p">(</span><span class="n">url</span> <span class="nb">varchar</span> <span class="k">primary</span> <span class="k">key</span><span class="p">);</span>
@@ -175,7 +179,7 @@ de relation.</li>
 
 <p>¯\_(ツ)_/¯</p>
 </section>
-<section class="slide" id="s12"><h2>Version normalisée - clés artificielle (&quot;surrogate&quot;)</h2>
+<section class="slide" id="s12"><h3>Version normalisée - clés artificielle (&quot;surrogate&quot;)</h3>
 
 <p>Table event:</p>
 <div class="highlight"><pre><span></span><span class="k">CREATE</span> <span class="k">TABLE</span> <span class="ss">&quot;event&quot;</span> <span class="p">(</span>
@@ -189,7 +193,7 @@ de relation.</li>
 
 <p>Note: utiliser un array de varchar pour les tags</p>
 </section>
-<section class="slide" id="s13"><h2>Version normalisée - clés artificielle</h2>
+<section class="slide" id="s13"><h3>Version normalisée - clés artificielle</h3>
 
 <p>Table speaker:</p>
 <div class="highlight"><pre><span></span><span class="k">CREATE</span> <span class="k">TABLE</span> <span class="ss">&quot;speaker&quot;</span> <span class="p">(</span>
@@ -199,7 +203,7 @@ de relation.</li>
   <span class="p">)</span>
 </pre></div>
 </section>
-<section class="slide" id="s14"><h2>Version normalisée - clés artificielle</h2>
+<section class="slide" id="s14"><h3>Version normalisée - clés artificielle</h3>
 
 <p>Table event_speaker</p>
 <div class="highlight"><pre><span></span><span class="k">CREATE</span> <span class="k">TABLE</span> <span class="ss">&quot;event_speaker&quot;</span> <span class="p">(</span>
@@ -209,38 +213,38 @@ de relation.</li>
   <span class="p">)</span>
 </pre></div>
 </section>
-<section class="slide" id="s15"><h2>Insertion: nouvel évènement</h2>
+<section class="slide" id="s15"><h3>Insertion: nouvel évènement</h3>
 <div class="highlight"><pre><span></span><span class="n">jdl</span><span class="o">=&gt;</span> <span class="k">INSERT</span> <span class="k">INTO</span> <span class="n">event</span> <span class="p">(</span><span class="n">url</span><span class="p">,</span> <span class="n">title</span><span class="p">,</span> <span class="n">description</span><span class="p">)</span> <span class="k">VALUES</span> <span class="p">(</span><span class="s1">&#39;http://...&#39;</span><span class="p">,</span> <span class="s1">&#39;Example Title&#39;</span><span class="p">,</span> <span class="s1">&#39;Example description&#39;</span><span class="p">);</span>
 <span class="k">INSERT</span> <span class="mi">0</span> <span class="mi">1</span>
 <span class="n">jdl</span><span class="o">=&gt;</span> <span class="k">select</span> <span class="o">*</span> <span class="k">from</span> <span class="n">event</span><span class="p">;</span>
- <span class="n">id</span> <span class="o">|</span>    <span class="n">url</span>     <span class="o">|</span>     <span class="n">title</span>     <span class="o">|</span>     <span class="n">description</span>     <span class="o">|</span> <span class="nb">date</span> <span class="o">|</span> <span class="n">tags</span> 
+ <span class="n">id</span> <span class="o">|</span>    <span class="n">url</span>     <span class="o">|</span>     <span class="n">title</span>     <span class="o">|</span>     <span class="n">description</span>     <span class="o">|</span> <span class="nb">date</span> <span class="o">|</span> <span class="n">tags</span>
 <span class="c1">----+------------+---------------+---------------------+------+------</span>
-  <span class="mi">1</span> <span class="o">|</span> <span class="n">http</span><span class="p">:</span><span class="o">//</span><span class="p">...</span> <span class="o">|</span> <span class="n">Example</span> <span class="n">Title</span> <span class="o">|</span> <span class="n">Example</span> <span class="n">description</span> <span class="o">|</span>      <span class="o">|</span> 
+  <span class="mi">1</span> <span class="o">|</span> <span class="n">http</span><span class="p">:</span><span class="o">//</span><span class="p">...</span> <span class="o">|</span> <span class="n">Example</span> <span class="n">Title</span> <span class="o">|</span> <span class="n">Example</span> <span class="n">description</span> <span class="o">|</span>      <span class="o">|</span>
 <span class="p">(</span><span class="mi">1</span> <span class="n">ligne</span><span class="p">)</span>
 </pre></div>
 </section>
-<section class="slide" id="s16"><h2>Insertion: premier orateur</h2>
+<section class="slide" id="s16"><h3>Insertion: premier orateur</h3>
 <div class="highlight"><pre><span></span><span class="n">jdl</span><span class="o">=&gt;</span> <span class="k">INSERT</span> <span class="k">INTO</span> <span class="n">speaker</span> <span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="n">bio</span><span class="p">)</span> <span class="k">VALUES</span> <span class="p">(</span><span class="s1">&#39;John Doe&#39;</span><span class="p">,</span> <span class="s1">&#39;Example Bio&#39;</span><span class="p">);</span>
 <span class="k">INSERT</span> <span class="mi">0</span> <span class="mi">1</span>
 <span class="n">jdl</span><span class="o">=&gt;</span> <span class="k">select</span> <span class="o">*</span> <span class="k">from</span> <span class="n">speaker</span><span class="p">;</span>
- <span class="n">id</span> <span class="o">|</span>   <span class="n">name</span>   <span class="o">|</span>     <span class="n">bio</span>     
+ <span class="n">id</span> <span class="o">|</span>   <span class="n">name</span>   <span class="o">|</span>     <span class="n">bio</span>
 <span class="c1">----+----------+-------------</span>
   <span class="mi">1</span> <span class="o">|</span> <span class="n">John</span> <span class="n">Doe</span> <span class="o">|</span> <span class="n">Example</span> <span class="n">Bio</span>
 <span class="p">(</span><span class="mi">1</span> <span class="n">ligne</span><span class="p">)</span>
 </pre></div>
 </section>
-<section class="slide" id="s17"><h2>Insertion: second orateur</h2>
+<section class="slide" id="s17"><h3>Insertion: second orateur</h3>
 <div class="highlight"><pre><span></span><span class="n">jdl</span><span class="o">=&gt;</span> <span class="k">INSERT</span> <span class="k">INTO</span> <span class="n">speaker</span> <span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="n">bio</span><span class="p">)</span> <span class="k">VALUES</span> <span class="p">(</span><span class="s1">&#39;Jane Doe&#39;</span><span class="p">,</span> <span class="s1">&#39;Another Bio&#39;</span><span class="p">);</span>
 <span class="k">INSERT</span> <span class="mi">0</span> <span class="mi">1</span>
 <span class="n">jdl</span><span class="o">=&gt;</span> <span class="k">INSERT</span> <span class="k">INTO</span> <span class="n">event_speaker</span> <span class="p">(</span><span class="n">event</span><span class="p">,</span> <span class="n">speaker</span><span class="p">)</span> <span class="k">VALUES</span> <span class="p">(</span><span class="mi">1</span><span class="p">,</span><span class="mi">2</span><span class="p">);</span>
 <span class="k">INSERT</span> <span class="mi">0</span> <span class="mi">1</span>
 </pre></div>
 </section>
-<section class="slide" id="s18"><h2>Select: jointure des 3 tables</h2>
+<section class="slide" id="s18"><h3>Select: jointure des 3 tables</h3>
 <div class="highlight"><pre><span></span><span class="n">jdl</span><span class="o">=&gt;</span> <span class="k">SELECT</span> <span class="n">event</span><span class="p">.</span><span class="n">url</span><span class="p">,</span> <span class="n">event</span><span class="p">.</span><span class="n">title</span><span class="p">,</span> <span class="n">speaker</span><span class="p">.</span><span class="n">name</span> <span class="k">FROM</span> <span class="n">event</span>
       <span class="k">JOIN</span> <span class="n">event_speaker</span> <span class="k">ON</span> <span class="p">(</span><span class="n">event_speaker</span><span class="p">.</span><span class="n">event</span> <span class="o">=</span> <span class="n">event</span><span class="p">.</span><span class="n">id</span><span class="p">)</span>
       <span class="k">JOIN</span> <span class="n">speaker</span> <span class="k">ON</span> <span class="p">(</span><span class="n">event_speaker</span><span class="p">.</span><span class="n">speaker</span> <span class="o">=</span> <span class="n">speaker</span><span class="p">.</span><span class="n">id</span><span class="p">);</span>
-    <span class="n">url</span>     <span class="o">|</span>     <span class="n">title</span>     <span class="o">|</span>   <span class="n">name</span>   
+    <span class="n">url</span>     <span class="o">|</span>     <span class="n">title</span>     <span class="o">|</span>   <span class="n">name</span>
 <span class="c1">------------+---------------+----------</span>
  <span class="n">http</span><span class="p">:</span><span class="o">//</span><span class="p">...</span> <span class="o">|</span> <span class="n">Example</span> <span class="n">Title</span> <span class="o">|</span> <span class="n">John</span> <span class="n">Doe</span>
  <span class="n">http</span><span class="p">:</span><span class="o">//</span><span class="p">...</span> <span class="o">|</span> <span class="n">Example</span> <span class="n">Title</span> <span class="o">|</span> <span class="n">Jane</span> <span class="n">Doe</span>
@@ -248,6 +252,8 @@ de relation.</li>
 </pre></div>
 </section>
 <section class="slide" id="s19"><h2>Index et clé uniques</h2>
+</section>
+<section class="slide" id="s20"><h3>Question</h3>
 
 <p>Est-ce que l&#39;on autorise deux évènement avec la même url ? Deux
 speaker avec le même nom ?</p>
@@ -259,22 +265,22 @@ speaker avec le même nom ?</p>
 <p>De manière générale, une table sans une (et une seule) contrainte d&#39;unicité est souvent
 signe d&#39;un problème.</p>
 </section>
-<section class="slide" id="s20"><h2>Insertion d&#39;un doublon</h2>
+<section class="slide" id="s21"><h3>Insertion d&#39;un doublon</h3>
 <div class="highlight"><pre><span></span><span class="n">jdl</span><span class="o">=&gt;</span> <span class="k">INSERT</span> <span class="k">INTO</span> <span class="n">speaker</span> <span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="n">bio</span><span class="p">)</span> <span class="k">VALUES</span> <span class="p">(</span><span class="s1">&#39;John Doe&#39;</span><span class="p">,</span> <span class="s1">&#39;Example Bio&#39;</span><span class="p">);</span>
 <span class="n">ERREUR</span><span class="p">:</span>  <span class="n">la</span> <span class="n">valeur</span> <span class="n">d</span><span class="err">&#39;</span><span class="n">une</span> <span class="n">clé</span> <span class="n">dupliquée</span> <span class="n">rompt</span> <span class="n">la</span> <span class="n">contrainte</span> <span class="k">unique</span> <span class="err">«</span> <span class="n">unique_index_speaker</span> <span class="err">»</span>
 <span class="n">DÉTAIL</span> <span class="p">:</span> <span class="n">La</span> <span class="n">clé</span> <span class="err">«</span> <span class="p">(</span><span class="n">name</span><span class="p">)</span><span class="o">=</span><span class="p">(</span><span class="n">John</span> <span class="n">Doe</span><span class="p">)</span> <span class="err">»</span> <span class="n">existe</span> <span class="n">déjà</span><span class="p">.</span>
 </pre></div>
 </section>
-<section class="slide" id="s21"><h2>Second effet KissCool: <code>ON CONFLICT</code></h2>
+<section class="slide" id="s22"><h3>Second effet KissCool : <code>ON CONFLICT</code></h3>
 <div class="highlight"><pre><span></span><span class="n">jdl</span><span class="o">=&gt;</span> <span class="k">INSERT</span> <span class="k">INTO</span> <span class="n">speaker</span> <span class="p">(</span><span class="ss">&quot;name&quot;</span><span class="p">,</span> <span class="ss">&quot;bio&quot;</span><span class="p">)</span>
       <span class="k">VALUES</span> <span class="p">(</span><span class="s1">&#39;John Doe&#39;</span><span class="p">,</span> <span class="s1">&#39;Updated Bio&#39;</span><span class="p">),</span> <span class="p">(</span><span class="s1">&#39;Jack Doe&#39;</span><span class="p">,</span> <span class="s1">&#39;yet another Bio&#39;</span><span class="p">)</span>
       <span class="k">ON</span> <span class="n">CONFLICT</span><span class="p">(</span><span class="ss">&quot;name&quot;</span><span class="p">)</span> <span class="k">DO</span> <span class="k">UPDATE</span> <span class="k">SET</span> <span class="n">bio</span><span class="o">=</span><span class="n">EXCLUDED</span><span class="p">.</span><span class="n">bio</span><span class="p">;</span>
 <span class="k">INSERT</span> <span class="mi">0</span> <span class="mi">2</span>
 </pre></div>
 </section>
-<section class="slide" id="s22"><h2>Résultat</h2>
+<section class="slide" id="s23"><h3>Résultat</h3>
 <div class="highlight"><pre><span></span><span class="n">jdl</span><span class="o">=&gt;</span> <span class="k">select</span> <span class="o">*</span> <span class="k">from</span> <span class="n">speaker</span><span class="p">;</span>
- <span class="n">id</span> <span class="o">|</span>   <span class="n">name</span>   <span class="o">|</span>       <span class="n">bio</span>       
+ <span class="n">id</span> <span class="o">|</span>   <span class="n">name</span>   <span class="o">|</span>       <span class="n">bio</span>
 <span class="c1">----+----------+-----------------</span>
   <span class="mi">2</span> <span class="o">|</span> <span class="n">Jane</span> <span class="n">Doe</span> <span class="o">|</span> <span class="n">Another</span> <span class="n">Bio</span>
   <span class="mi">1</span> <span class="o">|</span> <span class="n">John</span> <span class="n">Doe</span> <span class="o">|</span> <span class="n">Updated</span> <span class="n">Bio</span>
@@ -282,7 +288,9 @@ signe d&#39;un problème.</p>
 <span class="p">(</span><span class="mi">3</span> <span class="n">lignes</span><span class="p">)</span>
 </pre></div>
 </section>
-<section class="slide" id="s23"><h2>Et Tanker dans tout ça ?</h2>
+<section class="slide" id="s24"><h2>Et Tanker dans tout ça ?</h2>
+</section>
+<section class="slide" id="s25"><h3>Recette</h3>
 
 <p>Si on assemble tous ces ingrédient:</p>
 
@@ -295,7 +303,7 @@ signe d&#39;un problème.</p>
 
 <p>... et que l&#39;on ajoute Python. On obtient Tanker</p>
 </section>
-<section class="slide" id="s24"><h2>Définition des tables</h2>
+<section class="slide" id="s26"><h3>Définition des tables</h3>
 <div class="highlight"><pre><span></span><span class="p p-Indicator">-</span> <span class="nt">table</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">event</span>
   <span class="nt">columns</span><span class="p">:</span>
     <span class="nt">url</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">varchar</span>
@@ -313,7 +321,7 @@ signe d&#39;un problème.</p>
     <span class="p p-Indicator">-</span> <span class="l l-Scalar l-Scalar-Plain">name</span>
 </pre></div>
 </section>
-<section class="slide" id="s25"><h2>Définition des tables</h2>
+<section class="slide" id="s27"><h3>Définition des tables</h3>
 <div class="highlight"><pre><span></span><span class="p p-Indicator">-</span> <span class="nt">table</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">event_speaker</span>
   <span class="nt">columns</span><span class="p">:</span>
     <span class="nt">speaker</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">m2o speaker.id</span>  <span class="c1"># &lt;- many to one (aka clé étrangère)</span>
@@ -323,7 +331,7 @@ signe d&#39;un problème.</p>
     <span class="p p-Indicator">-</span> <span class="l l-Scalar l-Scalar-Plain">event</span>
 </pre></div>
 </section>
-<section class="slide" id="s26"><h2>Création des tables</h2>
+<section class="slide" id="s28"><h3>Création des tables</h3>
 <div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">tanker</span> <span class="kn">import</span> <span class="n">connect</span><span class="p">,</span> <span class="n">create_tables</span>
 
 <span class="n">cfg</span> <span class="o">=</span> <span class="p">{</span>
@@ -334,7 +342,7 @@ signe d&#39;un problème.</p>
     <span class="n">create_tables</span><span class="p">()</span>
 </pre></div>
 </section>
-<section class="slide" id="s27"><h3>Création des tables: logs</h3>
+<section class="slide" id="s29"><h5>Création des tables: logs</h5>
 
 <pre><code>DEBUG:2019-11-17 19:53:54: SQL Query:
   SELECT table_name FROM information_schema.tables WHERE table_schema
@@ -401,7 +409,7 @@ DEBUG:2019-11-17 19:53:54: SQL Query:
   DROP TABLE tmp
 DEBUG:2019-11-17 19:53:54: COMMIT</code></pre>
 </section>
-<section class="slide" id="s28"><h2>Insertion</h2>
+<section class="slide" id="s30"><h3>Insertion</h3>
 <div class="highlight"><pre><span></span><span class="n">values</span> <span class="o">=</span> <span class="p">[</span>
   <span class="p">(</span><span class="s1">&#39;John Doe&#39;</span><span class="p">,</span> <span class="s1">&#39;Updated Bio&#39;</span><span class="p">),</span>
   <span class="p">(</span><span class="s1">&#39;Jack Doe&#39;</span><span class="p">,</span> <span class="s1">&#39;yet another Bio&#39;</span><span class="p">)</span>
@@ -413,19 +421,19 @@ DEBUG:2019-11-17 19:53:54: COMMIT</code></pre>
 
 <p>Qui est la traduction de l&#39;exemple précédent de <code>ON CONFLICT</code></p>
 </section>
-<section class="slide" id="s29"><h2>Discussion</h2>
+<section class="slide" id="s31"><h3>Discussion</h3>
 <div class="highlight"><pre><span></span><span class="k">with</span> <span class="n">connect</span><span class="p">(</span><span class="n">cfg</span><span class="p">):</span>
     <span class="o">...</span>
 </pre></div>
 
 <p>Crée un <code>contextmanager</code> qui garanti l&#39;atomicité du block de code</p>
 </section>
-<section class="slide" id="s30"><h2>Discussion</h2>
+<section class="slide" id="s32"><h3>Discussion</h3>
 <div class="highlight"><pre><span></span><span class="n">view</span>  <span class="o">=</span> <span class="n">View</span><span class="p">(</span><span class="s1">&#39;speaker&#39;</span><span class="p">,</span> <span class="p">[</span><span class="s1">&#39;name&#39;</span><span class="p">,</span> <span class="s1">&#39;bio&#39;</span><span class="p">])</span> <span class="c1"># INSERT INTO speaker (name, bio)</span>
 <span class="n">view</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">values</span><span class="p">)</span>                       <span class="c1"># VALUES (...) ON CONFLICT ...</span>
 </pre></div>
 </section>
-<section class="slide" id="s31"><h2>Lecture</h2>
+<section class="slide" id="s33"><h3>Lecture</h3>
 <div class="highlight"><pre><span></span><span class="k">with</span> <span class="n">connect</span><span class="p">(</span><span class="n">cfg</span><span class="p">):</span>
     <span class="n">data</span> <span class="o">=</span> <span class="n">View</span><span class="p">(</span><span class="s1">&#39;speaker&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">read</span><span class="p">()</span><span class="o">.</span><span class="n">all</span><span class="p">()</span>
     <span class="k">print</span><span class="p">(</span><span class="n">data</span><span class="p">)</span>
@@ -433,7 +441,7 @@ DEBUG:2019-11-17 19:53:54: COMMIT</code></pre>
 
 <pre><code>[('Jane Doe', 'Another Bio'), ('John Doe', 'Updated Bio'), ('Jack Doe', 'yet another Bio')]</code></pre>
 </section>
-<section class="slide" id="s32"><h2>Lecture</h2>
+<section class="slide" id="s34"><h3>Lecture</h3>
 <div class="highlight"><pre><span></span><span class="k">for</span> <span class="n">row</span> <span class="ow">in</span> <span class="n">View</span><span class="p">(</span><span class="s1">&#39;speaker&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">read</span><span class="p">()</span><span class="o">.</span><span class="n">dict</span><span class="p">():</span>
     <span class="k">print</span><span class="p">(</span><span class="n">row</span><span class="p">)</span>
 </pre></div>
@@ -442,7 +450,7 @@ DEBUG:2019-11-17 19:53:54: COMMIT</code></pre>
 {'name': 'John Doe', 'bio': 'Updated Bio'}
 {'name': 'Jack Doe', 'bio': 'yet another Bio'}</code></pre>
 </section>
-<section class="slide" id="s33"><h2>Lecture</h2>
+<section class="slide" id="s35"><h3>Lecture</h3>
 <div class="highlight"><pre><span></span><span class="n">df</span> <span class="o">=</span> <span class="n">View</span><span class="p">(</span><span class="s1">&#39;speaker&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">read</span><span class="p">()</span><span class="o">.</span><span class="n">df</span><span class="p">()</span>
 <span class="k">print</span><span class="p">(</span><span class="n">df</span><span class="p">)</span>
 </pre></div>
@@ -452,7 +460,7 @@ DEBUG:2019-11-17 19:53:54: COMMIT</code></pre>
 1  John Doe      Updated Bio
 2  Jack Doe  yet another Bio</code></pre>
 </section>
-<section class="slide" id="s34"><h2>Lecture</h2>
+<section class="slide" id="s36"><h3>Lecture</h3>
 <div class="highlight"><pre><span></span><span class="n">df</span> <span class="o">=</span> <span class="n">View</span><span class="p">(</span><span class="s1">&#39;event&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">read</span><span class="p">()</span><span class="o">.</span><span class="n">df</span><span class="p">()</span>
 <span class="k">print</span><span class="p">(</span><span class="n">df</span><span class="p">)</span>
 </pre></div>
@@ -460,7 +468,7 @@ DEBUG:2019-11-17 19:53:54: COMMIT</code></pre>
 <pre><code>url  date          description          title
 0  http://...  None  Example description  Example Title</code></pre>
 </section>
-<section class="slide" id="s35"><h2>Lecture</h2>
+<section class="slide" id="s37"><h3>Lecture</h3>
 <div class="highlight"><pre><span></span><span class="n">df</span> <span class="o">=</span> <span class="n">View</span><span class="p">(</span><span class="s1">&#39;event_speaker&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">read</span><span class="p">()</span><span class="o">.</span><span class="n">df</span><span class="p">()</span>
 <span class="k">print</span><span class="p">(</span><span class="n">df</span><span class="p">)</span>
 </pre></div>
@@ -469,7 +477,7 @@ DEBUG:2019-11-17 19:53:54: COMMIT</code></pre>
 0     John Doe  http://...
 1     Jane Doe  http://...</code></pre>
 </section>
-<section class="slide" id="s36"><h2>Lecture</h2>
+<section class="slide" id="s38"><h3>Lecture</h3>
 <div class="highlight"><pre><span></span><span class="n">df</span> <span class="o">=</span> <span class="n">View</span><span class="p">(</span><span class="s1">&#39;event_speaker&#39;</span><span class="p">,</span> <span class="p">[</span><span class="s1">&#39;event.title&#39;</span><span class="p">,</span> <span class="s1">&#39;speaker.name&#39;</span><span class="p">,</span> <span class="s1">&#39;speaker.bio&#39;</span><span class="p">])</span><span class="o">.</span><span class="n">read</span><span class="p">()</span><span class="o">.</span><span class="n">df</span><span class="p">()</span>
 <span class="k">print</span><span class="p">(</span><span class="n">df</span><span class="p">)</span>
 </pre></div>
@@ -478,7 +486,7 @@ DEBUG:2019-11-17 19:53:54: COMMIT</code></pre>
 0  Example Title     John Doe  Updated Bio
 1  Example Title     Jane Doe  Another Bio```</code></pre>
 </section>
-<section class="slide" id="s37"><h2>Discussion</h2>
+<section class="slide" id="s39"><h3>Discussion</h3>
 <div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">tanker</span> <span class="kn">import</span> <span class="n">logger</span>
 <span class="n">logger</span><span class="o">.</span><span class="n">setLevel</span><span class="p">(</span><span class="s1">&#39;DEBUG&#39;</span><span class="p">)</span>
 <span class="k">with</span> <span class="n">connect</span><span class="p">(</span><span class="n">cfg</span><span class="p">):</span>
@@ -492,7 +500,9 @@ DEBUG:2019-11-17 19:53:54: COMMIT</code></pre>
   <span class="k">ON</span> <span class="p">(</span><span class="ss">&quot;event_speaker&quot;</span><span class="p">.</span><span class="ss">&quot;speaker&quot;</span> <span class="o">=</span> <span class="ss">&quot;speaker_1&quot;</span><span class="p">.</span><span class="ss">&quot;id&quot;</span><span class="p">)</span>
 </pre></div>
 </section>
-<section class="slide" id="s38"><h2>One-To-Many</h2>
+<section class="slide" id="s40"><h2>Relations</h2>
+</section>
+<section class="slide" id="s41"><h3>One-To-Many</h3>
 <div class="highlight"><pre><span></span><span class="p p-Indicator">-</span> <span class="nt">table</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">speaker</span>
   <span class="nt">columns</span><span class="p">:</span>
     <span class="nt">name</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">varchar</span>
@@ -502,7 +512,7 @@ DEBUG:2019-11-17 19:53:54: COMMIT</code></pre>
     <span class="p p-Indicator">-</span> <span class="l l-Scalar l-Scalar-Plain">name</span>
 </pre></div>
 </section>
-<section class="slide" id="s39"><h2>One-To-Many</h2>
+<section class="slide" id="s42"><h3>One-To-Many</h3>
 <div class="highlight"><pre><span></span><span class="n">df</span> <span class="o">=</span> <span class="n">View</span><span class="p">(</span><span class="s1">&#39;speaker&#39;</span><span class="p">,</span> <span class="p">[</span><span class="s1">&#39;name&#39;</span><span class="p">,</span> <span class="s1">&#39;events.event.title&#39;</span><span class="p">,</span> <span class="p">])</span><span class="o">.</span><span class="n">read</span><span class="p">()</span><span class="o">.</span><span class="n">df</span><span class="p">()</span>
 <span class="k">print</span><span class="p">(</span><span class="n">df</span><span class="p">)</span>
 </pre></div>
@@ -520,7 +530,7 @@ LEFT JOIN  "event_speaker" AS "event_speaker_0"
 LEFT JOIN "event" AS "event_1"
  ON ("event_speaker_0"."event" = "event_1"."id")</code></pre>
 </section>
-<section class="slide" id="s40"><h2>Insertion: données réelles</h2>
+<section class="slide" id="s43"><h3>Insertion: données réelles</h3>
 
 <pre><code>>>> len(data)
 78
@@ -541,7 +551,9 @@ LEFT JOIN "event" AS "event_1"
 <span class="p">})</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">data</span><span class="p">)</span>
 </pre></div>
 </section>
-<section class="slide" id="s41"><h2>Filtres</h2>
+<section class="slide" id="s44"><h2>Filtres et agrégats</h2>
+</section>
+<section class="slide" id="s45"><h3>Filtres</h3>
 <div class="highlight"><pre><span></span><span class="n">fltr</span> <span class="o">=</span> <span class="p">{</span><span class="s1">&#39;date&#39;</span><span class="p">:</span> <span class="s1">&#39;2019-05-08&#39;</span><span class="p">}</span>
 <span class="n">res</span> <span class="o">=</span> <span class="n">View</span><span class="p">(</span><span class="s1">&#39;event&#39;</span><span class="p">,</span> <span class="s1">&#39;title&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">read</span><span class="p">(</span><span class="n">fltr</span><span class="p">)</span><span class="o">.</span><span class="n">all</span><span class="p">()</span>
 <span class="k">print</span><span class="p">(</span><span class="n">res</span><span class="p">)</span>
@@ -549,7 +561,7 @@ LEFT JOIN "event" AS "event_1"
 
 <pre><code>[('Chamilo: Améliorer l’accès à une éducation de qualité partout dans le monde',)]</code></pre>
 </section>
-<section class="slide" id="s42"><h2>Filtres</h2>
+<section class="slide" id="s46"><h3>Filtres</h3>
 <div class="highlight"><pre><span></span><span class="n">fltr</span> <span class="o">=</span> <span class="s1">&#39;(= date &quot;2019-05-08&quot;)&#39;</span>
 <span class="n">res</span> <span class="o">=</span> <span class="n">View</span><span class="p">(</span><span class="s1">&#39;event&#39;</span><span class="p">,</span> <span class="s1">&#39;title&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">read</span><span class="p">(</span><span class="n">fltr</span><span class="p">)</span><span class="o">.</span><span class="n">all</span><span class="p">()</span>
 <span class="k">print</span><span class="p">(</span><span class="n">res</span><span class="p">)</span>
@@ -557,7 +569,7 @@ LEFT JOIN "event" AS "event_1"
 
 <pre><code>[('Chamilo: Améliorer l’accès à une éducation de qualité partout dans le monde',)]</code></pre>
 </section>
-<section class="slide" id="s43"><h2>Filtres</h2>
+<section class="slide" id="s47"><h3>Filtres</h3>
 <div class="highlight"><pre><span></span><span class="n">fltr</span> <span class="o">=</span> <span class="s1">&#39;(and (&gt;= date &quot;2019-01-01&quot;) (&lt; date &quot;2020-01-01&quot;))&#39;</span>
 <span class="n">res</span> <span class="o">=</span> <span class="n">View</span><span class="p">(</span><span class="s1">&#39;event&#39;</span><span class="p">,</span> <span class="s1">&#39;title&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">read</span><span class="p">(</span><span class="n">fltr</span><span class="p">)</span><span class="o">.</span><span class="n">all</span><span class="p">()</span>
 <span class="k">print</span><span class="p">(</span><span class="n">res</span><span class="p">)</span>
@@ -570,7 +582,7 @@ LEFT JOIN "event" AS "event_1"
  “libre” pour la sécurisation des réseaux domestiques et
  d’entreprises',)]</code></pre>
 </section>
-<section class="slide" id="s44"><h2>Filtres</h2>
+<section class="slide" id="s48"><h2>Filtres</h2>
 <div class="highlight"><pre><span></span><span class="n">fltr</span> <span class="o">=</span> <span class="s1">&#39;(ilike title &quot;%python%&quot;)&#39;</span>
 <span class="n">res</span> <span class="o">=</span> <span class="n">View</span><span class="p">(</span><span class="s1">&#39;event&#39;</span><span class="p">,</span> <span class="p">[</span><span class="s1">&#39;date&#39;</span><span class="p">,</span> <span class="s1">&#39;title&#39;</span><span class="p">])</span><span class="o">.</span><span class="n">read</span><span class="p">(</span><span class="n">fltr</span><span class="p">)</span><span class="o">.</span><span class="n">all</span><span class="p">()</span>
 <span class="k">print</span><span class="p">(</span><span class="n">res</span><span class="p">)</span>
@@ -579,7 +591,7 @@ LEFT JOIN "event" AS "event_1"
 <pre><code>[(datetime.date(2015, 12, 20), 'Pour une bonne pédagogie de
  la programmation web avec Python & Django')]</code></pre>
 </section>
-<section class="slide" id="s45"><h2>Agrégats</h2>
+<section class="slide" id="s49"><h3>Agrégats</h3>
 <div class="highlight"><pre><span></span><span class="k">print</span><span class="p">(</span><span class="n">View</span><span class="p">(</span><span class="s1">&#39;speaker&#39;</span><span class="p">,</span> <span class="s1">&#39;(count *)&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">read</span><span class="p">()</span><span class="o">.</span><span class="n">one</span><span class="p">())</span>
 </pre></div>
 
@@ -589,7 +601,7 @@ LEFT JOIN "event" AS "event_1"
 
 <pre><code>(78,)</code></pre>
 </section>
-<section class="slide" id="s46"><h2>Agrégats</h2>
+<section class="slide" id="s50"><h3>Agrégats</h3>
 <div class="highlight"><pre><span></span><span class="n">res</span> <span class="o">=</span> <span class="n">View</span><span class="p">(</span><span class="s1">&#39;event_speaker&#39;</span><span class="p">,</span> <span class="p">[</span>
     <span class="s1">&#39;speaker.name&#39;</span><span class="p">,</span>
     <span class="s1">&#39;(count *)&#39;</span><span class="p">,</span>
@@ -604,7 +616,7 @@ LEFT JOIN "event" AS "event_1"
 ('Robert Viseur est Docteur ...', 2)
 ('Robert Viseur', 2)</code></pre>
 </section>
-<section class="slide" id="s47"><h2>Cast</h2>
+<section class="slide" id="s51"><h3>Cast</h3>
 <div class="highlight"><pre><span></span><span class="n">df</span> <span class="o">=</span> <span class="n">View</span><span class="p">(</span><span class="s1">&#39;event&#39;</span><span class="p">,</span> <span class="p">{</span>
      <span class="s1">&#39;year&#39;</span><span class="p">:</span> <span class="s1">&#39;(extract &quot;year&quot; date )&#39;</span><span class="p">,</span>
      <span class="s1">&#39;month&#39;</span><span class="p">:</span> <span class="s1">&#39;(extract &quot;month&quot; date )&#39;</span><span class="p">,</span>
@@ -613,7 +625,7 @@ LEFT JOIN "event" AS "event_1"
 <span class="k">print</span><span class="p">(</span><span class="n">df</span><span class="o">.</span><span class="n">set_index</span><span class="p">([</span><span class="s1">&#39;year&#39;</span><span class="p">,</span> <span class="s1">&#39;month&#39;</span><span class="p">])</span><span class="o">.</span><span class="n">unstack</span><span class="p">()</span><span class="o">.</span><span class="n">fillna</span><span class="p">(</span><span class="s1">&#39;&#39;</span><span class="p">))</span>
 </pre></div>
 </section>
-<section class="slide" id="s48"><h2>Cast</h2>
+<section class="slide" id="s52"><h2>Cast</h2>
 
 <pre><code>count
 month   1.0  2.0  3.0  4.0  5.0  6.0  8.0  9.0  10.0 11.0 12.0
@@ -628,7 +640,7 @@ year
 2018.0     2    1              1                   1    2    1
 2019.0          1    1    1    1</code></pre>
 </section>
-<section class="slide" id="s49"><h2>Expression</h2>
+<section class="slide" id="s53"><h3>Expression</h3>
 <div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">tanker</span> <span class="kn">import</span> <span class="n">Expression</span>
 
 <span class="c1"># On ajoute le support pour une nouvelle expression sql</span>
@@ -642,7 +654,7 @@ year
      <span class="k">print</span><span class="p">(</span><span class="n">df</span><span class="p">)</span>
 </pre></div>
 </section>
-<section class="slide" id="s50"><h2>Expression</h2>
+<section class="slide" id="s54"><h3>Expression</h3>
 <div class="highlight"><pre><span></span><span class="k">SELECT</span> <span class="ss">&quot;event&quot;</span><span class="p">.</span><span class="ss">&quot;date&quot;</span><span class="p">,</span> <span class="k">char_length</span><span class="p">(</span><span class="ss">&quot;event&quot;</span><span class="p">.</span><span class="ss">&quot;title&quot;</span><span class="p">)</span> <span class="k">FROM</span> <span class="ss">&quot;event&quot;</span>
   <span class="k">ORDER</span> <span class="k">BY</span> <span class="k">char_length</span><span class="p">(</span><span class="ss">&quot;event&quot;</span><span class="p">.</span><span class="ss">&quot;title&quot;</span><span class="p">)</span> <span class="k">desc</span> <span class="k">LIMIT</span> <span class="mi">5</span>
 </pre></div>
@@ -654,14 +666,69 @@ year
 3  2012-03-04  152
 4  2012-06-26  148</code></pre>
 </section>
-<section class="slide" id="s51"><h2>tk: la ligne de commande de tanker</h2>
+<section class="slide" id="s55"><h2>Ligne de commande et interface web</h2>
 </section>
-<section class="slide" id="s52"><h2>ACL</h2>
+<section class="slide" id="s56"><h3>tk: la ligne de commande de tanker</h3>
+<div class="highlight"><pre><span></span>$ cat .tk.yaml 
+db_uri: postgresql:///jdl
+</pre></div>
 </section>
-<section class="slide" id="s53"></section>
-<section class="slide" id="s54"></section>
-<section class="slide" id="s55"></section>
-<section class="slide" id="s56"></section>
+<section class="slide" id="s57"><h3>tk: la ligne de commande de tanker</h3>
+<div class="highlight"><pre><span></span>$ tk info
+all_in_one_event
+event
+event_speaker
+speaker
+</pre></div>
+<div class="highlight"><pre><span></span>$ tk info event
+date <span class="o">(</span>DATE<span class="o">)</span>
+description <span class="o">(</span>VARCHAR<span class="o">)</span>
+id <span class="o">(</span>INTEGER<span class="o">)</span>
+title <span class="o">(</span>VARCHAR<span class="o">)</span>
+url <span class="o">(</span>VARCHAR<span class="o">)</span>
+</pre></div>
+</section>
+<section class="slide" id="s58"><h3>tk: la ligne de commande de tanker</h3>
+<div class="highlight"><pre><span></span>$ tk <span class="nb">read</span> event_speaker -l <span class="m">5</span>
+speaker.name,event.url
+Yannick Warnier <span class="o">(</span>Chamilo<span class="o">)</span>,http://jeudisdulibre.be/2019/05/08/mons-le-23-mai-chamilo...
+Joël Lambillotte <span class="o">(</span>IMIO<span class="o">)</span>,http://jeudisdulibre.be/2019/04/10/mons-le-25-avril-imio-cles...
+<span class="s2">&quot;Fabrice Flore-Thebault (Stylelabs, Cent...&quot;</span>,http://jeudisdulibre.be/2019/03/03/mons...
+Michel Villers,http://jeudisdulibre.be/2019/02/07/mons-le-21-fevrier-pfsense-un-...
+Mathieu Goeminne <span class="o">(</span>CETIC<span class="o">)</span>,http://jeudisdulibre.be/2018/12/21/mons-le-17-janvier-...
+</pre></div>
+</section>
+<section class="slide" id="s59"><h3>tk: la ligne de commande de tanker</h3>
+<div class="highlight"><pre><span></span>$ tk <span class="nb">read</span> event_speaker speaker.name event.date -F <span class="s2">&quot;(ilike title &#39;%python%&#39;)&quot;</span> -t
+speaker.name                 event.date
+---------------------------- ----------
+Hugues Bersini <span class="o">(</span>ULB, IRIDIA<span class="o">)</span> <span class="m">2015</span>-12-20
+</pre></div>
+</section>
+<section class="slide" id="s60"><h3>ACL</h3>
+
+<p>soon<sup>TM</sup></p>
+</section>
+<section class="slide" id="s61"><h3>Cadeau Bonux: une api en 60 lignes de code</h3>
+<div class="highlight"><pre><span></span><span class="nd">@route</span><span class="p">(</span><span class="s1">&#39;/read/&lt;table&gt;&#39;</span><span class="p">)</span>                             <span class="o">|</span>     <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">params</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+<span class="k">def</span> <span class="nf">read</span><span class="p">(</span><span class="n">table</span><span class="p">,</span> <span class="n">ext</span><span class="o">=</span><span class="s1">&#39;json&#39;</span><span class="p">):</span>                        <span class="o">|</span>         <span class="k">if</span> <span class="n">k</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">names</span> <span class="ow">or</span> <span class="ow">not</span> <span class="n">v</span><span class="o">.</span><span class="n">strip</span><span class="p">():</span>
+    <span class="n">table</span><span class="p">,</span> <span class="o">*</span><span class="n">fields</span> <span class="o">=</span> <span class="n">table</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s1">&#39;+&#39;</span><span class="p">)</span>               <span class="o">|</span>             <span class="k">continue</span>
+    <span class="n">view</span> <span class="o">=</span> <span class="n">View</span><span class="p">(</span><span class="n">table</span><span class="p">,</span> <span class="n">fields</span> <span class="ow">or</span> <span class="bp">None</span><span class="p">)</span>              <span class="o">|</span>         <span class="k">for</span> <span class="n">op</span> <span class="ow">in</span> <span class="n">Expression</span><span class="o">.</span><span class="n">builtins</span><span class="p">:</span>
+    <span class="n">fltr</span> <span class="o">=</span> <span class="p">[]</span>                                       <span class="o">|</span>             <span class="k">if</span> <span class="n">v</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="n">op</span><span class="p">):</span>
+    <span class="n">args</span> <span class="o">=</span> <span class="p">[]</span>                                       <span class="o">|</span>                 <span class="n">fltr</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s1">&#39;(</span><span class="si">%s</span><span class="s1"> </span><span class="si">%s</span><span class="s1"> {})&#39;</span> <span class="o">%</span> <span class="p">(</span><span class="n">op</span><span class="p">,</span> <span class="n">k</span><span class="p">))</span>
+    <span class="n">params</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">(</span><span class="n">request</span><span class="o">.</span><span class="n">params</span><span class="p">)</span>                   <span class="o">|</span>                 <span class="n">v</span> <span class="o">=</span> <span class="n">shlex</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="n">v</span><span class="p">[</span><span class="nb">len</span><span class="p">(</span><span class="n">op</span><span class="p">):])</span>
+    <span class="n">names</span> <span class="o">=</span> <span class="p">[</span><span class="n">f</span><span class="o">.</span><span class="n">name</span> <span class="k">for</span> <span class="n">f</span> <span class="ow">in</span> <span class="n">view</span><span class="o">.</span><span class="n">fields</span><span class="p">]</span> <span class="o">+</span> <span class="p">[</span><span class="s1">&#39;id&#39;</span><span class="p">]</span>  <span class="o">|</span>                 <span class="n">args</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">v</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">v</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span> <span class="k">else</span> <span class="n">v</span><span class="p">)</span>
+    <span class="o">...</span>                                             <span class="o">|</span>                 <span class="k">break</span>
+                                                    <span class="o">|</span>         <span class="k">else</span><span class="p">:</span>
+                                                    <span class="o">|</span>             <span class="n">fltr</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s1">&#39;(ilike </span><span class="si">%s</span><span class="s1"> {})&#39;</span> <span class="o">%</span> <span class="n">k</span><span class="p">)</span>
+                                                    <span class="o">|</span>             <span class="n">args</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">v</span> <span class="o">+</span> <span class="s1">&#39;%&#39;</span><span class="p">)</span>
+                                                    <span class="o">|</span>
+                                                    <span class="o">|</span>     <span class="n">res</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">view</span><span class="o">.</span><span class="n">read</span><span class="p">(</span><span class="n">fltr</span><span class="p">,</span> <span class="n">args</span><span class="o">=</span><span class="n">args</span><span class="p">)</span><span class="o">.</span><span class="n">dict</span><span class="p">())</span>
+                                                    <span class="o">|</span>     <span class="k">return</span> <span class="p">{</span><span class="s1">&#39;data&#39;</span><span class="p">:</span> <span class="n">res</span><span class="p">}</span>
+</pre></div>
+</section>
+<section class="slide" id="s62"><h1>Merci</h1>
+</section>
 
 </article><!-- presentation -->
 

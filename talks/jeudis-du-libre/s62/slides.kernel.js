@@ -125,7 +125,6 @@ class S6_Kernel_Deck {
   }
 
   jump(pos) {
-	  console.log('jump', pos)
 	window.location.hash = pos;
     this.fire('next' , this.createEventData(this.$activeSlide)) && this.activate(pos);
   }

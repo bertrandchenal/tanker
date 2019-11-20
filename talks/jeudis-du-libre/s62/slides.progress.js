@@ -8,8 +8,8 @@ class S6_Plugin_Progress {
 
     progressParent.className = 'bespoke-progress-parent';
     progressBar.className    = 'bespoke-progress-bar';
-    progressParent.appendChild( progressBar );
-    deck.parent.appendChild( progressParent );
+    progressParent.prepend( progressBar );
+    deck.parent.prepend( progressParent );
 
     deck.on( 'activate', ev =>
       progressBar.style.width = (ev.index * 100 / (deck.slides.length - 1)) + '%'

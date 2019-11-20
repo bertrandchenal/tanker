@@ -2,17 +2,21 @@
 # Tanker
 
 ---
-## Planning
+### Planning
 
 - Organisation des données: normalisation, choix des index
 - Rôles des données: OLAP vs OLTP
 - Manipulation des donnée: modèle objet vs modèle relationel
+- Tanker
+- Lecture & écriture
+- Filtre & agrégats
+- Ligne de commande et interface web
 
 ---
-# Normalisation des tables
+## Normalisation des tables
 
 ---
-## Exemple: jeudis du libre
+### Exemple: jeudis du libre
 
 Exemple de jeux de données: http://jeudisdulibre.be/.
 
@@ -25,8 +29,8 @@ Information que l'on peut collecter pour chaque évènement:
  - description
  - tags
 
---- 
-## Version naïve 
+---
+### Version naïve
 
 Création de la table:
 
@@ -49,8 +53,8 @@ INSERT INTO TABLE event ("date", "speaker", "tags", "bio", "title", "url")
 VALUES ('2019-05-08', 'Yannick Warnier (Chamilo)' '{e-learning,éducation}', '...');
 ```
 
---- 
-## Version naïve 
+---
+### Version naïve
 
 
     date       speaker                                    tags                                            bio
@@ -68,19 +72,19 @@ VALUES ('2019-05-08', 'Yannick Warnier (Chamilo)' '{e-learning,éducation}', '..
 
 Non affiché: `description` et `url`
 
---- 
-## Discussion
+---
+### Discussion
 
 Avec une seule table (et des colonnes en plus) on peut stocker une
 grosse partie des info du site.
 
 
 ---
-## Version normalisée - clés naturelles
+### Version normalisée - clés naturelles
 
 Table "event":
 
-    speaker                                    date       description                               
+    speaker                                    date       description
     ------------------------------------------ ---------- ------------------------------------------
     Yannick Warnier (Chamilo)                  2019-05-08 Le projet de plateforme e-learning Cham...
     Joël Lambillotte (IMIO)                    2019-04-10 L’intercommunale Imio conçoit et héberg...
@@ -94,7 +98,7 @@ Table "event":
     Michaël Hoste (80LIMIT)                    2018-02-15 Le développement JavaScript est un véri...
 
 ---
-## Version normalisée - clés naturelles
+### Version normalisée - clés naturelles
 
 Table "speaker":
 
@@ -107,7 +111,7 @@ Table "speaker":
 Note: Le champ speaker pose problème, certaines présentations on plusieurs orateurs.
 
 ---
-## Version normalisée - clés naturelles
+### Version normalisée - clés naturelles
 
 Table "tag":
 
@@ -120,7 +124,7 @@ Table "tag":
 
 
 ---
-##  Discussion
+###  Discussion
 
 - Beaucoup d'exemple sur le web (en particulier Wikipedia) mettent en
   avant cette approche.
@@ -137,7 +141,7 @@ Fabrice Flore-Thebault (Stylelabs, Cent... ...
 Michel Villers							   ...
 Mathieu Goeminne (CETIC)                   ...
 ```
-										   
+
 - chaque orateur va apparaître dans la table speaker et dans la table
   de relation.
 - chaque url va apparaître dans cette même table et la table event.
@@ -145,7 +149,7 @@ Mathieu Goeminne (CETIC)                   ...
 
 
 ---
-##  Discussion (suite)
+###  Discussion (suite)
 
 ``` sql
 jdl=> create table speaker (name varchar primary key);
@@ -169,7 +173,7 @@ DÉTAIL : La clé (name)=(Bob) est toujours référencée à partir de la table 
 ¯\\\_(ツ)\_/¯
 
 ---
-## Version normalisée - clés artificielle ("surrogate")
+### Version normalisée - clés artificielle ("surrogate")
 
 Table event:
 
@@ -186,7 +190,7 @@ Table event:
 Note: utiliser un array de varchar pour les tags
 
 ---
-## Version normalisée - clés artificielle
+### Version normalisée - clés artificielle
 
 Table speaker:
 
@@ -200,7 +204,7 @@ Table speaker:
 
 
 ---
-## Version normalisée - clés artificielle
+### Version normalisée - clés artificielle
 
 Table event_speaker
 
@@ -213,33 +217,33 @@ Table event_speaker
 ```
 
 ---
-## Insertion: nouvel évènement
+### Insertion: nouvel évènement
 
 ``` sql
 jdl=> INSERT INTO event (url, title, description) VALUES ('http://...', 'Example Title', 'Example description');
 INSERT 0 1
 jdl=> select * from event;
- id |    url     |     title     |     description     | date | tags 
+ id |    url     |     title     |     description     | date | tags
 ----+------------+---------------+---------------------+------+------
-  1 | http://... | Example Title | Example description |      | 
+  1 | http://... | Example Title | Example description |      |
 (1 ligne)
 ```
 
 ---
-## Insertion: premier orateur
+### Insertion: premier orateur
 
 ``` sql
 jdl=> INSERT INTO speaker (name, bio) VALUES ('John Doe', 'Example Bio');
 INSERT 0 1
 jdl=> select * from speaker;
- id |   name   |     bio     
+ id |   name   |     bio
 ----+----------+-------------
   1 | John Doe | Example Bio
 (1 ligne)
 ```
 
 ---
-## Insertion: second orateur
+### Insertion: second orateur
 
 ``` sql
 jdl=> INSERT INTO speaker (name, bio) VALUES ('Jane Doe', 'Another Bio');
@@ -249,13 +253,13 @@ INSERT 0 1
 ```
 
 ---
-## Select: jointure des 3 tables
+### Select: jointure des 3 tables
 
 ``` sql
 jdl=> SELECT event.url, event.title, speaker.name FROM event
       JOIN event_speaker ON (event_speaker.event = event.id)
 	  JOIN speaker ON (event_speaker.speaker = speaker.id);
-    url     |     title     |   name   
+    url     |     title     |   name
 ------------+---------------+----------
  http://... | Example Title | John Doe
  http://... | Example Title | Jane Doe
@@ -264,6 +268,9 @@ jdl=> SELECT event.url, event.title, speaker.name FROM event
 
 ---
 ## Index et clé uniques
+
+---
+### Question
 
 Est-ce que l'on autorise deux évènement avec la même url ? Deux
 speaker avec le même nom ?
@@ -278,7 +285,7 @@ De manière générale, une table sans une (et une seule) contrainte d'unicité 
 signe d'un problème.
 
 ---
-## Insertion d'un doublon
+### Insertion d'un doublon
 
 
 ``` sql
@@ -288,7 +295,7 @@ DÉTAIL : La clé « (name)=(John Doe) » existe déjà.
 ```
 
 ---
-## Second effet KissCool: `ON CONFLICT`
+### Second effet KissCool : `ON CONFLICT`
 
 ``` sql
 jdl=> INSERT INTO speaker ("name", "bio")
@@ -298,11 +305,11 @@ INSERT 0 2
 ```
 
 ---
-## Résultat
+### Résultat
 
 ``` sql
 jdl=> select * from speaker;
- id |   name   |       bio       
+ id |   name   |       bio
 ----+----------+-----------------
   2 | Jane Doe | Another Bio
   1 | John Doe | Updated Bio
@@ -312,6 +319,10 @@ jdl=> select * from speaker;
 
 ---
 ## Et Tanker dans tout ça ?
+
+
+---
+### Recette
 
 Si on assemble tous ces ingrédient:
 
@@ -323,7 +334,7 @@ Si on assemble tous ces ingrédient:
 ... et que l'on ajoute Python. On obtient Tanker
 
 ---
-## Définition des tables
+### Définition des tables
 
 ``` yaml
 - table: event
@@ -345,7 +356,7 @@ Si on assemble tous ces ingrédient:
 ```
 
 ---
-## Définition des tables
+### Définition des tables
 
 ``` yaml
 - table: event_speaker
@@ -358,7 +369,7 @@ Si on assemble tous ces ingrédient:
 ```
 
 ---
-## Création des tables
+### Création des tables
 
 ``` python
 from tanker import connect, create_tables
@@ -372,7 +383,7 @@ with connect(cfg):
 ```
 
 ---
-### Création des tables: logs
+##### Création des tables: logs
 
 ```
 DEBUG:2019-11-17 19:53:54: SQL Query:
@@ -443,7 +454,7 @@ DEBUG:2019-11-17 19:53:54: COMMIT
 ```
 
 ---
-## Insertion
+### Insertion
 
 ``` python
 values = [
@@ -458,7 +469,7 @@ with connect(cfg):
 Qui est la traduction de l'exemple précédent de `ON CONFLICT`
 
 ---
-## Discussion
+### Discussion
 
 ``` python
 with connect(cfg):
@@ -468,7 +479,7 @@ with connect(cfg):
 Crée un `contextmanager` qui garanti l'atomicité du block de code
 
 ---
-## Discussion
+### Discussion
 
 ``` python
 view  = View('speaker', ['name', 'bio']) # INSERT INTO speaker (name, bio)
@@ -476,7 +487,7 @@ view.write(values)                       # VALUES (...) ON CONFLICT ...
 ```
 
 ---
-## Lecture
+### Lecture
 
 ``` python
 with connect(cfg):
@@ -489,7 +500,7 @@ with connect(cfg):
 ```
 
 ---
-## Lecture
+### Lecture
 
 ``` python
 for row in View('speaker').read().dict():
@@ -505,7 +516,7 @@ for row in View('speaker').read().dict():
 
 
 ---
-## Lecture
+### Lecture
 
 ``` python
 df = View('speaker').read().df()
@@ -520,7 +531,7 @@ print(df)
 ```
 
 ---
-## Lecture
+### Lecture
 
 ``` python
 df = View('event').read().df()
@@ -534,7 +545,7 @@ print(df)
 
 
 ---
-## Lecture
+### Lecture
 
 ``` python
 df = View('event_speaker').read().df()
@@ -548,7 +559,7 @@ print(df)
 ```
 
 ---
-## Lecture
+### Lecture
 
 ``` python
 df = View('event_speaker', ['event.title', 'speaker.name', 'speaker.bio']).read().df()
@@ -563,7 +574,7 @@ print(df)
 
 
 ---
-## Discussion
+### Discussion
 
 ``` python
 from tanker import logger
@@ -581,9 +592,12 @@ LEFT JOIN "speaker" AS "speaker_1"
   ON ("event_speaker"."speaker" = "speaker_1"."id")
 ```
 
+---
+## Relations
+
 
 ---
-## One-To-Many
+### One-To-Many
 
 
 ``` yaml
@@ -597,7 +611,7 @@ LEFT JOIN "speaker" AS "speaker_1"
 ```
 
 ---
-## One-To-Many
+### One-To-Many
 
 ``` python
 df = View('speaker', ['name', 'events.event.title', ]).read().df()
@@ -612,7 +626,6 @@ print(df)
 ```
 
 ### SQL
-
 ```
 SELECT "speaker"."name", "event_1"."title" FROM "speaker"
 LEFT JOIN  "event_speaker" AS "event_speaker_0"
@@ -622,7 +635,7 @@ LEFT JOIN "event" AS "event_1"
 ```
 
 ---
-## Insertion: données réelles
+### Insertion: données réelles
 
 ```
 >>> len(data)
@@ -648,7 +661,11 @@ View('event_speaker', {
 ```
 
 ---
-##  Filtres
+## Filtres et agrégats
+
+
+---
+###  Filtres
 
 ``` python
 fltr = {'date': '2019-05-08'}
@@ -656,12 +673,12 @@ res = View('event', 'title').read(fltr).all()
 print(res)
 ```
 
-``` 
+```
 [('Chamilo: Améliorer l’accès à une éducation de qualité partout dans le monde',)]
 ```
 
 ---
-##  Filtres
+###  Filtres
 
 ``` python
 fltr = '(= date "2019-05-08")'
@@ -669,12 +686,12 @@ res = View('event', 'title').read(fltr).all()
 print(res)
 ```
 
-``` 
+```
 [('Chamilo: Améliorer l’accès à une éducation de qualité partout dans le monde',)]
 ```
 
 ---
-##  Filtres
+###  Filtres
 
 ``` python
 fltr = '(and (>= date "2019-01-01") (< date "2020-01-01"))'
@@ -692,6 +709,7 @@ print(res)
 ```
 
 ---
+
 ## Filtres
 
 ``` python
@@ -707,7 +725,7 @@ print(res)
 
 
 ---
-## Agrégats
+### Agrégats
 
 ``` python
 print(View('speaker', '(count *)').read().one())
@@ -726,7 +744,7 @@ print(View('event', '(count *)').read().one())
 ```
 
 ---
-## Agrégats
+### Agrégats
 
 ``` python
 res = View('event_speaker', [
@@ -746,7 +764,7 @@ for speaker in res:
 ```
 
 ---
-## Cast
+### Cast
 
 ``` python
 df = View('event', {
@@ -776,7 +794,7 @@ year
 ```
 
 ---
-## Expression
+### Expression
 
 ``` python
 from tanker import Expression
@@ -792,8 +810,9 @@ Expression.builtins['char_length'] = lambda x: 'char_length(%s)' % x
      print(df)
 ```
 
+
 ---
-## Expression
+### Expression
 
 ``` sql
 SELECT "event"."date", char_length("event"."title") FROM "event"
@@ -810,19 +829,87 @@ SELECT "event"."date", char_length("event"."title") FROM "event"
 ```
 
 ---
-## tk: la ligne de commande de tanker
+## Ligne de commande et interface web
 
 ---
-## ACL
+### tk: la ligne de commande de tanker
+
+
+``` shell
+$ cat .tk.yaml 
+db_uri: postgresql:///jdl
+```
 
 ---
-## 
+### tk: la ligne de commande de tanker
+
+``` shell
+$ tk info
+all_in_one_event
+event
+event_speaker
+speaker
+```
+
+``` shell
+$ tk info event
+date (DATE)
+description (VARCHAR)
+id (INTEGER)
+title (VARCHAR)
+url (VARCHAR)
+```
 
 ---
-## 
+### tk: la ligne de commande de tanker
+
+``` shell
+$ tk read event_speaker -l 5
+speaker.name,event.url
+Yannick Warnier (Chamilo),http://jeudisdulibre.be/2019/05/08/mons-le-23-mai-chamilo...
+Joël Lambillotte (IMIO),http://jeudisdulibre.be/2019/04/10/mons-le-25-avril-imio-cles...
+"Fabrice Flore-Thebault (Stylelabs, Cent...",http://jeudisdulibre.be/2019/03/03/mons...
+Michel Villers,http://jeudisdulibre.be/2019/02/07/mons-le-21-fevrier-pfsense-un-...
+Mathieu Goeminne (CETIC),http://jeudisdulibre.be/2018/12/21/mons-le-17-janvier-...
+```
 
 ---
-## 
+### tk: la ligne de commande de tanker
+
+``` shell
+$ tk read event_speaker speaker.name event.date -F "(ilike title '%python%')" -t
+speaker.name                 event.date
+---------------------------- ----------
+Hugues Bersini (ULB, IRIDIA) 2015-12-20
+```
 
 ---
-## 
+### ACL
+
+soon<sup>TM</sup>
+
+---
+### Cadeau Bonux: une api en 60 lignes de code
+
+``` python
+@route('/read/<table>')                             |     for k, v in params.items():
+def read(table, ext='json'):						|         if k not in names or not v.strip():
+    table, *fields = table.split('+')				|             continue
+    view = View(table, fields or None)				|         for op in Expression.builtins:
+    fltr = []										|             if v.startswith(op):
+    args = []										|                 fltr.append('(%s %s {})' % (op, k))
+    params = dict(request.params)					|                 v = shlex.split(v[len(op):])
+    names = [f.name for f in view.fields] + ['id']	|                 args.append(v[0] if len(v) == 0 else v)
+    ...												|                 break
+													|         else:
+													|             fltr.append('(ilike %s {})' % k)
+													|             args.append(v + '%')
+													|
+													|     res = list(view.read(fltr, args=args).dict())
+													|     return {'data': res}
+
+```
+
+
+---
+# Merci
