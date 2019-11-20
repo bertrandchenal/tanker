@@ -440,7 +440,7 @@ DEBUG:2019-11-17 19:53:54: COMMIT</code></pre>
 
 <pre><code>{'name': 'Jane Doe', 'bio': 'Another Bio'}
 {'name': 'John Doe', 'bio': 'Updated Bio'}
-{'name': 'Jack Doe', 'bio': 'yet another Bio'}µµ</code></pre>
+{'name': 'Jack Doe', 'bio': 'yet another Bio'}</code></pre>
 </section>
 <section class="slide" id="s33"><h2>Lecture</h2>
 <div class="highlight"><pre><span></span><span class="n">df</span> <span class="o">=</span> <span class="n">View</span><span class="p">(</span><span class="s1">&#39;speaker&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">read</span><span class="p">()</span><span class="o">.</span><span class="n">df</span><span class="p">()</span>
@@ -492,8 +492,7 @@ DEBUG:2019-11-17 19:53:54: COMMIT</code></pre>
   <span class="k">ON</span> <span class="p">(</span><span class="ss">&quot;event_speaker&quot;</span><span class="p">.</span><span class="ss">&quot;speaker&quot;</span> <span class="o">=</span> <span class="ss">&quot;speaker_1&quot;</span><span class="p">.</span><span class="ss">&quot;id&quot;</span><span class="p">)</span>
 </pre></div>
 </section>
-<section class="slide" id="s38"></section>
-<section class="slide" id="s39"><h2>One-To-Many</h2>
+<section class="slide" id="s38"><h2>One-To-Many</h2>
 <div class="highlight"><pre><span></span><span class="p p-Indicator">-</span> <span class="nt">table</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">speaker</span>
   <span class="nt">columns</span><span class="p">:</span>
     <span class="nt">name</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">varchar</span>
@@ -503,7 +502,7 @@ DEBUG:2019-11-17 19:53:54: COMMIT</code></pre>
     <span class="p p-Indicator">-</span> <span class="l l-Scalar l-Scalar-Plain">name</span>
 </pre></div>
 </section>
-<section class="slide" id="s40"><h2>One-To-Many</h2>
+<section class="slide" id="s39"><h2>One-To-Many</h2>
 <div class="highlight"><pre><span></span><span class="n">df</span> <span class="o">=</span> <span class="n">View</span><span class="p">(</span><span class="s1">&#39;speaker&#39;</span><span class="p">,</span> <span class="p">[</span><span class="s1">&#39;name&#39;</span><span class="p">,</span> <span class="s1">&#39;events.event.title&#39;</span><span class="p">,</span> <span class="p">])</span><span class="o">.</span><span class="n">read</span><span class="p">()</span><span class="o">.</span><span class="n">df</span><span class="p">()</span>
 <span class="k">print</span><span class="p">(</span><span class="n">df</span><span class="p">)</span>
 </pre></div>
@@ -513,7 +512,7 @@ DEBUG:2019-11-17 19:53:54: COMMIT</code></pre>
 1  Jane Doe      Example Title
 2  Jack Doe               None</code></pre>
 
-<h2>One-To-Many</h2>
+<h3>SQL</h3>
 
 <pre><code>SELECT "speaker"."name", "event_1"."title" FROM "speaker"
 LEFT JOIN  "event_speaker" AS "event_speaker_0"
@@ -521,7 +520,7 @@ LEFT JOIN  "event_speaker" AS "event_speaker_0"
 LEFT JOIN "event" AS "event_1"
  ON ("event_speaker_0"."event" = "event_1"."id")</code></pre>
 </section>
-<section class="slide" id="s41"><h2>Insertion: données réelles</h2>
+<section class="slide" id="s40"><h2>Insertion: données réelles</h2>
 
 <pre><code>>>> len(data)
 78
@@ -542,7 +541,7 @@ LEFT JOIN "event" AS "event_1"
 <span class="p">})</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">data</span><span class="p">)</span>
 </pre></div>
 </section>
-<section class="slide" id="s42"><h2>Filtres</h2>
+<section class="slide" id="s41"><h2>Filtres</h2>
 <div class="highlight"><pre><span></span><span class="n">fltr</span> <span class="o">=</span> <span class="p">{</span><span class="s1">&#39;date&#39;</span><span class="p">:</span> <span class="s1">&#39;2019-05-08&#39;</span><span class="p">}</span>
 <span class="n">res</span> <span class="o">=</span> <span class="n">View</span><span class="p">(</span><span class="s1">&#39;event&#39;</span><span class="p">,</span> <span class="s1">&#39;title&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">read</span><span class="p">(</span><span class="n">fltr</span><span class="p">)</span><span class="o">.</span><span class="n">all</span><span class="p">()</span>
 <span class="k">print</span><span class="p">(</span><span class="n">res</span><span class="p">)</span>
@@ -550,7 +549,7 @@ LEFT JOIN "event" AS "event_1"
 
 <pre><code>[('Chamilo: Améliorer l’accès à une éducation de qualité partout dans le monde',)]</code></pre>
 </section>
-<section class="slide" id="s43"><h2>Filtres</h2>
+<section class="slide" id="s42"><h2>Filtres</h2>
 <div class="highlight"><pre><span></span><span class="n">fltr</span> <span class="o">=</span> <span class="s1">&#39;(= date &quot;2019-05-08&quot;)&#39;</span>
 <span class="n">res</span> <span class="o">=</span> <span class="n">View</span><span class="p">(</span><span class="s1">&#39;event&#39;</span><span class="p">,</span> <span class="s1">&#39;title&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">read</span><span class="p">(</span><span class="n">fltr</span><span class="p">)</span><span class="o">.</span><span class="n">all</span><span class="p">()</span>
 <span class="k">print</span><span class="p">(</span><span class="n">res</span><span class="p">)</span>
@@ -558,7 +557,7 @@ LEFT JOIN "event" AS "event_1"
 
 <pre><code>[('Chamilo: Améliorer l’accès à une éducation de qualité partout dans le monde',)]</code></pre>
 </section>
-<section class="slide" id="s44"><h2>Filtres</h2>
+<section class="slide" id="s43"><h2>Filtres</h2>
 <div class="highlight"><pre><span></span><span class="n">fltr</span> <span class="o">=</span> <span class="s1">&#39;(and (&gt;= date &quot;2019-01-01&quot;) (&lt; date &quot;2020-01-01&quot;))&#39;</span>
 <span class="n">res</span> <span class="o">=</span> <span class="n">View</span><span class="p">(</span><span class="s1">&#39;event&#39;</span><span class="p">,</span> <span class="s1">&#39;title&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">read</span><span class="p">(</span><span class="n">fltr</span><span class="p">)</span><span class="o">.</span><span class="n">all</span><span class="p">()</span>
 <span class="k">print</span><span class="p">(</span><span class="n">res</span><span class="p">)</span>
@@ -570,8 +569,8 @@ LEFT JOIN "event" AS "event_1"
  Ansible, tester grâce à Molecule',), ('pfSense, un firewall
  “libre” pour la sécurisation des réseaux domestiques et
  d’entreprises',)]</code></pre>
-
-<h2>Filtre</h2>
+</section>
+<section class="slide" id="s44"><h2>Filtres</h2>
 <div class="highlight"><pre><span></span><span class="n">fltr</span> <span class="o">=</span> <span class="s1">&#39;(ilike title &quot;%python%&quot;)&#39;</span>
 <span class="n">res</span> <span class="o">=</span> <span class="n">View</span><span class="p">(</span><span class="s1">&#39;event&#39;</span><span class="p">,</span> <span class="p">[</span><span class="s1">&#39;date&#39;</span><span class="p">,</span> <span class="s1">&#39;title&#39;</span><span class="p">])</span><span class="o">.</span><span class="n">read</span><span class="p">(</span><span class="n">fltr</span><span class="p">)</span><span class="o">.</span><span class="n">all</span><span class="p">()</span>
 <span class="k">print</span><span class="p">(</span><span class="n">res</span><span class="p">)</span>
@@ -613,8 +612,8 @@ LEFT JOIN "event" AS "event_1"
 <span class="p">})</span><span class="o">.</span><span class="n">read</span><span class="p">()</span><span class="o">.</span><span class="n">df</span><span class="p">()</span> <span class="c1"># with auto-groupby</span>
 <span class="k">print</span><span class="p">(</span><span class="n">df</span><span class="o">.</span><span class="n">set_index</span><span class="p">([</span><span class="s1">&#39;year&#39;</span><span class="p">,</span> <span class="s1">&#39;month&#39;</span><span class="p">])</span><span class="o">.</span><span class="n">unstack</span><span class="p">()</span><span class="o">.</span><span class="n">fillna</span><span class="p">(</span><span class="s1">&#39;&#39;</span><span class="p">))</span>
 </pre></div>
-
-<h2>Cast</h2>
+</section>
+<section class="slide" id="s48"><h2>Cast</h2>
 
 <pre><code>count
 month   1.0  2.0  3.0  4.0  5.0  6.0  8.0  9.0  10.0 11.0 12.0
@@ -629,7 +628,7 @@ year
 2018.0     2    1              1                   1    2    1
 2019.0          1    1    1    1</code></pre>
 </section>
-<section class="slide" id="s48"><h2>Expression</h2>
+<section class="slide" id="s49"><h2>Expression</h2>
 <div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">tanker</span> <span class="kn">import</span> <span class="n">Expression</span>
 
 <span class="c1"># On ajoute le support pour une nouvelle expression sql</span>
@@ -643,7 +642,7 @@ year
      <span class="k">print</span><span class="p">(</span><span class="n">df</span><span class="p">)</span>
 </pre></div>
 </section>
-<section class="slide" id="s49"><h2>Expression</h2>
+<section class="slide" id="s50"><h2>Expression</h2>
 <div class="highlight"><pre><span></span><span class="k">SELECT</span> <span class="ss">&quot;event&quot;</span><span class="p">.</span><span class="ss">&quot;date&quot;</span><span class="p">,</span> <span class="k">char_length</span><span class="p">(</span><span class="ss">&quot;event&quot;</span><span class="p">.</span><span class="ss">&quot;title&quot;</span><span class="p">)</span> <span class="k">FROM</span> <span class="ss">&quot;event&quot;</span>
   <span class="k">ORDER</span> <span class="k">BY</span> <span class="k">char_length</span><span class="p">(</span><span class="ss">&quot;event&quot;</span><span class="p">.</span><span class="ss">&quot;title&quot;</span><span class="p">)</span> <span class="k">desc</span> <span class="k">LIMIT</span> <span class="mi">5</span>
 </pre></div>
@@ -655,14 +654,14 @@ year
 3  2012-03-04  152
 4  2012-06-26  148</code></pre>
 </section>
-<section class="slide" id="s50"><h2>tk: la ligne de commande de tanker</h2>
+<section class="slide" id="s51"><h2>tk: la ligne de commande de tanker</h2>
 </section>
-<section class="slide" id="s51"><h2>ACL</h2>
+<section class="slide" id="s52"><h2>ACL</h2>
 </section>
-<section class="slide" id="s52"></section>
 <section class="slide" id="s53"></section>
 <section class="slide" id="s54"></section>
 <section class="slide" id="s55"></section>
+<section class="slide" id="s56"></section>
 
 </article><!-- presentation -->
 

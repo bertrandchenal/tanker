@@ -499,7 +499,7 @@ for row in View('speaker').read().dict():
 ```
 {'name': 'Jane Doe', 'bio': 'Another Bio'}
 {'name': 'John Doe', 'bio': 'Updated Bio'}
-{'name': 'Jack Doe', 'bio': 'yet another Bio'}µµ
+{'name': 'Jack Doe', 'bio': 'yet another Bio'}
 ```
 
 
@@ -581,8 +581,6 @@ LEFT JOIN "speaker" AS "speaker_1"
   ON ("event_speaker"."speaker" = "speaker_1"."id")
 ```
 
----
-## 
 
 ---
 ## One-To-Many
@@ -613,7 +611,7 @@ print(df)
 2  Jack Doe               None
 ```
 
-## One-To-Many
+### SQL
 
 ```
 SELECT "speaker"."name", "event_1"."title" FROM "speaker"
@@ -693,7 +691,8 @@ print(res)
  d’entreprises',)]
 ```
 
-## Filtre
+---
+## Filtres
 
 ``` python
 fltr = '(ilike title "%python%")'
@@ -758,6 +757,7 @@ df = View('event', {
 print(df.set_index(['year', 'month']).unstack().fillna(''))
 ```
 
+---
 ## Cast
 
 ```
