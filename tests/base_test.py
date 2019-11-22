@@ -12,8 +12,8 @@ DB_PARAMS = [
     {'uri': 'postgresql:///tanker_test#test_schema', 'auto': False},
     {'uri': 'sqlite:///test.db', 'auto': False},
     {'uri': 'sqlite:///test.db', 'auto': True},
-    # {'uri': 'crdb://root@localhost:26257/tanker_test', 'auto': False},
-    # {'uri': 'crdb://root@localhost:26257/tanker_test', 'auto': True},
+    {'uri': 'crdb://root@localhost:26257/tanker_test', 'auto': False},
+    {'uri': 'crdb://root@localhost:26257/tanker_test', 'auto': True},
 ]
 
 verbose = pytest.config.getoption('verbose', 0) > 1

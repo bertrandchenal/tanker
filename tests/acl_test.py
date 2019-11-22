@@ -59,7 +59,7 @@ def test_insert(session):
     bob, = view.read().all()
     assert bob == ('001', 'Bob')
 
-def test_update(session):
+def test_update_simple_filter(session):
     # Add all members to table
     inject('member', 'acl-write', [])
     view = View('member', ['registration_code', 'name'])
@@ -77,6 +77,12 @@ def test_update(session):
     res = View('member', ['name']).read().all()
     assert sorted(name for name, in res) == ['Alice', 'BOB', 'Trudy']
 
+def test_update_relation_filter(session):
+    # Add all members to table
+    inject('member', 'acl-write', [])
+    view = View('member', ['registration_code', 'name'])
+    View('member', member_cols).write(members)
+
     # Test no update with filter on relation
     inject('member', 'acl-write', ['(= team.name "Blue")'])
     view = View('member', ['registration_code', 'name'])
@@ -89,21 +95,13 @@ def test_update(session):
     assert sorted(res) == [('001', 'BOB'), ('002', 'Alice')]
 
     # Nasty test, when we change the value of the column supporting the filter
-    view = View('member', ['registration_code', 'team.name', 'team.country.name'])
-
-    cnt = view.write([
+    view = View('member', [
+        'registration_code', 'team.name', 'team.country.name'])
+    view.write([
         ('001', 'Red', 'Belgium'), # Blue to Red transition
         ('002', 'Blue', 'Belgium'),# Red to Blue transition
      ])
-    return
+
     res = view.read('(in registration_code "001" "002")').all()
-    # assert sorted(res) == [('001', 'Blue', 'Belgium'), ('002', 'Red', 'Belgium')]
-
-    # This currently fail because the update on 001 is allowed by the
-    # code (because 001 is on red team before the change, but then the
-    # insert purge detect an invalid row (and act as if it was
-    # incorrectly insert (but it was the result of the update) and so
-    # deletes it
-
-    # Idea: collect inserted ids by the previous step and delete only
-    # line that are part of those -> not sure if possible with sqlite
+    assert sorted(res) == [('001', 'Blue', 'Belgium'),
+                           ('002', 'Red', 'Belgium')]

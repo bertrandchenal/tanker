@@ -1288,21 +1288,15 @@ class View(object):
         self.upd_filter_cnt = 0
         self.ins_filter_cnt = 0
         if filters:
-            # Filter is based on existing line in self.table, so it
-            # only affect updates (and not inserts)
-            # (We introduced acl in filters, so we disable them)
+            # Delete line from tmp that invalidate the filter
+            self.upd_filter_cnt = self._purge(
+                join_cond, filters, disable_acl=True, action='insert',
+                args=args)
             self.upd_filter_cnt = self._purge(
                 join_cond, filters, disable_acl=True, action='update',
                 args=args)
         yield join_cond
 
-        if filters:
-            # Delete inserted lines that do not match the filters
-            # (updated lines have already been deleted with the
-            # previous _purge with action=update)
-            self.ins_filter_cnt = self._purge(
-                join_cond, filters, disable_acl=True, action='insert',
-                args=args)
         # Clean tmp table
         execute('DROP TABLE %s' % self.tmp_table)
 
@@ -1517,18 +1511,19 @@ class View(object):
         assert action in ('purge', 'update', 'insert')
         insert = action == 'insert'
         update = action == 'update'
+        purge = action == 'purge'
         main = self.table.name
         tmp = self.tmp_table
-        if update:
+        if purge:
             assert bool(filters), 'filters is needed to purge on tmp'
             main, tmp = tmp, main
 
         # Prepare basic query
         head_qr = (
-            'DELETE FROM "%(main)s" '
+            'DELETE FROM "%(tmp)s" '
             'WHERE id %(filter_operator)s ('
-            ' SELECT "%(main)s".id FROM "%(main)s" ')
-        join_qr = '{} JOIN %(tmp)s on (%(join_cond)s) '.format(
+            ' SELECT "%(tmp)s".id FROM "%(tmp)s" ')
+        join_qr = '{} JOIN %(main)s on (%(join_cond)s) '.format(
             'INNER' if insert else 'LEFT')
         excl_cond = '' if insert else '%(tmp)s.%(field)s IS NULL'
         tail_qr = ')'
@@ -1549,7 +1544,14 @@ class View(object):
         acl_filters = None
         if not disable_acl:
             acl_filters = self.ctx.cfg.get('acl-write', {}).get(self.table.name)
-        exp = Expression(self.table, base_env=self.base_env())
+        if insert:
+            # Build aliases (we want evaluate the actual "new" value
+            # of tmp and not the "old" values in the main one)
+            table_aliases = {c.name: 'tmp' for c in self.field_map}
+        else:
+            table_aliases = None
+        exp = Expression(self.table, base_env=self.base_env(),
+                         table_aliases=table_aliases)
         filter_chunks = exp._build_filter_cond(filters, acl_filters)
         join_chunks = [exp.ref_set]
         if filter_chunks:
@@ -1974,7 +1976,7 @@ class Reference:
 
 class ReferenceSet:
 
-    def __init__(self, exp, table_alias=None, parent=None, disable_acl=False):
+    def __init__(self, exp, table_aliases=None, parent=None, disable_acl=False):
         '''
         A ReferenceSet helps to 'browse' across table by joining them. The
         ReferenceSet hold the set of joins that has to be done to
@@ -1982,7 +1984,7 @@ class ReferenceSet:
         '''
         self.exp = exp
         self.table = exp.table
-        self.table_alias = table_alias or self.table.name
+        self.table_aliases = table_aliases or self.table.name
         self.joins = OrderedDict()
         self.references = []
         self.parent = parent
@@ -1990,6 +1992,17 @@ class ReferenceSet:
         self.disable_acl = disable_acl
         if parent:
             parent.children.append(self)
+
+    def table_alias(self, column=None):
+        '''
+        Return which alias to use based on the given columns
+        '''
+        if isinstance(self.table_aliases, str):
+            return self.table_aliases
+        if isinstance(self.table_aliases, dict):
+            if not column:
+                return self.table.name
+            return self.table_aliases.get(column, self.table.name)
 
     def get_sql_joins(self):
         for key, alias in self.joins.items():
@@ -2009,13 +2022,12 @@ class ReferenceSet:
         self.references.append(ref)
         return ref
 
-    def get_ref(self, desc, table=None, alias=None):
+    def get_ref(self, desc, table=None, force_alias=None):
         table = table or self.table
-        alias = alias or self.table_alias
-
         # Simple col, return
         if '.' not in desc:
             col = table.get_column(desc)
+            alias = force_alias or self.table_alias(col)
             return Reference(table, desc, self.joins, alias, col)
 
         # Resolve column
@@ -2024,7 +2036,7 @@ class ReferenceSet:
         foreign_table = rel.get_foreign_table()
 
         # Compute join
-        left_table = alias
+        left_table = force_alias or self.table_alias(head)
         right_table = foreign_table.name
 
         if rel.ctype == 'M2O':
@@ -2042,7 +2054,7 @@ class ReferenceSet:
         foreign_alias = self.joins.setdefault(key, key_alias)
 
         # Recurse
-        return self.get_ref(tail, table=foreign_table, alias=foreign_alias)
+        return self.get_ref(tail, table=foreign_table, force_alias=foreign_alias)
 
     def get_nb_joins(self, up=True):
         if up and self.parent:
@@ -2064,7 +2076,8 @@ class Expression(object):
 
     builtins = {
         '+': lambda *xs: '(%s)' % ' + '.join(xs),
-        '-': lambda *xs: '- %s' % xs[0] if len(xs) == 1 else '(%s)' % ' - '.join(xs),
+        '-': lambda *xs: '- %s' % xs[0] if len(xs) == 1 \
+            else '(%s)' % ' - '.join(xs),
         '*': lambda *xs: '(%s)' % ' * '.join(xs),
         '/': lambda *xs: '(%s)' % ' / '.join(xs),
         'and': lambda *xs: '(%s)' % ' AND '.join(xs),
@@ -2113,7 +2126,7 @@ class Expression(object):
         'every': lambda *x: 'every(%s)' % x,
     }
 
-    def __init__(self, table, ref_set=None, parent=None, table_alias=None,
+    def __init__(self, table, ref_set=None, parent=None, table_aliases=None,
                  disable_acl=False, base_env=None):
         assert isinstance(table, Table)
         self.table = table
@@ -2127,14 +2140,14 @@ class Expression(object):
         # Add refset
         if not ref_set:
             parent_rs = parent and parent.ref_set
-            ref_set = ReferenceSet(self, table_alias=table_alias,
+            ref_set = ReferenceSet(self, table_aliases=table_aliases,
                                    parent=parent_rs, disable_acl=disable_acl)
         self.ref_set = ref_set
 
     def _sub_select(self, *items):
         select = items[0]
         tail = ' '.join(items[1:])
-        from_ = 'FROM "%s"' % (self.ref_set.table_alias)
+        from_ = 'FROM "%s"' % (self.ref_set.table_alias())
         joins = ' '.join(self.ref_set.get_sql_joins())
 
         items = (select, from_, joins, tail)
