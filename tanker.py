@@ -1155,8 +1155,7 @@ class View(object):
             else:
                 yield col.format(data[idx[0]])
 
-    def delete(self, filters=None, data=None, args=None, table_alias=None,
-               swap=False):
+    def delete(self, filters=None, data=None, args=None, swap=False):
         '''
         Delete rows from table that:
         - match `filters` if set (or that doesn't match `filters` if
@@ -1164,14 +1163,9 @@ class View(object):
         - match `data` based on key columns (or doesn't match if swap is set)
         Only one of `filters` or `data` can be passed.
 
-        table_alias allows to pass an alternate table name (that will
-        act as self.table).
         `args` is a dict of values that allows to parameterize `filters`.
         '''
         self.validate_key(set(c.name for c in self.field_map))
-        if table_alias and not filters:
-            raise ValueError('table_alias parameter is only supported with '
-                             'non-empty filters parameters')
         if not any((data, filters)):
             qr = 'DELETE FROM "%s"' % self.table.name
             return execute(qr)
@@ -1179,8 +1173,7 @@ class View(object):
         if data and filters:
             raise ValueError('Deletion by both data and filter not supported')
 
-        exp = Expression(self.table, table_alias=table_alias,
-                         base_env=self.base_env())
+        exp = Expression(self.table, base_env=self.base_env())
         filter_chunks = exp._build_filter_cond(filters)
 
         if data:
@@ -1203,7 +1196,7 @@ class View(object):
             qr = ('DELETE FROM "%(main_table)s" WHERE id %(op)s ('
                   'SELECT "%(main_table)s".id FROM "%(main_table)s"')
             qr = qr % {
-                'main_table': table_alias or self.table.name,
+                'main_table': self.table.name,
                 'op': 'NOT IN' if swap else 'IN',
             }
             chunks = [qr, exp.ref_set]
@@ -1289,11 +1282,11 @@ class View(object):
         self.ins_filter_cnt = 0
         if filters:
             # Delete line from tmp that invalidate the filter
-            self.upd_filter_cnt = self._purge(
-                join_cond, filters, disable_acl=True, action='insert',
+            self.ins_filter_cnt = self._purge(
+                join_cond, filters, disable_acl=True, what='new',
                 args=args)
             self.upd_filter_cnt = self._purge(
-                join_cond, filters, disable_acl=True, action='update',
+                join_cond, filters, disable_acl=True, what='old',
                 args=args)
         yield join_cond
 
@@ -1361,7 +1354,7 @@ class View(object):
                     self._pg_upsert(join_cond, insert=insert, update=update)
             if purge:
                 cnt = self._purge(join_cond, filters, disable_acl,
-                                  action='purge', args=args)
+                                  what='purge', args=args)
                 rowcounts['deleted'] = cnt
 
         rowcounts['filtered'] = self.ins_filter_cnt + self.upd_filter_cnt
@@ -1500,23 +1493,25 @@ class View(object):
         cur = TankerCursor(self, qr).execute()
         return cur and cur.rowcount or 0
 
-    def _purge(self, join_cond, filters, disable_acl=False, action='purge',
+    def _purge(self, join_cond, filters, disable_acl=False, what='purge',
                args=None):
         '''
         Delete rows from main table that are not in tmp table and evaluate
-        filters to true. Do the opposite if action is 'update' (keep
-        in tmp lines that are also in main and that evaluate filter to
-        false.
+        filters to true. If "what" is 'old' we delte from tmp lines
+        that are also in main and that evaluate filter to false. If
+        "what" is new we delete from tmp lines that evaluate to false.
         '''
-        assert action in ('purge', 'update', 'insert')
-        insert = action == 'insert'
-        update = action == 'update'
-        purge = action == 'purge'
+
+        assert what in ('purge', 'old', 'new')
+        new = what == 'new'
+        old = what == 'old'
+        purge = what == 'purge'
         main = self.table.name
         tmp = self.tmp_table
         if purge:
-            assert bool(filters), 'filters is needed to purge on tmp'
             main, tmp = tmp, main
+        else:
+            assert bool(filters), 'filters is needed to purge on tmp'
 
         # Prepare basic query
         head_qr = (
@@ -1524,27 +1519,28 @@ class View(object):
             'WHERE id %(filter_operator)s ('
             ' SELECT "%(tmp)s".id FROM "%(tmp)s" ')
         join_qr = '{} JOIN %(main)s on (%(join_cond)s) '.format(
-            'INNER' if insert else 'LEFT')
-        excl_cond = '' if insert else '%(tmp)s.%(field)s IS NULL'
+            'INNER' if old else 'LEFT')
+        excl_cond = '%(main)s.%(field)s IS NULL' if purge else ''
         tail_qr = ')'
 
         # Format all parts of the query
         fmt = {
             'main': main,
             'tmp': tmp,
-            'filter_operator': 'NOT IN' if update else 'IN',
+            'filter_operator': 'IN', #'NOT IN' if update else
             'join_cond': ' AND '.join(join_cond),
             'field': self.key_cols[0]
         }
         head_qr = head_qr % fmt
         join_qr = join_qr % fmt
+
         excl_cond = excl_cond % fmt
 
         # Build filters
         acl_filters = None
         if not disable_acl:
             acl_filters = self.ctx.cfg.get('acl-write', {}).get(self.table.name)
-        if insert:
+        if new:
             # Build aliases (we want evaluate the actual "new" value
             # of tmp and not the "old" values in the main one)
             table_aliases = {c.name: 'tmp' for c in self.field_map}
@@ -1556,14 +1552,14 @@ class View(object):
         join_chunks = [exp.ref_set]
         if filter_chunks:
             qr = [head_qr] + [join_qr] + join_chunks
-            if insert:
+            if not purge:
                 qr += ['WHERE NOT ('] \
-                      + filter_chunks \
-                      + [')']
+                    + filter_chunks \
+                    + [')']
             else:
                 qr += ['WHERE'] + filter_chunks
             if excl_cond:
-                qr += ['OR' if update else 'AND', excl_cond]
+                qr += ['AND', excl_cond]
             qr += [tail_qr]
         else:
             qr = head_qr + join_qr
@@ -2024,11 +2020,12 @@ class ReferenceSet:
 
     def get_ref(self, desc, table=None, force_alias=None):
         table = table or self.table
+        left_table = force_alias
         # Simple col, return
         if '.' not in desc:
             col = table.get_column(desc)
-            alias = force_alias or self.table_alias(col)
-            return Reference(table, desc, self.joins, alias, col)
+            left_table = left_table or self.table_alias(col.name)
+            return Reference(table, desc, self.joins, left_table, col)
 
         # Resolve column
         head, tail = desc.split('.', 1)
@@ -2036,7 +2033,7 @@ class ReferenceSet:
         foreign_table = rel.get_foreign_table()
 
         # Compute join
-        left_table = force_alias or self.table_alias(head)
+        left_table = left_table or self.table_alias(head)
         right_table = foreign_table.name
 
         if rel.ctype == 'M2O':

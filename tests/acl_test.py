@@ -83,11 +83,11 @@ def test_update_relation_filter(session):
     view = View('member', ['registration_code', 'name'])
     View('member', member_cols).write(members)
 
-    # Test no update with filter on relation
+    # Test update with filter on relation
     inject('member', 'acl-write', ['(= team.name "Blue")'])
     view = View('member', ['registration_code', 'name'])
 
-    cnt = view.write([
+    view.write([
         ('001', 'BOB'),
         ('002', 'ALICE'),
      ])

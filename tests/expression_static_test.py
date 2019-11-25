@@ -188,11 +188,11 @@ def test_env(session):
 def test_table_alias(session):
     if ctx.pg_schema:
         return
-    exp = Expression(Table.get('team'), table_alias='tmp')
+    exp = Expression(Table.get('team'), table_aliases='tmp')
     ast = exp.parse('name')
     assert ast.eval() == '"tmp"."name"'
 
-    exp = Expression(Table.get('team'), table_alias='tmp')
+    exp = Expression(Table.get('team'), table_aliases='tmp')
     ast = exp.parse('(= country.name "foo")')
     join = next(exp.ref_set.get_sql_joins())
     expected = ('LEFT JOIN "country" AS "country_0" '
@@ -201,7 +201,7 @@ def test_table_alias(session):
 
     # This kind of expression will probably actually fail later (in
     # the default use case, the id column is not created in tmp)
-    exp = Expression(Table.get('team'), table_alias='tmp')
+    exp = Expression(Table.get('team'), table_aliases='tmp')
     ast = exp.parse('(= members.name "foo")')
     join = next(exp.ref_set.get_sql_joins())
     expected = ('LEFT JOIN "member" AS "member_0" '

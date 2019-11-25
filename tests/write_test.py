@@ -202,13 +202,13 @@ def test_sneaky_update_filters(session):
     fltr = '(= name "Bob")'
     member_view = View('member', ['registration_code', 'name'])
     data = [
-        ('001', 'Trudy'), # This supposed to update 001 from Bob to Trudy
+        ('001', 'Trudy'), # Try to update 001 from Bob to Trudy
     ]
     cnt = member_view.write(data, filters=fltr)
     assert cnt['filtered'] == 1
 
     expected = [
-        # 001 is lost!
+        ('001', 'Bob'),
         ('002', 'Alice'),
         ('003', 'Trudy'),
     ]
