@@ -9,7 +9,7 @@ def _db(request):
     conn = psycopg2.connect(dbname='postgres')
     conn.autocommit = True
     cursor = conn.cursor()
-    cursor.execute('CREATE DATABASE tanker_test')
+    cursor.execute('CREATE DATABASE tanker_test ENCODING "utf8"')
     yield
     Pool.disconnect()
     cursor.execute('DROP DATABASE tanker_test')
