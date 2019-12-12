@@ -462,7 +462,9 @@ class Context:
                     if not all_none(val) and val not in mapping)
                 if missing:
                     fltr = '(OR %s)' % ' '.join(base_filter for _ in missing)
-                    for row in view.read(fltr, args=list(chain(*missing))):
+                    rows = view.read(fltr, args=list(chain(*missing)),
+                                     disable_acl=True)
+                    for row in rows:
                         # row[-1] is id
                         mapping.set(row[:-1], row[-1])
                 for val in self._emit_fk(page, mapping, remote_table):
