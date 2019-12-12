@@ -2393,11 +2393,13 @@ def connect(cfg=None, action=None, _auto_rollback=False):
         @contextmanager
         def cm(cfg):
             new_ctx = CTX_STACK.push(cfg)
-            exc = None
             try:
                 yield new_ctx
-            finally:
-                CTX_STACK.pop(exc or _auto_rollback)
+            except Exception as exc:
+                CTX_STACK.pop(exc)
+                raise
+            else:
+                CTX_STACK.pop(_auto_rollback)
         return cm(cfg)
     if action == 'enter':
         return CTX_STACK.push(cfg)
