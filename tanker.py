@@ -658,7 +658,9 @@ class Context:
                     col_def = 'M2O %s.%s' % (remote_table, remote_col)
                 elif data_type in type_map:
                     col_def = type_map[data_type]
-                elif data_type not in COLUMN_TYPE:
+                elif data_type in COLUMN_TYPE:
+                    col_def = data_type
+                else:
                     continue # We don't know what to do with this type
                 table_cfg['columns'][name] = col_def
 
