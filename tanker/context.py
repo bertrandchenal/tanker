@@ -1,6 +1,6 @@
-from itertools import groupby, chain
 from collections import defaultdict, OrderedDict
 from contextlib import contextmanager
+from itertools import groupby, chain
 from urllib.parse import urlparse, urlunparse
 import json
 import logging
@@ -16,9 +16,9 @@ try:
 except ImportError:
     psycopg2 = None
 
-from .utils import logger, basestring, yaml_load, CTX_STACK, ctx, pandas
-from .table import Column, Table
 from .expression import ExpressionSymbol, AST, ReferenceSet
+from .table import Column, Table
+from .utils import logger, basestring, yaml_load, CTX_STACK, ctx, pandas
 
 QUOTE_SEPARATION = re.compile(r"(.*?)('.*?')", re.DOTALL)
 NAMED_RE = re.compile(r"%\(([^\)]+)\)s")
@@ -39,7 +39,9 @@ def log_sql(query, params=None, exception=False):
     if not exception and logger.getEffectiveLevel() > logging.DEBUG:
         return
     indent = "  "
-    query = textwrap.fill(query, initial_indent=indent, subsequent_indent=indent)
+    query = textwrap.fill(
+        query, initial_indent=indent, subsequent_indent=indent
+    )
     if params is None:
         args = ("SQL Query:\n%s", query)
     else:
@@ -134,7 +136,9 @@ class Pool:
             sqlite3.register_converter("INTEGER[]", convert_array(int))
             sqlite3.register_converter("VARCHAR[]", convert_array(str))
             sqlite3.register_converter("FLOAT[]", convert_array(float))
-            sqlite3.register_converter("BOOL[]", convert_array(lambda x: x == "True"))
+            sqlite3.register_converter(
+                "BOOL[]", convert_array(lambda x: x == "True")
+            )
 
         elif self.flavor == "postgresql":
             self.pg_schema = uri.fragment
@@ -172,7 +176,9 @@ class Pool:
             self.db_uri = urlunparse(uri_parts)
 
         else:
-            raise ValueError('Unsupported scheme "%s" in uri "%s"' % (uri.scheme, uri))
+            raise ValueError(
+                'Unsupported scheme "%s" in uri "%s"' % (uri.scheme, uri)
+            )
 
     def enter(self):
         if self.flavor == "sqlite":
@@ -226,7 +232,6 @@ class Pool:
         pool = Pool(cfg)
         cls._pools[db_uri] = pool
         return pool
-
 
 
 class Context:
@@ -385,12 +390,18 @@ class Context:
             qr = "SELECT name FROM sqlite_master WHERE type = 'index'"
         else:
             schema = self.pg_schema or "public"
-            qr = "SELECT indexname FROM pg_indexes " "WHERE schemaname = '%s'" % schema
+            qr = (
+                "SELECT indexname FROM pg_indexes "
+                "WHERE schemaname = '%s'" % schema
+            )
         self.db_indexes = set(name for name, in execute(qr))
 
         # Collect constraints
         if self.flavor != "sqlite":
-            qr = "SELECT constraint_name " "FROM information_schema.table_constraints"
+            qr = (
+                "SELECT constraint_name "
+                "FROM information_schema.table_constraints"
+            )
             self.db_constraints = set(name for name, in execute(qr))
 
         if not auto:
@@ -405,7 +416,9 @@ class Context:
             qr = 'PRAGMA foreign_key_list("%s")'
             for table_name in self.db_tables:
                 cur = execute(qr % table_name)
-                foreign_keys.update({(table_name, r[3]): (r[2], r[4]) for r in cur})
+                foreign_keys.update(
+                    {(table_name, r[3]): (r[2], r[4]) for r in cur}
+                )
 
         else:
             # Extract fk
@@ -463,7 +476,10 @@ class Context:
             """
             rows = list(execute(qr))
             # Sort by index size and column position in index
-            col_pos = lambda x: (len(x[3].split()), x[3].split().index(str(x[4])))
+            col_pos = lambda x: (
+                len(x[3].split()),
+                x[3].split().index(str(x[4])),
+            )
             rows = sorted(rows, key=col_pos)
             keys = defaultdict(list)
             indexes = {}
@@ -592,7 +608,11 @@ class Context:
                 'DELETE FROM "%(table)s" '
                 'WHERE "%(table)s.%(col)s"=OLD.id;'
                 "END"
-                % {"remote": col.foreign_table, "table": table.name, "col": col.name,}
+                % {
+                    "remote": col.foreign_table,
+                    "table": table.name,
+                    "col": col.name,
+                }
             )
 
     def create_index(self, table):
@@ -641,6 +661,7 @@ class Context:
 
     def sync_data(self, table):
         from .view import View
+
         if not table.values:
             return
         logger.info("Populate %s" % table.name)
@@ -772,6 +793,7 @@ class TankerCursor:
 
 def connect(cfg=None, action=None, _auto_rollback=False):
     if not action:
+
         @contextmanager
         def cm(cfg):
             new_ctx = CTX_STACK.push(cfg, Context(cfg))
@@ -782,6 +804,7 @@ def connect(cfg=None, action=None, _auto_rollback=False):
                 raise
             else:
                 CTX_STACK.pop(_auto_rollback)
+
         return cm(cfg)
 
     if action == "enter":

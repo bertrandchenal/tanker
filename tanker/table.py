@@ -1,21 +1,18 @@
-import json
 from collections import defaultdict
 from datetime import datetime, timedelta, date
 from itertools import chain
+import json
 
 from .utils import basestring, COLUMN_TYPE, strptime, ctx, pandas
 
 
-
 EPOCH = datetime(1970, 1, 1)
-skip_none = (lambda fn: (
-    lambda x: None
-    if x is None or (pandas and pandas.isnull(x))
-    else fn(x)))
+skip_none = lambda fn: (
+    lambda x: None if x is None or (pandas and pandas.isnull(x)) else fn(x)
+)
 
 
 class Column:
-
     def __init__(self, name, ctype, default=None):
         if ' ' in ctype:
             full_ctype = ctype
@@ -73,12 +70,17 @@ class Column:
             table = Table.get(self.foreign_table).name
             cascade = '' if ctx.flavor == 'sqlite' else 'ON DELETE CASCADE'
             return 'INTEGER REFERENCES "%s" ("%s") %s' % (
-                table, self.foreign_col, cascade)
+                table,
+                self.foreign_col,
+                cascade,
+            )
 
     def get_foreign_table(self):
         if not self.foreign_table:
-            raise ValueError('The "%s" column of "%s" is not a foreign key' % (
-                self.name, self.table.name))
+            raise ValueError(
+                'The "%s" column of "%s" is not a foreign key'
+                % (self.name, self.table.name)
+            )
         return Table.get(self.foreign_table)
 
     def format_array(self, array, astype, array_dim):
@@ -89,8 +91,9 @@ class Column:
             items = map(lambda x: 'null' if x is None else str(x), items)
         else:
             items = (
-                self.format_array(v, astype=astype, array_dim=array_dim-1)
-                for v in array)
+                self.format_array(v, astype=astype, array_dim=array_dim - 1)
+                for v in array
+            )
         items = ','.join(items)
         # XXX https://github.com/cockroachdb/cockroach/issues/33429:
         # cockroach seems to choke on arrays
@@ -144,18 +147,19 @@ class Column:
                     if ts is None:
                         value = None
                     else:
-                        value = EPOCH + timedelta(seconds=ts/1e9)
+                        value = EPOCH + timedelta(seconds=ts / 1e9)
                         if astype == 'TIMESTAMPTZ':
                             # tolist as given us utc naive timestamp
                             from pytz import utc
+
                             value = value.replace(tzinfo=utc)
                     yield value
                 elif isinstance(value, basestring):
                     yield strptime(value, astype)
                 else:
                     raise ValueError(
-                        'Unexpected value "%s" for type "%s"' % (
-                            value, astype))
+                        'Unexpected value "%s" for type "%s"' % (value, astype)
+                    )
 
         elif astype == 'DATE':
             for value in values:
@@ -171,15 +175,15 @@ class Column:
                     if ts is None:
                         value = None
                     else:
-                        dt = EPOCH + timedelta(seconds=ts/1e9)
+                        dt = EPOCH + timedelta(seconds=ts / 1e9)
                         value = date(*dt.timetuple()[:3])
                     yield value
                 elif isinstance(value, basestring):
                     yield strptime(value, astype)
                 else:
                     raise ValueError(
-                        'Unexpected value "%s" for type "%s"' % (
-                            value, astype))
+                        'Unexpected value "%s" for type "%s"' % (value, astype)
+                    )
         elif astype == 'JSONB':
             for value in values:
                 if value is None:
@@ -197,9 +201,9 @@ class Column:
 
 
 class Table:
-
-    def __init__(self, name, columns, key=None, unique=None, values=None,
-                 use_index=None):
+    def __init__(
+        self, name, columns, key=None, unique=None, values=None, use_index=None
+    ):
         self.name = name
         self.columns = columns[:]
         self.unique = unique or []
@@ -212,8 +216,9 @@ class Table:
         # Add implicit id column
         if 'id' not in [c.name for c in self.columns]:
             self.columns.insert(0, Column('id', 'INTEGER'))
-        self.own_columns = [c for c in self.columns
-                            if c.name != 'id' and c.ctype != 'O2M']
+        self.own_columns = [
+            c for c in self.columns if c.name != 'id' and c.ctype != 'O2M'
+        ]
 
         # Set table attribute on columns object
         for col in self.columns:
@@ -240,13 +245,13 @@ class Table:
         #               '("%s" in table "%s")'
         #         raise ValueError(msg % (col, self.name))
 
-
     def get_column(self, name):
         try:
             return self._column_dict[name]
         except KeyError:
-            raise KeyError('Column "%s" not found in table "%s"' % (
-                name, self.name))
+            raise KeyError(
+                'Column "%s" not found in table "%s"' % (name, self.name)
+            )
 
     @classmethod
     def get(cls, table_name):
@@ -295,6 +300,3 @@ class Table:
                 break
             wave = new_wave
         return sorted(paths[dest], key=len)
-
-
-

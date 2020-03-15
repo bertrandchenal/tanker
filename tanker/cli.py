@@ -1,39 +1,60 @@
-import os
 import argparse
+import csv
+import os
+import sys
 
+from .utils import logger, __version__, yaml_load, ctx
+from .context import connect, create_tables
+from .view import View
+from .table import Table
 
 
 def cli():
     parser = argparse.ArgumentParser(description='Tanker CLI')
-    parser.add_argument('action', help='info, read, write, delete or version',
-                        nargs=1)
-    parser.add_argument('table', help='Table to query',
-                        nargs='*')
-    parser.add_argument('--config', help='Config file (defaults to ".tk.yaml")',
-                        default='.tk.yaml')
-    parser.add_argument('-l', '--limit', help='Limit number of results',
-                        type=int)
-    parser.add_argument('-o', '--offset', help='Offset results',
-                        type=int)
-    parser.add_argument('-F', '--filter', action='append', help='Add filter',
-                        default=[])
-    parser.add_argument('-p', '--purge', help='Purge table after write',
-                        action='store_true')
-    parser.add_argument('-s', '--sort', action='append', help='Sort results',
-                        default=[])
-    parser.add_argument('-f', '--file', help='Read/Write to file '
-                        '(instead of stdin/stdout)')
-    parser.add_argument('--yaml', help='Enable YAML input / ouput '
-                        '(defaults to csv)', action='store_true')
-    parser.add_argument('--ascii-table', '-t', help='Enable ascii table output',
-                        action='store_true')
-    parser.add_argument('--vbar', help='Vertical bar plot',
-                        action='store_true')
+    parser.add_argument(
+        'action', help='info, read, write, delete or version', nargs=1
+    )
+    parser.add_argument('table', help='Table to query', nargs='*')
+    parser.add_argument(
+        '--config',
+        help='Config file (defaults to ".tk.yaml")',
+        default='.tk.yaml',
+    )
+    parser.add_argument(
+        '-l', '--limit', help='Limit number of results', type=int
+    )
+    parser.add_argument('-o', '--offset', help='Offset results', type=int)
+    parser.add_argument(
+        '-F', '--filter', action='append', help='Add filter', default=[]
+    )
+    parser.add_argument(
+        '-p', '--purge', help='Purge table after write', action='store_true'
+    )
+    parser.add_argument(
+        '-s', '--sort', action='append', help='Sort results', default=[]
+    )
+    parser.add_argument(
+        '-f', '--file', help='Read/Write to file ' '(instead of stdin/stdout)'
+    )
+    parser.add_argument(
+        '--yaml',
+        help='Enable YAML input / ouput ' '(defaults to csv)',
+        action='store_true',
+    )
+    parser.add_argument(
+        '--ascii-table',
+        '-t',
+        help='Enable ascii table output',
+        action='store_true',
+    )
+    parser.add_argument('--vbar', help='Vertical bar plot', action='store_true')
     parser.add_argument('--tic', help='Tic character to use for plot')
-    parser.add_argument('-d', '--debug', help='Enable debugging',
-                        action='store_true')
-    parser.add_argument('-H', '--hide-headers', help='Hide headers',
-                        action='store_true')
+    parser.add_argument(
+        '-d', '--debug', help='Enable debugging', action='store_true'
+    )
+    parser.add_argument(
+        '-H', '--hide-headers', help='Hide headers', action='store_true'
+    )
 
     args = parser.parse_args()
     if args.debug:
@@ -82,8 +103,7 @@ def vbar(rows, fields, plot_width=80, tic=None):
     label_len = max(len(l) for l in labels)
     value_max = max(max(v for v in values), 0)
     value_min = min(min(v for v in values), 0)
-    value_width =  max(len(f' {value_min:.2f}'),
-                       len(f'{value_max:.2f}'))
+    value_width = max(len(f' {value_min:.2f}'), len(f'{value_max:.2f}'))
     delta = (value_max - value_min) or 1
     scale = delta / plot_width
 
@@ -95,11 +115,11 @@ def vbar(rows, fields, plot_width=80, tic=None):
     for label, value in zip(labels, values):
         yield f'{label:<{label_len}} {value:>{value_width}.2f} '
         if value < 0:
-            nb_tics = -round(value/scale)
+            nb_tics = -round(value / scale)
             line = ' ' * (left_pane - nb_tics) + tic * nb_tics + '|\n'
             yield line
         else:
-            pos = round(value/scale)
+            pos = round(value / scale)
             yield ' ' * left_pane + '|' + tic * pos + '\n'
 
     yield ''
@@ -131,6 +151,7 @@ def cli_input_data(args):
 
     return fields, data
 
+
 def cli_main(args):
     action = args.action[0]
     table = args.table[0] if args.table else None
@@ -152,13 +173,12 @@ def cli_main(args):
             fh = sys.stdout
         if args.yaml:
             import yaml
-            fh.write(yaml.dump(
-                list(res.dict()),
-                default_flow_style=False)
-            )
+
+            fh.write(yaml.dump(list(res.dict()), default_flow_style=False))
         elif args.ascii_table:
-            headers = None if args.hide_headers \
-                      else [f.name for f in view.fields]
+            headers = (
+                None if args.hide_headers else [f.name for f in view.fields]
+            )
             for line in ascii_table(res, headers=headers):
                 fh.write(line)
         elif args.vbar:

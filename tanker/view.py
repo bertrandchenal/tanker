@@ -1,20 +1,19 @@
-import io
 from collections import defaultdict
 from contextlib import contextmanager
-import uuid
 import csv
+import io
+import uuid
 
-from .utils import ctx, LRU, LRU_PAGE_SIZE, paginate
-from .table import  Table
-from .expression import ReferenceSet, Expression, AST
-from .utils import basestring, interleave, pandas
 from .context import execute, executemany, copy_from, TankerCursor
+from .expression import ReferenceSet, Expression, AST
+from .table import Table
+from .utils import basestring, interleave, pandas
+from .utils import ctx, LRU, LRU_PAGE_SIZE, paginate
 
 all_none = lambda xs: all(x is None for x in xs)
 
 
 class ViewField:
-
     def __init__(self, name, desc, table):
         self.name = name
         self.desc = desc
@@ -29,8 +28,7 @@ class ViewField:
             ftype = 'INTEGER'
             exp = Expression(table)
             self.ref = ReferenceSet(exp).get_ref(desc)
-            remote_col = self.ref.remote_table.get_column(
-                self.ref.remote_field)
+            remote_col = self.ref.remote_table.get_column(self.ref.remote_field)
             ctype = remote_col.ctype
             self.col = table.get_column(desc.split('.')[0])
 
@@ -54,6 +52,7 @@ class ViewField:
             return '<ViewField %s (%s)>' % (self.desc, self.name)
         return '<ViewField %s>' % self.desc
 
+
 class View(object):
 
     _fk_cache = {}
@@ -67,13 +66,16 @@ class View(object):
             fields = [[fields, fields]]
         elif isinstance(fields, dict):
             fields = fields.items()
-        elif isinstance(fields, (list, tuple)) and isinstance(fields[0], basestring):
+        elif isinstance(fields, (list, tuple)) and isinstance(
+            fields[0], basestring
+        ):
             fields = zip(fields, fields)
         elif isinstance(fields, (list, tuple)) and isinstance(fields[0], tuple):
             fields = fields
 
-        self.fields = [ViewField(name.strip(), desc, self.table)
-                       for name, desc in fields]
+        self.fields = [
+            ViewField(name.strip(), desc, self.table) for name, desc in fields
+        ]
         self.field_dict = dict((f.name, f) for f in self.fields)
         self.upd_filter_cnt = None
         self.ins_filter_cnt = None
@@ -91,14 +93,16 @@ class View(object):
                 if view_field.col.ctype not in ('M2O', 'O2M'):
                     raise ValueError(
                         'Column %s is specified several time in view'
-                        % view_field.col.name)
+                        % view_field.col.name
+                    )
             self.field_map[view_field.col].append(view_field)
             self.field_idx[view_field.col].append(idx)
             idx += 1
 
         # Key fields identify each line in the data
-        self.key_fields = [f for f in self.fields
-                             if f.col and f.col.name in self.table.key]
+        self.key_fields = [
+            f for f in self.fields if f.col and f.col.name in self.table.key
+        ]
         # Key cols identify each row in the table
         id_col = self.table.get_column('id')
         if id_col in self.field_map:
@@ -120,8 +124,17 @@ class View(object):
             base_env[field.name] = field
         return base_env
 
-    def read(self, filters=None, args=None, order=None, groupby=None,
-             limit=None, distinct=False, offset=None, disable_acl=False):
+    def read(
+        self,
+        filters=None,
+        args=None,
+        order=None,
+        groupby=None,
+        limit=None,
+        distinct=False,
+        offset=None,
+        disable_acl=False,
+    ):
 
         if isinstance(filters, basestring):
             filters = [filters]
@@ -131,12 +144,15 @@ class View(object):
             acl_filters = self.ctx.cfg.get('acl-read', {}).get(self.table.name)
 
         # Inject fields name in base env and create expression
-        exp = Expression(self.table, disable_acl=disable_acl, base_env=self.base_env())
+        exp = Expression(
+            self.table, disable_acl=disable_acl, base_env=self.base_env()
+        )
 
         # Add select fields
         statement = '(select-distinct %s)' if distinct else '(select %s)'
-        select_ast = exp.parse(statement % ' '.join(
-            f.desc for f in self.fields))
+        select_ast = exp.parse(
+            statement % ' '.join(f.desc for f in self.fields)
+        )
         select_chunk = [select_ast]
         select_chunk.append('FROM "%s"' % self.table.name)
 
@@ -157,7 +173,7 @@ class View(object):
         groupby_chunks = []
         group_fields = []
         if groupby and isinstance(groupby, basestring):
-                groupby = [groupby]
+            groupby = [groupby]
         elif aggregates and not groupby:
             groupby = []
             for pos, field in enumerate(self.fields):
@@ -191,8 +207,13 @@ class View(object):
             order_chunks = []
 
         join_chunks = [exp.ref_set]
-        all_chunks = (select_chunk + join_chunks + filter_chunks
-                      + groupby_chunks + order_chunks)
+        all_chunks = (
+            select_chunk
+            + join_chunks
+            + filter_chunks
+            + groupby_chunks
+            + order_chunks
+        )
 
         if limit is not None:
             all_chunks += ['LIMIT %s' % int(limit)]
@@ -213,7 +234,8 @@ class View(object):
                 else:
                     # Resolve foreign key reference
                     fmt_cols = lambda a: tuple(
-                        a[0].col.format(a[1], astype=a[0].ctype))
+                        a[0].col.format(a[1], astype=a[0].ctype)
+                    )
                     values = map(fmt_cols, zip(fields, values))
                     yield View.resolve_fk(fields, values)
             else:
@@ -245,9 +267,11 @@ class View(object):
             data = list(zip(*data))
             data = list(self.format(data))
             with self._prepare_write(data) as join_cond:
-                qr = 'DELETE FROM "%(main)s" WHERE id %(op)s (' \
-                     'SELECT "%(main)s".id FROM "%(main)s" ' \
-                     'INNER JOIN %(tmp_table)s on %(join_cond)s)'
+                qr = (
+                    'DELETE FROM "%(main)s" WHERE id %(op)s ('
+                    'SELECT "%(main)s".id FROM "%(main)s" '
+                    'INNER JOIN %(tmp_table)s on %(join_cond)s)'
+                )
                 qr = qr % {
                     'main': self.table.name,
                     'op': 'NOT IN' if swap else 'IN',
@@ -257,8 +281,10 @@ class View(object):
                 cur = execute(qr)
 
         else:
-            qr = ('DELETE FROM "%(main_table)s" WHERE id %(op)s ('
-                  'SELECT "%(main_table)s".id FROM "%(main_table)s"')
+            qr = (
+                'DELETE FROM "%(main_table)s" WHERE id %(op)s ('
+                'SELECT "%(main_table)s".id FROM "%(main_table)s"'
+            )
             qr = qr % {
                 'main_table': self.table.name,
                 'op': 'NOT IN' if swap else 'IN',
@@ -276,9 +302,8 @@ class View(object):
         # REPLACE)
         extra_id = 'id' not in self.field_dict
         not_null = lambda fields: (
-            'NOT NULL'
-            if any(f in self.key_fields for f in fields)
-            else '')
+            'NOT NULL' if any(f in self.key_fields for f in fields) else ''
+        )
         # Create tmp
         if ctx.flavor == 'crdb':
             self.tmp_table = 'tmp_' + uuid.uuid4().hex
@@ -286,11 +311,10 @@ class View(object):
         else:
             self.tmp_table = 'tmp'
             qr = 'CREATE TEMPORARY TABLE %s (%s)'
-        col_defs = ', '.join('"%s" %s %s' % (
-            col.name,
-            fields[0].ftype,
-            not_null(fields))
-            for col, fields in self.field_map.items())
+        col_defs = ', '.join(
+            '"%s" %s %s' % (col.name, fields[0].ftype, not_null(fields))
+            for col, fields in self.field_map.items()
+        )
         if extra_id:
             id_type = 'INTEGER' if ctx.flavor == 'sqlite' else 'SERIAL'
             col_defs += ', id %s PRIMARY KEY' % id_type
@@ -319,7 +343,9 @@ class View(object):
             else:
                 writer = csv.writer(buff, delimiter=',', quotechar='"')
                 qr = 'COPY %s (%s) FROM STDIN WITH (FORMAT csv)' % (
-                    self.tmp_table, columns)
+                    self.tmp_table,
+                    columns,
+                )
             # Append to writer by row
             for row in zip(*data):
                 writer.writerow(row)
@@ -329,12 +355,10 @@ class View(object):
         # Create join conditions
         join_cond = []
         for name in self.key_cols:
-            join_cond.append('%s."%s" = "%s"."%s"' % (
-                self.tmp_table,
-                name,
-                self.table.name,
-                name
-            ))
+            join_cond.append(
+                '%s."%s" = "%s"."%s"'
+                % (self.tmp_table, name, self.table.name, name)
+            )
 
         # Apply filters if any
         if not disable_acl:
@@ -347,18 +371,26 @@ class View(object):
         if filters:
             # Delete line from tmp that invalidate the filter
             self.ins_filter_cnt = self._purge(
-                join_cond, filters, disable_acl=True, what='new',
-                args=args)
+                join_cond, filters, disable_acl=True, what='new', args=args
+            )
             self.upd_filter_cnt = self._purge(
-                join_cond, filters, disable_acl=True, what='old',
-                args=args)
+                join_cond, filters, disable_acl=True, what='old', args=args
+            )
         yield join_cond
 
         # Clean tmp table
         execute('DROP TABLE %s' % self.tmp_table)
 
-    def write(self, data, purge=False, insert=True, update=True, filters=None,
-              disable_acl=False, args=None):
+    def write(
+        self,
+        data,
+        purge=False,
+        insert=True,
+        update=True,
+        filters=None,
+        disable_acl=False,
+        args=None,
+    ):
         '''
         Write given data to view table. If insert is true, new lines will
         be inserted.  if update is true, existing line will be
@@ -378,8 +410,9 @@ class View(object):
 
         # Handle list of dict and dataframes
         if isinstance(data, list) and data and isinstance(data[0], dict):
-            data = [[record.get(f.name) for record in data]
-                    for f in self.fields]
+            data = [
+                [record.get(f.name) for record in data] for f in self.fields
+            ]
         elif pandas and isinstance(data, pandas.DataFrame):
             fields = [f.name for f in self.fields]
             data = [data[f].values for f in fields]
@@ -400,7 +433,7 @@ class View(object):
         kwargs = {
             'filters': filters,
             'disable_acl': disable_acl,
-            'args':args,
+            'args': args,
         }
         with self._prepare_write(data, **kwargs) as join_cond:
             if self.ctx.flavor == 'sqlite':
@@ -417,8 +450,9 @@ class View(object):
                     # ON-CONFLICT is available since postgres 9.5
                     self._pg_upsert(join_cond, insert=insert, update=update)
             if purge:
-                cnt = self._purge(join_cond, filters, disable_acl,
-                                  what='purge', args=args)
+                cnt = self._purge(
+                    join_cond, filters, disable_acl, what='purge', args=args
+                )
                 rowcounts['deleted'] = cnt
 
         rowcounts['filtered'] = self.ins_filter_cnt + self.upd_filter_cnt
@@ -430,19 +464,25 @@ class View(object):
         # As sqlite cannot update only some columns whe have to also
         # update fields not in the query
         qr_cols = [f.name for f in self.field_map]
-        other_cols = [col.name for col in self.table.own_columns \
-                      if col.name not in qr_cols]
+        other_cols = [
+            col.name
+            for col in self.table.own_columns
+            if col.name not in qr_cols
+        ]
         # TODO use separate insert and update. And use multi column
         # update (only with sqlite >= 3.15, see
         # https://stackoverflow.com/a/47753166)
         qr = 'INSERT OR REPLACE INTO "%(main)s" (%(fields)s) %(select)s'
-        select = 'SELECT %(tmp_fields)s FROM tmp '\
-                 '%(join_type)s JOIN "%(main_table)s" ON ( %(join_cond)s)'
+        select = (
+            'SELECT %(tmp_fields)s FROM tmp '
+            '%(join_type)s JOIN "%(main_table)s" ON ( %(join_cond)s)'
+        )
         tmp_fields = ', '.join('%s."%s"' % (self.tmp_table, c) for c in qr_cols)
         if other_cols:
             tmp_fields += ', '
-            tmp_fields += ', '.join('"%s"."%s"' % (self.table.name, f)\
-                                    for f in other_cols)
+            tmp_fields += ', '.join(
+                '"%s"."%s"' % (self.table.name, f) for f in other_cols
+            )
         if 'id' not in self.field_dict:
             other_cols.append('id')
             tmp_fields += ', "%s".id' % self.table.name
@@ -480,8 +520,9 @@ class View(object):
                 raise ValueError(msg)
 
     def _pg_upsert(self, join_cond, insert, update):
-        tmp_fields = ', '.join('%s."%s"' % (self.tmp_table, f.name)
-                               for f in self.field_map)
+        tmp_fields = ', '.join(
+            '%s."%s"' % (self.tmp_table, f.name) for f in self.field_map
+        )
         main_fields = ', '.join('"%s"' % f.name for f in self.field_map)
         upd_fields = []
         for f in self.field_map:
@@ -492,7 +533,8 @@ class View(object):
         qr = (
             'INSERT INTO "%(main)s" (%(main_fields)s) '
             'SELECT %(tmp_fields)s FROM %(tmp_table)s '
-            '%(join_type)s JOIN "%(main)s" ON ( %(join_cond)s) ')
+            '%(join_type)s JOIN "%(main)s" ON ( %(join_cond)s) '
+        )
         if upd_fields and update:
             qr += 'ON CONFLICT (%(idx)s) DO UPDATE SET %(upd_fields)s'
         else:
@@ -512,17 +554,20 @@ class View(object):
 
     def _insert(self, join_cond):
         qr = 'INSERT INTO "%(main)s" (%(fields)s) %(select)s'
-        select = 'SELECT %(tmp_fields)s FROM %(tmp_table)s '\
-                 'LEFT JOIN "%(main)s" ON ( %(join_cond)s) ' \
-                 'WHERE %(where_cond)s'
+        select = (
+            'SELECT %(tmp_fields)s FROM %(tmp_table)s '
+            'LEFT JOIN "%(main)s" ON ( %(join_cond)s) '
+            'WHERE %(where_cond)s'
+        )
 
         # Consider only new rows
         where_cond = []
         for name in self.key_cols:
             where_cond.append('%s."%s" IS NULL' % (self.table.name, name))
 
-        tmp_fields = ', '.join('%s."%s"' % (self.tmp_table, f.name)
-                               for f in self.field_map)
+        tmp_fields = ', '.join(
+            '%s."%s"' % (self.tmp_table, f.name) for f in self.field_map
+        )
         select = select % {
             'tmp_fields': tmp_fields,
             'tmp_table': self.tmp_table,
@@ -539,15 +584,17 @@ class View(object):
         return cur.rowcount
 
     def _update(self, join_cond):
-        update_cols = [f.name for f in self.field_map
-                       if f.name not in self.key_cols]
+        update_cols = [
+            f.name for f in self.field_map if f.name not in self.key_cols
+        ]
         if not update_cols:
             return 0
 
         where = ' AND '.join(join_cond)
         qr = 'UPDATE "%(main)s" SET '
-        qr += ', ' .join('"%s" = %s."%s"' % (n, self.tmp_table, n)
-                         for n in update_cols)
+        qr += ', '.join(
+            '"%s" = %s."%s"' % (n, self.tmp_table, n) for n in update_cols
+        )
         qr += ' FROM %(tmp_table)s WHERE %(where)s'
         qr = qr % {
             'tmp_table': self.tmp_table,
@@ -557,8 +604,9 @@ class View(object):
         cur = TankerCursor(self, qr).execute()
         return cur and cur.rowcount or 0
 
-    def _purge(self, join_cond, filters, disable_acl=False, what='purge',
-               args=None):
+    def _purge(
+        self, join_cond, filters, disable_acl=False, what='purge', args=None
+    ):
         '''
         Delete rows from main table that are not in tmp table and evaluate
         filters to true. If "what" is 'old' we delte from tmp lines
@@ -581,9 +629,11 @@ class View(object):
         head_qr = (
             'DELETE FROM "%(tmp)s" '
             'WHERE id %(filter_operator)s ('
-            ' SELECT "%(tmp)s".id FROM "%(tmp)s" ')
+            ' SELECT "%(tmp)s".id FROM "%(tmp)s" '
+        )
         join_qr = '{} JOIN %(main)s on (%(join_cond)s) '.format(
-            'INNER' if old else 'LEFT')
+            'INNER' if old else 'LEFT'
+        )
         excl_cond = '%(main)s.%(field)s IS NULL' if purge else ''
         tail_qr = ')'
 
@@ -591,9 +641,9 @@ class View(object):
         fmt = {
             'main': main,
             'tmp': tmp,
-            'filter_operator': 'IN', #'NOT IN' if update else
+            'filter_operator': 'IN',  #'NOT IN' if update else
             'join_cond': ' AND '.join(join_cond),
-            'field': self.key_cols[0]
+            'field': self.key_cols[0],
         }
         head_qr = head_qr % fmt
         join_qr = join_qr % fmt
@@ -610,16 +660,15 @@ class View(object):
             table_aliases = {c.name: 'tmp' for c in self.field_map}
         else:
             table_aliases = None
-        exp = Expression(self.table, base_env=self.base_env(),
-                         table_aliases=table_aliases)
+        exp = Expression(
+            self.table, base_env=self.base_env(), table_aliases=table_aliases
+        )
         filter_chunks = exp._build_filter_cond(filters, acl_filters)
         join_chunks = [exp.ref_set]
         if filter_chunks:
             qr = [head_qr] + [join_qr] + join_chunks
             if not purge:
-                qr += ['WHERE NOT ('] \
-                    + filter_chunks \
-                    + [')']
+                qr += ['WHERE NOT ('] + filter_chunks + [')']
             else:
                 qr += ['WHERE'] + filter_chunks
             if excl_cond:
@@ -668,17 +717,23 @@ class View(object):
             cls._fk_cache[key] = mapping
 
         if isinstance(mapping, LRU):
-            base_filter = "(AND %s)" % " ".join("(= %s {})" % f for f in read_fields)
+            base_filter = "(AND %s)" % " ".join(
+                "(= %s {})" % f for f in read_fields
+            )
 
             # Value is a list of column, paginate yield page that is a
             # small chunk of rows
             for page in paginate(values):
                 missing = set(
-                    val for val in page if not all_none(val) and val not in mapping
+                    val
+                    for val in page
+                    if not all_none(val) and val not in mapping
                 )
                 if missing:
                     fltr = "(OR %s)" % " ".join(base_filter for _ in missing)
-                    rows = view.read(fltr, args=list(chain(*missing)), disable_acl=True)
+                    rows = view.read(
+                        fltr, args=list(chain(*missing)), disable_acl=True
+                    )
                     for row in rows:
                         # row[-1] is id
                         mapping.set(row[:-1], row[-1])
@@ -707,8 +762,6 @@ class View(object):
                     % (", ".join(map(repr, val)), remote_table)
                 )
             yield res
-
-
 
 
 def fetch(tablename, filter_by):

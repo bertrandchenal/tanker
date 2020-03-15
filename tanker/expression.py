@@ -1,9 +1,10 @@
 from collections import OrderedDict
-import shlex
 from string import Formatter
+import shlex
 
 from .table import Table
 from .utils import interleave, basestring, ctx
+
 
 class Reference:
     def __init__(self, remote_table, remote_field, rjoins, join_alias, column):
@@ -53,7 +54,12 @@ class ReferenceSet:
         for key, alias in self.joins.items():
             left_table, right_table, left_col, right_col = key
             join = 'LEFT JOIN "%s" AS "%s"' % (right_table, alias)
-            cond = '"%s"."%s" = "%s"."%s"' % (left_table, left_col, alias, right_col)
+            cond = '"%s"."%s" = "%s"."%s"' % (
+                left_table,
+                left_col,
+                alias,
+                right_col,
+            )
             # # TODO inject acl_cond in join cond
             # if not self.disable_acl:
             #     acl_filters = ctx.cfg.get('acl-read', {}).get(right_table)
@@ -99,7 +105,9 @@ class ReferenceSet:
         foreign_alias = self.joins.setdefault(key, key_alias)
 
         # Recurse
-        return self.get_ref(tail, table=foreign_table, force_alias=foreign_alias)
+        return self.get_ref(
+            tail, table=foreign_table, force_alias=foreign_alias
+        )
 
     def get_nb_joins(self, up=True):
         if up and self.parent:
@@ -121,7 +129,9 @@ class Expression(object):
 
     builtins = {
         "+": lambda *xs: "(%s)" % " + ".join(xs),
-        "-": lambda *xs: "- %s" % xs[0] if len(xs) == 1 else "(%s)" % " - ".join(xs),
+        "-": lambda *xs: "- %s" % xs[0]
+        if len(xs) == 1
+        else "(%s)" % " - ".join(xs),
         "*": lambda *xs: "(%s)" % " * ".join(xs),
         "/": lambda *xs: "(%s)" % " / ".join(xs),
         "and": lambda *xs: "(%s)" % " AND ".join(xs),
@@ -135,8 +145,11 @@ class Expression(object):
         "->>": lambda x, y: "%s ->> %s" % (x, y),
         "like": lambda x, y: "%s like %s" % (x, y),
         "ilike": lambda x, y: "%s ilike %s" % (x, y),
-        "in": lambda *xs: ("%%s in (%s)" % (", ".join("%s" for _ in xs[1:]))) % xs,
-        "notin": lambda *xs: ("%%s not in (%s)" % (", ".join("%s" for _ in xs[1:])))
+        "in": lambda *xs: ("%%s in (%s)" % (", ".join("%s" for _ in xs[1:])))
+        % xs,
+        "notin": lambda *xs: (
+            "%%s not in (%s)" % (", ".join("%s" for _ in xs[1:]))
+        )
         % xs,
         "any": lambda x: "any(%s)" % x,
         "all": lambda x: "all(%s)" % x,
@@ -358,7 +371,11 @@ class ExpressionParam:
         elif as_int is not None:
             value = ast.args[as_int]
         else:
-            value = ast.kwargs[self.key] if self.key in ast.kwargs else env[self.key]
+            value = (
+                ast.kwargs[self.key]
+                if self.key in ast.kwargs
+                else env[self.key]
+            )
 
         # Resolve dotted expression
         for attr in self.tail:

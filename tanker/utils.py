@@ -1,9 +1,9 @@
+from collections import OrderedDict
+from datetime import datetime
+from itertools import islice
+import logging
 import os
 import threading
-import logging
-from collections import OrderedDict
-from itertools import islice
-from datetime import datetime
 
 try:
     import pandas
