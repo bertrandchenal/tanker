@@ -1,8 +1,9 @@
+import os
 import threading
 import logging
-from collections import OrderedDict  # , defaultdict
-from itertools import islice  # chain, , groupby
-from datetime import datetime  # , date, timedelta
+from collections import OrderedDict
+from itertools import islice
+from datetime import datetime
 
 try:
     import pandas
@@ -26,14 +27,17 @@ COLUMN_TYPE = (
     'TIMESTAMP',
     'TIMESTAMPTZ',
     'VARCHAR',
-    'JSONB'
+    'JSONB',
 )
 
 
 fmt = '%(levelname)s:%(asctime).19s: %(message)s'
 logging.basicConfig(format=fmt)
-logger = logging.getLogger('tanker')
-logger.setLevel(logging.INFO)
+logger = logging.getLogger("tanker")
+if os.environ.get('TK_DEBUG'):
+    logger.setLevel('DEBUG')
+else:
+    logger.setLevel('INFO')
 
 
 def yaml_load(stream):
@@ -104,7 +108,6 @@ def strptime(val, kind):
         return res
 
     raise ValueError('Unable to parse "%s" as %s' % (val, kind.lower()))
-
 
 
 class LRU:
@@ -179,4 +182,3 @@ class ShallowContext:
 
 CTX_STACK = ContextStack()
 ctx = ShallowContext()
-

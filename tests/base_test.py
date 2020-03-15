@@ -2,7 +2,8 @@ import os
 
 import pytest
 
-from tanker import (connect, create_tables, View, logger, yaml_load, fetch,
+
+from tanker import (connect, create_tables, View, yaml_load, fetch,
                     save, execute, Table)
 
 
@@ -15,10 +16,6 @@ DB_PARAMS = [
     # {'uri': 'crdb://root@localhost:26257/tanker_test', 'auto': False},
     # {'uri': 'crdb://root@localhost:26257/tanker_test', 'auto': True},
 ]
-
-verbose = pytest.config.getoption('verbose', 0) > 1 # FIXME 
-verbose = False
-logger.setLevel('DEBUG' if verbose else 'WARNING')
 
 
 # Tables definitions can be written in yaml
