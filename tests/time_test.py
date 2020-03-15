@@ -3,7 +3,7 @@ import pytz
 
 from pandas import date_range, DataFrame
 
-from tanker import View, ctx, PY2
+from tanker import View, ctx
 from .base_test import session
 
 BRU = pytz.timezone('Europe/Brussels')
@@ -45,7 +45,7 @@ def test_time_formats(session):
             'timestamptz': record['timestamptz'].strftime(ts_tz_fmt),
             'date': record['date'].strftime(date_fmt),
         }
-        if PY2 or ctx.flavor == 'sqlite':
+        if ctx.flavor == 'sqlite':
             # strftime doesn't know %s in py2
             fmt_record.pop('timestamptz')
         view.write([fmt_record])

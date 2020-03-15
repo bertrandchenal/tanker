@@ -16,7 +16,8 @@ DB_PARAMS = [
     # {'uri': 'crdb://root@localhost:26257/tanker_test', 'auto': True},
 ]
 
-verbose = pytest.config.getoption('verbose', 0) > 1
+verbose = pytest.config.getoption('verbose', 0) > 1 # FIXME 
+verbose = False
 logger.setLevel('DEBUG' if verbose else 'WARNING')
 
 
