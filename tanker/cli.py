@@ -21,6 +21,10 @@ def cli():
         default='.tk.yaml',
     )
     parser.add_argument(
+        '-D', '--db-uri',
+        help='Database URI (override config file value)',
+    )
+    parser.add_argument(
         '-l', '--limit', help='Limit number of results', type=int
     )
     parser.add_argument('-o', '--offset', help='Offset results', type=int)
@@ -63,7 +67,12 @@ def cli():
         print(__version__)
         return
 
-    cfg = yaml_load(open(args.config))
+    if os.path.exists(args.config):
+        cfg = yaml_load(open(args.config))
+    else:
+        cfg = {}
+    if args.db_uri:
+        cfg['db_uri'] = args.db_uri
     if cfg.get('schema'):
         cfg['schema'] = yaml_load(open(os.path.expanduser(cfg['schema'])))
     with connect(cfg):
