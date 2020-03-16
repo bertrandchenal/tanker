@@ -14,7 +14,7 @@ LRU_SIZE = 10000
 LRU_PAGE_SIZE = 100
 basestring = (str, bytes)
 
-__version__ = '0.8.5'
+__version__ = '0.8.6'
 
 COLUMN_TYPE = (
     'BIGINT',
