@@ -17,7 +17,6 @@ seamlessly integrate with pandas DataFrames.
 
 description = ('Tanker is a Python database library targeting analytic '
                'operations')
-
 setup(name='Tanker',
       version=tanker.__version__,
       description=description,
@@ -26,10 +25,10 @@ setup(name='Tanker',
       author_email='bertrand@adimian.com',
       url='https://github.com/bertrandchenal/tanker',
       license='MIT',
-      py_modules=['tanker'],
+      packages=['tanker'],
       entry_points={
           'console_scripts': [
-              'tk = tanker:cli',
+              'tk = tanker.cli:cli',
           ],
       },
   )
