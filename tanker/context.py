@@ -18,7 +18,8 @@ except ImportError:
 
 from .expression import ExpressionSymbol, AST, ReferenceSet
 from .table import Column, Table
-from .utils import logger, basestring, yaml_load, CTX_STACK, ctx, pandas
+from .utils import (logger, basestring, yaml_load, CTX_STACK, ctx, pandas,
+                    COLUMN_TYPE)
 
 QUOTE_SEPARATION = re.compile(r"(.*?)('.*?')", re.DOTALL)
 NAMED_RE = re.compile(r"%\(([^\)]+)\)s")
