@@ -34,10 +34,10 @@ COLUMN_TYPE = (
 fmt = '%(levelname)s:%(asctime).19s: %(message)s'
 logging.basicConfig(format=fmt)
 logger = logging.getLogger("tanker")
-if os.environ.get('TK_DEBUG'):
-    logger.setLevel('DEBUG')
-else:
-    logger.setLevel('INFO')
+log_level = os.environ.get('TK_LOG_LEVEL', '').upper()
+levels = ['CRITICAL', 'ERROR', 'WARNING', 'INFO', 'DEBUG', 'NOTSET']
+if log_level in levels:
+    logger.setLevel(log_level)
 
 
 def yaml_load(stream):
