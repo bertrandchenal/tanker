@@ -68,11 +68,9 @@ class Column:
             return 'INTEGER'
         else:
             table = Table.get(self.foreign_table).name
-            cascade = '' if ctx.flavor == 'sqlite' else 'ON DELETE CASCADE'
-            return 'INTEGER REFERENCES "%s" ("%s") %s' % (
+            return 'INTEGER REFERENCES "%s" ("%s") ON DELETE CASCADE' % (
                 table,
                 self.foreign_col,
-                cascade,
             )
 
     def get_foreign_table(self):

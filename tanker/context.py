@@ -595,26 +595,6 @@ class Context:
                 "def": col_def,
             }
             execute(qr % params)
-            if not (self.flavor == "sqlite" and col.ctype == "M2O"):
-                continue
-            # the on delete cascade is not enabled for sqlite
-            # because the 'INSERT OR REPLACE' operation execute a
-            # delete and thus execute the delete cascade. But it
-            # does not execute triggers (see
-            # https://stackoverflow.com/a/32554601)
-            execute(
-                'CREATE TRIGGER "on_delete_trigger_%(table)s_%(col)s" '
-                'AFTER DELETE ON "%(remote)s" '
-                "BEGIN "
-                'DELETE FROM "%(table)s" '
-                'WHERE "%(table)s.%(col)s"=OLD.id;'
-                "END"
-                % {
-                    "remote": col.foreign_table,
-                    "table": table.name,
-                    "col": col.name,
-                }
-            )
 
     def create_index(self, table):
         # Add unique constrains (not supported by sqlite)

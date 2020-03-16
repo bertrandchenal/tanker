@@ -436,19 +436,18 @@ class View(object):
             'args': args,
         }
         with self._prepare_write(data, **kwargs) as join_cond:
-            if self.ctx.flavor == 'sqlite':
-                self._sqlite_upsert(join_cond, insert, update)
-            if self.ctx.flavor == 'crdb':
-                self._pg_upsert(join_cond, insert=insert, update=update)
-            if self.ctx.flavor == 'postgresql':
-                if ctx.legacy_pg or self.table.use_index == 'BRIN':
-                    if insert:
-                        self._insert(join_cond)
-                    if update:
-                        self._update(join_cond)
-                else:
-                    # ON-CONFLICT is available since postgres 9.5
-                    self._pg_upsert(join_cond, insert=insert, update=update)
+            disable_upsert = (
+                ctx.legacy_pg
+                or (ctx.flavor == 'postgresql'
+                    and self.table.use_index == 'BRIN'))
+            if disable_upsert:
+                if insert:
+                    self._insert(join_cond)
+                if update:
+                    self._update(join_cond)
+            else:
+                # ON-CONFLICT is available since postgres 9.5
+                self._upsert(join_cond, insert=insert, update=update)
             if purge:
                 cnt = self._purge(
                     join_cond, filters, disable_acl, what='purge', args=args
@@ -459,47 +458,6 @@ class View(object):
 
         self.reset_cache(self.table.name)
         return rowcounts
-
-    def _sqlite_upsert(self, join_cond, insert, update):
-        # As sqlite cannot update only some columns whe have to also
-        # update fields not in the query
-        qr_cols = [f.name for f in self.field_map]
-        other_cols = [
-            col.name
-            for col in self.table.own_columns
-            if col.name not in qr_cols
-        ]
-        # TODO use separate insert and update. And use multi column
-        # update (only with sqlite >= 3.15, see
-        # https://stackoverflow.com/a/47753166)
-        qr = 'INSERT OR REPLACE INTO "%(main)s" (%(fields)s) %(select)s'
-        select = (
-            'SELECT %(tmp_fields)s FROM tmp '
-            '%(join_type)s JOIN "%(main_table)s" ON ( %(join_cond)s)'
-        )
-        tmp_fields = ', '.join('%s."%s"' % (self.tmp_table, c) for c in qr_cols)
-        if other_cols:
-            tmp_fields += ', '
-            tmp_fields += ', '.join(
-                '"%s"."%s"' % (self.table.name, f) for f in other_cols
-            )
-        if 'id' not in self.field_dict:
-            other_cols.append('id')
-            tmp_fields += ', "%s".id' % self.table.name
-
-        select = select % {
-            'tmp_fields': tmp_fields,
-            'main_table': self.table.name,
-            'join_cond': ' AND '.join(join_cond),
-            'join_type': 'LEFT' if insert else 'INNER',
-        }
-        qr = qr % {
-            'main': self.table.name,
-            'fields': ', '.join('"%s"' % c for c in qr_cols + other_cols),
-            'select': select,
-        }
-        cur = TankerCursor(self, [qr]).execute()
-        return cur.rowcount
 
     def validate_key(self, columns):
         '''
@@ -519,7 +477,7 @@ class View(object):
 
                 raise ValueError(msg)
 
-    def _pg_upsert(self, join_cond, insert, update):
+    def _upsert(self, join_cond, insert, update):
         tmp_fields = ', '.join(
             '%s."%s"' % (self.tmp_table, f.name) for f in self.field_map
         )
