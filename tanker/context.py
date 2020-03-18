@@ -13,6 +13,7 @@ import threading
 try:
     import psycopg2
     from psycopg2.pool import ThreadedConnectionPool
+    from psycopg2 import extras
 except ImportError:
     psycopg2 = None
 
@@ -90,6 +91,24 @@ def executemany(query, params):
         cursor.executemany(query, params)
     except DB_EXCEPTION as e:
         log_sql(query, params, exception=True)
+        raise DBError(e)
+    return cursor
+
+
+def execute_values(query, values, nb_params):
+    log_sql(query)
+    cursor = ctx.connection.cursor()
+    template = '(%s)' % ', '.join('%s' for _ in range(nb_params))
+    try:
+        extras.execute_values(
+            cursor,
+            query,
+            values,
+            page_size=1000,
+            template=template,
+        )
+    except DB_EXCEPTION as e:
+        log_sql(query, exception=True)
         raise DBError(e)
     return cursor
 

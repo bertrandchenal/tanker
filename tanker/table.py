@@ -109,25 +109,6 @@ class Column:
             for array in values:
                 yield self.format_array(array, astype, array_dim)
 
-        elif astype == 'FLOAT':
-            for v in map(skip_none(float), values):
-                yield v
-
-        elif astype in ('INTEGER', 'BIGINT'):
-            for v in map(skip_none(int), values):
-                yield v
-
-        elif astype == 'VARCHAR':
-            for value in values:
-                if not value:
-                    value = None
-                elif not isinstance(value, basestring):
-                    value = str(value)
-                else:
-                    if isinstance(value, bytes):
-                        value = value.encode(ctx.encoding)
-                yield value
-
         elif astype in ('TIMESTAMP', 'TIMESTAMPTZ'):
             for value in values:
                 if value is None:

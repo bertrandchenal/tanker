@@ -1,10 +1,8 @@
 from collections import defaultdict
 from contextlib import contextmanager
-import csv
-import io
 import uuid
 
-from .context import execute, executemany, copy_from, TankerCursor
+from .context import execute, executemany, TankerCursor, execute_values
 from .expression import ReferenceSet, Expression, AST
 from .table import Table
 from .utils import basestring, interleave, pandas
@@ -332,25 +330,10 @@ class View(object):
             executemany(qr, zip(*data))
         else:
             columns = ', '.join('"%s"' % c.name for c in self.field_map)
-            buff = io.StringIO()
-            # TODO: See
-            # https://hakibenita.com/fast-load-data-python-postgresql#copy-data-from-a-string-iterator
-            # and https://stackoverflow.com/a/12604375 to avoid string
-            # buffer
-            if self.ctx.flavor == 'crdb':
-                writer = csv.writer(buff, delimiter='\t', quotechar='"')
-                qr = 'COPY %s (%s) FROM STDIN' % (self.tmp_table, columns)
-            else:
-                writer = csv.writer(buff, delimiter=',', quotechar='"')
-                qr = 'COPY %s (%s) FROM STDIN WITH (FORMAT csv)' % (
-                    self.tmp_table,
-                    columns,
-                )
+            qr = f'INSERT INTO {self.tmp_table} ({columns}) VALUES %s'
             # Append to writer by row
-            for row in zip(*data):
-                writer.writerow(row)
-            buff.seek(0)
-            copy_from(qr, buff)
+            nb_params = len(self.field_map)
+            execute_values(qr, zip(*data), nb_params)
 
         # Create join conditions
         join_cond = []

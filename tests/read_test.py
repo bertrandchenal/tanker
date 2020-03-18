@@ -319,6 +319,15 @@ def test_jsonb(session):
     assert len(res) == 1
     assert res[0][1]['ham'] == 'spam'
 
+def test_bytea(session):
+    payload = b'\x1d\xea\xdb\xee\xff'
+    data = [(1, payload)]
+    view = View('kitchensink', ['index', 'bytea'])
+    view.write(data)
+
+    res = view.read().all()
+    assert bytes(res[0][1]) == payload
+
 def test_distinct(session):
     view = View('team', ['country.name'])
     expected = sorted(set(view.read().all()))

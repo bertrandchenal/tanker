@@ -82,6 +82,7 @@ yaml_def = '''
     epoch: timestamp
     year: timestamp
     jsonb: jsonb
+    bytea: bytea
   key:
     - index
 

@@ -28,6 +28,7 @@ COLUMN_TYPE = (
     'TIMESTAMPTZ',
     'VARCHAR',
     'JSONB',
+    'BYTEA',
 )
 
 

@@ -1,5 +1,5 @@
 from datetime import datetime, date
-
+import json
 
 from tanker import View, ctx
 from .base_test import session
@@ -18,21 +18,28 @@ def test_reserved_words(session):
         'timestamp': datetime(1970, 1, 1),
         'date': date(1970, 1, 1),
         'varchar': 'varchar',
+        'bytea': b'\x00',
         'int_array': [1,2],
         'bool_array': [True, False],
         'ts_array': [datetime(1970, 1, 1), datetime(1970, 1, 2)],
         'char_array': ['ham', 'spam'],
+        'jsonb': '{"ham": "spam"}',
     }
 
     # Write actual values
-    ks_view = View('kitchensink')
+    ks_view = View('kitchensink', list(record.keys()))
     ks_view.write([record])
     res = list(ks_view.read().dict())[0]
     for k, v in record.items():
         if ctx.flavor == 'sqlite' and k.endswith('array'):
             # Array support with sqlite is incomplete
             continue
-        assert res[k] == v
+        if k == 'bytea':
+            assert bytes(res[k]) == v
+        elif k == 'jsonb':
+            assert res[k] == json.loads(v)
+        else:
+            assert res[k] == v
 
     # Filters
     for k, v in record.items():
