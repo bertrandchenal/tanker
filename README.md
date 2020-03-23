@@ -322,17 +322,6 @@ cfg['acl-read'] = {'team': "(= team.country.name 'Belgium')"}
 View('team').write(teams)
 ```
 
-### Important remark
-
-The current implementation of write acl is still problematic when:
-1. The rows we write on are not filtered by the acl.
-2. The written data change the content of the row in a way that those
-   rows are now filtered by the acl.
-
-In this situation, the current implementation will confuse those
-updated rows with newly inserted row that violate the write acl and
-will automatically delete those.
-
 
 ## Documentation TODO
   - Deletion (by data, by filter)
