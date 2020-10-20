@@ -62,6 +62,7 @@ yaml_def = '''
 
 - table: kitchensink
   columns:
+    id: bigint
     index: integer
     "true": bool
     "false": bool

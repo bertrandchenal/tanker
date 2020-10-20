@@ -45,7 +45,7 @@ class Column:
             if ctx.flavor == 'sqlite':
                 return 'INTEGER PRIMARY KEY'
 
-            id_def = 'SERIAL'
+            id_def = 'BIGSERIAL' if self.ctype == 'BIGINT' else 'SERIAL'
             if self.table.name in ctx.referenced:
                 # (index on 'id' col is not needed if not part of fk)
                 id_def += ' PRIMARY KEY'
