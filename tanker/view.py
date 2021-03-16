@@ -396,6 +396,8 @@ class View(object):
             data = [
                 [record.get(f.name) for record in data] for f in self.fields
             ]
+        elif isinstance(data, dict):
+            data = [data.get(f.name) for f in self.fields]
         elif pandas and isinstance(data, pandas.DataFrame):
             fields = [f.name for f in self.fields]
             data = [data[f].values for f in fields]
