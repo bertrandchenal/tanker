@@ -1,3 +1,4 @@
+from itertools import chain
 from collections import defaultdict
 from contextlib import contextmanager
 import uuid
