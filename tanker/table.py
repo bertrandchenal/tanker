@@ -121,7 +121,7 @@ class Column:
                 elif hasattr(value, 'tolist'):
                     # tolist is a numpy.datetime64 method that
                     # returns nanosecond from 1970. EPOCH + delta(val)
-                    # suppors values far in the past (or future)
+                    # supports values far in the past (or future)
                     ts = value.tolist()
                     if ts is None:
                         value = None
@@ -130,7 +130,6 @@ class Column:
                         if astype == 'TIMESTAMPTZ':
                             # tolist as given us utc naive timestamp
                             from pytz import utc
-
                             value = value.replace(tzinfo=utc)
                     yield value
                 elif isinstance(value, basestring):

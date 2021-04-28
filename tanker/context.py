@@ -17,6 +17,12 @@ try:
 except ImportError:
     psycopg2 = None
 
+try:
+    import numpy
+except ImportError:
+    numpy = None
+
+
 from .expression import ExpressionSymbol, AST, ReferenceSet
 from .table import Column, Table
 from .utils import (logger, basestring, yaml_load, CTX_STACK, ctx, pandas,
@@ -62,6 +68,16 @@ def log_sql(query, params=None, exception=False):
 DB_EXCEPTION = (sqlite3.OperationalError,)
 if psycopg2 is not None:
     DB_EXCEPTION += (psycopg2.ProgrammingError,)
+
+
+# Add numpy adapters
+if numpy is not None:
+    sqlite3.register_adapter(numpy.int64, int)
+    sqlite3.register_adapter(numpy.bool_, bool)
+    if psycopg2 is not None:
+        from psycopg2.extensions import register_adapter, AsIs
+        register_adapter(numpy.int64, AsIs)
+        register_adapter(numpy.bool_, AsIs)
 
 
 class DBError(Exception):
