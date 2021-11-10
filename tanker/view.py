@@ -18,10 +18,23 @@ class ViewField:
         self.desc = desc
         self.ref = None
         self.ctx = ctx
+        self.col = None
 
         if desc.startswith('('):
             ftype = ctype = 'EXPRESSION'
             self.col = None
+
+        elif desc.startswith('{'):
+            ftype = ctype = 'ALIAS'
+            self.col = None
+
+        elif desc in table:
+            self.col = table.get_column(desc)
+            ctype = self.col.ctype
+            if ctype == 'M2O':
+                ctype = ftype = 'INTEGER'
+            else:
+                ftype = ctype
 
         elif '.' in desc:
             ftype = 'INTEGER'
@@ -30,18 +43,8 @@ class ViewField:
             remote_col = self.ref.remote_table.get_column(self.ref.remote_field)
             ctype = remote_col.ctype
             self.col = table.get_column(desc.split('.')[0])
-
-        elif desc.startswith('{'):
-            ftype = ctype = 'ALIAS'
-            self.col = None
-
         else:
-            self.col = table.get_column(desc)
-            ctype = self.col.ctype
-            if ctype == 'M2O':
-                ctype = ftype = 'INTEGER'
-            else:
-                ftype = ctype
+            raise ValueError(f'Unable to parse column "{name}"')
 
         self.ctype = ctype.upper()
         self.ftype = ftype.upper()

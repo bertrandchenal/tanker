@@ -162,6 +162,7 @@ class Column:
                     raise ValueError(
                         'Unexpected value "%s" for type "%s"' % (value, astype)
                     )
+
         elif astype == 'JSONB':
             for value in values:
                 if value is None:
@@ -171,6 +172,8 @@ class Column:
                 else:
                     yield json.dumps(value)
         else:
+            if hasattr(values, "tolist"):
+                values = values.tolist()
             for v in values:
                 yield v
 
@@ -222,6 +225,9 @@ class Table:
         #         msg = 'Array type is not allowed on key column '\
         #               '("%s" in table "%s")'
         #         raise ValueError(msg % (col, self.name))
+
+    def __contains__(self, column):
+        return column in self._column_dict
 
     def get_column(self, name):
         try:

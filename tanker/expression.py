@@ -76,7 +76,7 @@ class ReferenceSet:
         table = table or self.table
         left_table = force_alias
         # Simple col, return
-        if "." not in desc:
+        if desc in table:
             col = table.get_column(desc)
             left_table = left_table or self.table_alias(col.name)
             return Reference(table, desc, self.joins, left_table, col)
@@ -268,6 +268,11 @@ class Expression(object):
         if len(token) > 1 and token[0] == "{" and token[-1] == "}":
             return ExpressionParam(token[1:-1])
 
+
+        if token in self.table:
+            # Existing columns are symbols
+            return ExpressionSymbol(token, self, first=first)
+
         try:
             return int(token)
         except ValueError:
@@ -275,6 +280,7 @@ class Expression(object):
         try:
             return float(token)
         except ValueError:
+            # Nothing matches, must be an expression
             return ExpressionSymbol(token, self, first=first)
 
     def _build_filter_cond(self, *filters):
@@ -310,6 +316,7 @@ class ExpressionSymbol:
         self.ref = None
         self.builtin = None
         ref = None
+
         if self.token.startswith("_parent."):  # XXX replace with '_.' ?
             tail = self.token
             parent = exp

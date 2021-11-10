@@ -77,6 +77,7 @@ if numpy is not None:
     if psycopg2 is not None:
         from psycopg2.extensions import register_adapter, AsIs
         register_adapter(numpy.int64, AsIs)
+        register_adapter(numpy.int32, AsIs)
         register_adapter(numpy.bool_, AsIs)
 
 
